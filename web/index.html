@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="uk" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LastKey | Мультичейн Сейф Мерця & Panic Button на NEAR MPC</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            bgDark: '#0b0f19',
+            cardDark: '#111827',
+            cardBorder: '#1f293d',
+            nearGreen: '#00ec97',
+            btcOrange: '#f7931a',
+            evmBlue: '#627eea',
+            solPurple: '#9945ff',
+            panicRed: '#ef4444',
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+    body { font-family: 'Inter', sans-serif; background-color: #0b0f19; }
+    .mono { font-family: 'JetBrains Mono', monospace; }
+  </style>
+</head>
+<body class="text-slate-100 min-h-screen flex flex-col justify-between p-4 md:p-8">
+
+  <!-- Top Navigation -->
+  <header class="max-w-7xl mx-auto w-full flex flex-col sm:flex-row items-center justify-between gap-4 pb-6 border-b border-cardBorder">
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-nearGreen to-emerald-400 flex items-center justify-center shadow-lg shadow-emerald-950/40 text-black font-black text-xl">
+        ⚿
+      </div>
+      <div>
+        <h1 class="text-xl font-bold tracking-tight flex items-center gap-2">
+          LastKey <span class="text-xs px-2 py-0.5 rounded-full bg-emerald-500/10 text-nearGreen font-mono font-medium border border-nearGreen/20">NEAR MPC v1.signer</span>
+        </h1>
+        <p class="text-xs text-slate-400">Мультичейн Dead-Man's Switch & Екстрена евакуація активів</p>
+      </div>
+    </div>
+
+    <!-- Account & Network Info -->
+    <div class="flex items-center gap-3">
+      <div class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-cardDark border border-cardBorder text-xs mono">
+        <span class="w-2 h-2 rounded-full bg-nearGreen animate-pulse"></span>
+        <span id="accountBadge">mastrophot.testnet</span>
+      </div>
+      <button id="panicHeaderBtn" class="bg-red-600/90 hover:bg-red-500 text-white font-semibold text-xs px-4 py-2 rounded-lg transition-all shadow-md shadow-red-950/50 flex items-center gap-1.5 active:scale-95">
+        <span class="animate-ping w-1.5 h-1.5 rounded-full bg-white"></span>
+        🚨 ПАНІКА
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Grid -->
+  <main class="max-w-7xl mx-auto w-full my-8 grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+    <!-- Left Column: Status & Heartbeat -->
+    <div class="space-y-6">
+
+      <!-- State Card -->
+      <div class="bg-cardDark border border-cardBorder rounded-2xl p-6 shadow-xl relative overflow-hidden">
+        <div class="flex justify-between items-start mb-4">
+          <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Статус сховища</span>
+          <span id="stateBadge" class="px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/10 text-nearGreen border border-nearGreen/30">
+            АКТИВНИЙ (ЗАХИЩЕНО)
+          </span>
+        </div>
+
+        <!-- Big Countdown -->
+        <div class="my-6 text-center">
+          <div class="text-xs text-slate-400 mb-1">До спрацювання перемикача мерця:</div>
+          <div id="countdownTimer" class="text-3xl sm:text-4xl font-extrabold mono text-white tracking-wider">
+            89д 23г 59х 40с
+          </div>
+          <div class="w-full bg-slate-800 rounded-full h-1.5 mt-4 overflow-hidden">
+            <div id="countdownBar" class="bg-nearGreen h-1.5 rounded-full" style="width: 98%"></div>
+          </div>
+        </div>
+
+        <!-- Ping Controls -->
+        <div class="space-y-3 pt-2">
+          <button id="pingBtn" class="w-full bg-gradient-to-r from-emerald-500 to-nearGreen hover:from-emerald-400 hover:to-emerald-300 text-black font-bold py-3 px-4 rounded-xl transition duration-200 shadow-lg shadow-emerald-950/40 flex items-center justify-center gap-2 active:scale-98">
+            <span class="text-base">💓</span> Я ЖИВИЙ (Скинути таймер)
+          </button>
+          <div class="flex justify-between text-xs text-slate-400 px-1 mono">
+            <span>Останній пінг: щойно</span>
+            <span>Інтервал: 90 днів</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Emergency Panic Trigger Card -->
+      <div class="bg-red-950/20 border border-red-900/40 rounded-2xl p-6 relative">
+        <h3 class="text-red-400 font-bold text-sm mb-2 flex items-center gap-2">
+          <span>⚠️</span> Кнопка екстреної паніки
+        </h3>
+        <p class="text-xs text-slate-400 leading-relaxed mb-4">
+          Якщо ви під загрозою або ваш комп'ютер скомпрометовано — натискання цієї кнопки миттєво евакуює всі монети (BTC, ETH, SOL) на холодні апаратні гаманці.
+        </p>
+        <button id="panicBigBtn" class="w-full bg-red-600 hover:bg-red-500 text-white font-bold py-3 px-4 rounded-xl transition shadow-lg shadow-red-950/60 active:scale-95">
+          🚨 ЕВАКУЮВАТИ ВСІ АКТИВИ ЗАРАЗ
+        </button>
+      </div>
+
+      <!-- Heir Claim Card -->
+      <div class="bg-cardDark border border-cardBorder rounded-2xl p-6">
+        <h3 class="text-slate-200 font-semibold text-sm mb-2 flex items-center gap-2">
+          <span>⚖️</span> Спадкоємці & Челендж-період
+        </h3>
+        <p class="text-xs text-slate-400 mb-4">
+          Якщо таймер закінчився, спадкоємці можуть відкрити 7-денне вікно верифікації.
+        </p>
+        <button id="claimBtn" class="w-full bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium py-2.5 px-4 rounded-xl text-xs transition border border-slate-700" disabled>
+          Запит на передачу спадку (Таймер активний)
+        </button>
+      </div>
+
+    </div>
+
+    <!-- Center & Right: Multichain Derived Addresses & Policy -->
+    <div class="lg:col-span-2 space-y-6">
+
+      <!-- Multichain Addresses Card -->
+      <div class="bg-cardDark border border-cardBorder rounded-2xl p-6 shadow-xl">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-6">
+          <div>
+            <h2 class="text-base font-bold text-white flex items-center gap-2">
+              Деривовані адреси сховища (NEAR MPC)
+            </h2>
+            <p class="text-xs text-slate-400 mt-0.5">
+              Приватні ключі відсутні у природі — підпис створюється консенсусом валідаторів NEAR
+            </p>
+          </div>
+          <span class="text-xs mono bg-slate-800/80 px-2.5 py-1 rounded-lg border border-slate-700 text-slate-300">
+            Path: lastkey/0
+          </span>
+        </div>
+
+        <div class="space-y-4">
+
+          <!-- Bitcoin Item -->
+          <div class="p-4 rounded-xl bg-slate-900/60 border border-slate-800 hover:border-slate-700 transition">
+            <div class="flex items-center justify-between mb-2">
+              <div class="flex items-center gap-2">
+                <span class="w-6 h-6 rounded-full bg-btcOrange/20 text-btcOrange flex items-center justify-center font-bold text-xs">₿</span>
+                <span class="font-semibold text-sm">Bitcoin (SegWit Testnet)</span>
+              </div>
+              <span class="text-xs text-slate-400 mono">P2WPKH</span>
+            </div>
+            <div class="flex items-center justify-between gap-3 bg-slate-950/80 p-2.5 rounded-lg border border-slate-800/80 mono text-xs">
+              <span id="btcVaultAddress" class="truncate text-amber-300">tb1qug7ge5vzhslcywjqs62k5392uy7ta5klvd2f7c</span>
+              <button onclick="copyText('btcVaultAddress')" class="text-slate-400 hover:text-white px-2 py-1 rounded bg-slate-800 text-[10px]">Копіювати</button>
+            </div>
+          </div>
+
+          <!-- EVM Item -->
+          <div class="p-4 rounded-xl bg-slate-900/60 border border-slate-800 hover:border-slate-700 transition">
+            <div class="flex items-center justify-between mb-2">
+              <div class="flex items-center gap-2">
+                <span class="w-6 h-6 rounded-full bg-evmBlue/20 text-evmBlue flex items-center justify-center font-bold text-xs">Ξ</span>
+                <span class="font-semibold text-sm">EVM (Base / Sepolia / Ethereum)</span>
+              </div>
+              <span class="text-xs text-slate-400 mono">EIP-1559</span>
+            </div>
+            <div class="flex items-center justify-between gap-3 bg-slate-950/80 p-2.5 rounded-lg border border-slate-800/80 mono text-xs">
+              <span id="evmVaultAddress" class="truncate text-blue-300">0xbaF34172995c3a00bbA2Df888257c8d74E11E96e</span>
+              <button onclick="copyText('evmVaultAddress')" class="text-slate-400 hover:text-white px-2 py-1 rounded bg-slate-800 text-[10px]">Копіювати</button>
+            </div>
+          </div>
+
+          <!-- Solana Item -->
+          <div class="p-4 rounded-xl bg-slate-900/60 border border-slate-800 hover:border-slate-700 transition">
+            <div class="flex items-center justify-between mb-2">
+              <div class="flex items-center gap-2">
+                <span class="w-6 h-6 rounded-full bg-solPurple/20 text-solPurple flex items-center justify-center font-bold text-xs">◎</span>
+                <span class="font-semibold text-sm">Solana (Devnet / Mainnet)</span>
+              </div>
+              <span class="text-xs text-slate-400 mono">Ed25519</span>
+            </div>
+            <div class="flex items-center justify-between gap-3 bg-slate-950/80 p-2.5 rounded-lg border border-slate-800/80 mono text-xs">
+              <span id="solVaultAddress" class="truncate text-purple-300">b3VPfLqD97c8o5K6hYgQB4kit7Z3tnWBnZK8wWU66G1</span>
+              <button onclick="copyText('solVaultAddress')" class="text-slate-400 hover:text-white px-2 py-1 rounded bg-slate-800 text-[10px]">Копіювати</button>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Security Policy & Backup Destinations -->
+      <div class="bg-cardDark border border-cardBorder rounded-2xl p-6 shadow-xl">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="text-base font-bold text-white flex items-center gap-2">
+            🛡️ Політика безпеки та адреси евакуації
+          </h3>
+          <span class="text-xs text-slate-400 mono">72h Timelock Active</span>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+          <!-- Backup Card -->
+          <div class="p-4 rounded-xl bg-slate-900/40 border border-slate-800">
+            <div class="text-slate-400 font-semibold mb-2 flex items-center gap-1.5">
+              <span>🔒</span> Резерв евакуації (Холодний Ledger)
+            </div>
+            <div class="space-y-1.5 mono text-[11px] text-slate-300">
+              <div class="truncate"><span class="text-slate-500">BTC:</span> tb1q9999...9999</div>
+              <div class="truncate"><span class="text-slate-500">EVM:</span> 0x1111...1111</div>
+              <div class="truncate"><span class="text-slate-500">SOL:</span> ColdLedger...1111</div>
+            </div>
+          </div>
+
+          <!-- Guardian Card -->
+          <div class="p-4 rounded-xl bg-slate-900/40 border border-slate-800 flex flex-col justify-between">
+            <div>
+              <div class="text-slate-400 font-semibold mb-2 flex items-center gap-1.5">
+                <span>🛡️</span> Довірений вартовий (Guardian)
+              </div>
+              <div class="mono text-[11px] text-slate-300 mb-2">
+                <span class="text-slate-500">Account:</span> guardian.testnet
+              </div>
+              <p class="text-[11px] text-slate-400">
+                Може накласти миттєве вето на зміну адрес або активувати паніку.
+              </p>
+            </div>
+            <button id="vetoBtn" class="mt-3 w-full bg-slate-800 hover:bg-slate-700 text-slate-300 py-1.5 px-3 rounded-lg text-xs font-medium border border-slate-700 transition">
+              Накласти вето на зміни
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Audit & Security Event Log -->
+      <div class="bg-cardDark border border-cardBorder rounded-2xl p-6 shadow-xl">
+        <h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
+          Журнал безпекових подій ончейн
+        </h3>
+        <div id="eventLogs" class="space-y-2 mono text-xs max-h-40 overflow-y-auto pr-2">
+          <div class="p-2 rounded bg-slate-900/60 border border-slate-800/80 flex items-center justify-between text-slate-300">
+            <span>[INIT] Сховище ініціалізовано для mastrophot.testnet</span>
+            <span class="text-slate-500 text-[10px]">Блок #1892831</span>
+          </div>
+          <div class="p-2 rounded bg-slate-900/60 border border-slate-800/80 flex items-center justify-between text-emerald-400">
+            <span>[PING] Регулярний пінг отримано. Таймер оновлено на 90 днів.</span>
+            <span class="text-slate-500 text-[10px]">Блок #1893120</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- Panic Confirmation Modal -->
+  <div id="panicModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-cardDark border-2 border-red-600 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+      <div class="flex items-center gap-3 text-red-500">
+        <span class="text-3xl">🚨</span>
+        <h2 class="text-lg font-extrabold text-white">ПІДТВЕРДЖЕННЯ ЕКСТРЕНОЇ ПАНІКИ</h2>
+      </div>
+      <p class="text-xs text-slate-300 leading-relaxed">
+        Ви збираєтесь перевести сховище в стан <b class="text-red-400">EVACUATED</b>. Релеєр миттєво відправить запит на підпис до NEAR MPC і скине всі баланси Bitcoin, EVM та Solana на вашу резервну холодну адресу.
+      </p>
+      <div class="p-3 bg-red-950/40 border border-red-900/50 rounded-xl text-xs text-red-200 mono">
+        Destination: 0x1111...1111 (Cold Hardware Ledger)
+      </div>
+      <div class="flex gap-3 pt-2">
+        <button id="cancelPanicBtn" class="flex-1 bg-slate-800 hover:bg-slate-700 text-white font-semibold py-2.5 rounded-xl text-xs transition">
+          Скасувати
+        </button>
+        <button id="confirmPanicBtn" class="flex-1 bg-red-600 hover:bg-red-500 text-white font-bold py-2.5 rounded-xl text-xs transition shadow-lg shadow-red-900/50">
+          ПІДТВЕРДИТИ ЕВАКУАЦІЮ
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div id="toast" class="fixed bottom-6 right-6 bg-emerald-500 text-black px-4 py-3 rounded-xl shadow-2xl font-semibold text-xs mono transition-all duration-300 translate-y-20 opacity-0 z-50">
+    Сповіщення
+  </div>
+
+  <!-- Scripts -->
+  <script>
+    let remainingSeconds = 90 * 24 * 3600 - 120; // 90 days - 2m
+    let isEvacuated = false;
+
+    function formatTime(totalSec) {
+      if (totalSec <= 0) return '00д 00г 00х 00с';
+      const days = Math.floor(totalSec / (24 * 3600));
+      const hours = Math.floor((totalSec % (24 * 3600)) / 3600);
+      const mins = Math.floor((totalSec % 3600) / 60);
+      const secs = totalSec % 60;
+      return `${days}д ${String(hours).padStart(2, '0')}г ${String(mins).padStart(2, '0')}х ${String(secs).padStart(2, '0')}с`;
+    }
+
+    const timerEl = document.getElementById('countdownTimer');
+    setInterval(() => {
+      if (!isEvacuated && remainingSeconds > 0) {
+        remainingSeconds--;
+        timerEl.innerText = formatTime(remainingSeconds);
+      }
+    }, 1000);
+
+    function showToast(msg, isRed = false) {
+      const toast = document.getElementById('toast');
+      toast.innerText = msg;
+      toast.className = `fixed bottom-6 right-6 ${isRed ? 'bg-red-500 text-white' : 'bg-emerald-400 text-black'} px-4 py-3 rounded-xl shadow-2xl font-bold text-xs mono transition-all duration-300 z-50`;
+      toast.classList.remove('translate-y-20', 'opacity-0');
+      setTimeout(() => {
+        toast.classList.add('translate-y-20', 'opacity-0');
+      }, 3000);
+    }
+
+    function addLog(text, colorClass = 'text-slate-300') {
+      const logContainer = document.getElementById('eventLogs');
+      const row = document.createElement('div');
+      row.className = `p-2 rounded bg-slate-900/60 border border-slate-800/80 flex items-center justify-between ${colorClass}`;
+      row.innerHTML = `<span>${text}</span><span class="text-slate-500 text-[10px]">щойно</span>`;
+      logContainer.prepend(row);
+    }
+
+    function copyText(elemId) {
+      const text = document.getElementById(elemId).innerText;
+      navigator.clipboard.writeText(text);
+      showToast('Адресу скопійовано в буфер!');
+    }
+
+    // Ping
+    document.getElementById('pingBtn').addEventListener('click', () => {
+      if (isEvacuated) {
+        showToast('Неможливо надіслати пінг: сховище евакуйовано!', true);
+        return;
+      }
+      remainingSeconds = 90 * 24 * 3600;
+      timerEl.innerText = formatTime(remainingSeconds);
+      showToast('💓 Пінг зараховано! Таймер оновлено на 90 днів.');
+      addLog('[PING] Власник надіслав серцебиття. Таймер скинуто на 90 днів.', 'text-emerald-400');
+    });
+
+    // Panic Modal Triggers
+    const modal = document.getElementById('panicModal');
+    const openModal = () => modal.classList.remove('hidden');
+    const closeModal = () => modal.classList.add('hidden');
+
+    document.getElementById('panicHeaderBtn').addEventListener('click', openModal);
+    document.getElementById('panicBigBtn').addEventListener('click', openModal);
+    document.getElementById('cancelPanicBtn').addEventListener('click', closeModal);
+
+    document.getElementById('confirmPanicBtn').addEventListener('click', () => {
+      closeModal();
+      isEvacuated = true;
+      document.getElementById('stateBadge').innerText = 'ЕВАКУЙОВАНО (PANIC ACTIVE)';
+      document.getElementById('stateBadge').className = 'px-3 py-1 rounded-full text-xs font-bold bg-red-500/20 text-red-400 border border-red-500/30';
+      timerEl.innerText = '00д 00г 00х 00с';
+      timerEl.className = 'text-3xl sm:text-4xl font-extrabold mono text-red-500 tracking-wider';
+      document.getElementById('countdownBar').className = 'bg-red-500 h-1.5 rounded-full';
+      document.getElementById('countdownBar').style.width = '100%';
+      
+      showToast('🚨 ПАНІКА АКТИВОВАНА! Активи евакуйовано на Ledger.', true);
+      addLog('[PANIC_TRIGGERED] Екстрена евакуація запущена!', 'text-red-400 font-bold');
+      addLog('[SWEEP_DISPATCH] Транзакції підписано через NEAR MPC v1.signer для BTC, EVM, SOL', 'text-amber-400');
+    });
+
+    // Veto
+    document.getElementById('vetoBtn').addEventListener('click', () => {
+      showToast('🛡️ Вето успішно накладено Вартовим.');
+      addLog('[POLICY_VETOED] Вартовий скасував зміни політики.', 'text-blue-400');
+    });
+  </script>
+</body>
+</html>
