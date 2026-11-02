@@ -415,59 +415,123 @@
 
     <!-- TAB 2: Rescue Policy & Ledger -->
     <section id="panel-rescue" class="tab-panel space-y-6 hidden">
-      <div class="max-w-3xl mx-auto space-y-6">
-        <div class="border-b border-borderSubtle pb-4">
-          <h3 class="text-lg font-bold text-white">Rescue Addresses & Heirs</h3>
-          <p class="text-xs text-slate-400 mt-1">
-            Specify where funds must be swept during Panic (your cold Ledger) or after inheritance finalization (heirs).
-          </p>
+      <div class="max-w-4xl mx-auto space-y-6">
+        
+        <div class="border-b border-borderSubtle pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h3 class="text-lg font-bold text-white">Rescue Addresses & Heirs Configuration</h3>
+            <p class="text-xs text-slate-400 mt-1">
+              Configure where assets are sent during an emergency Panic evacuation versus after inheritance finalization.
+            </p>
+          </div>
+          <button id="toggleEditBtn" onclick="toggleEditMode()" class="px-4 py-2 rounded-xl bg-panelHover hover:bg-slate-800 text-nearPrimary font-bold text-xs border border-nearPrimary/30 transition flex items-center gap-1.5 w-fit">
+            <span id="editBtnIcon">✏️</span> <span id="editBtnText">Edit Addresses</span>
+          </button>
         </div>
 
-        <!-- Policy Form -->
-        <div class="rounded-2xl bg-panelBg border border-borderSubtle p-6 space-y-5">
+        <!-- 1. Emergency Panic Destinations (Cold Storage) -->
+        <div class="rounded-2xl bg-panelBg border border-borderSubtle p-6 space-y-4">
           <div class="flex items-center justify-between border-b border-borderSubtle pb-3">
-            <h4 class="font-bold text-sm text-emerald-400 flex items-center gap-2">
-              <span>🔒</span> Cold Backup Hardware Addresses
-            </h4>
-            <span class="text-xs font-mono bg-emerald-500/10 text-nearPrimary border border-nearPrimary/20 px-2 py-0.5 rounded">Enforced By Contract</span>
+            <div class="flex items-center gap-2.5">
+              <span class="w-8 h-8 rounded-lg bg-red-500/10 text-red-400 flex items-center justify-center font-bold text-base border border-red-500/20">🚨</span>
+              <div>
+                <h4 class="font-bold text-sm text-white">Emergency Panic Destination (Your Cold Storage)</h4>
+                <p class="text-[11px] text-slate-400">Where all 4 assets are swept immediately upon pulling the Panic slider.</p>
+              </div>
+            </div>
+            <span class="text-[10px] font-mono bg-red-500/10 text-red-400 border border-red-500/20 px-2 py-0.5 rounded">Panic Route</span>
           </div>
 
-          <div class="space-y-3 font-mono text-xs">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 font-mono text-xs">
             <div>
-              <label class="block text-slate-400 mb-1 text-[11px]">Bitcoin Backup Address (Cold Hardware):</label>
-              <input type="text" value="tb1q99999999999999999999999999999999999999" class="w-full bg-spaceBg border border-borderSubtle rounded-xl p-3 text-slate-200 focus:outline-none focus:border-nearPrimary" readonly>
+              <label class="block text-slate-400 mb-1 text-[11px] font-sans font-semibold">1. NEAR Protocol Backup Account:</label>
+              <input type="text" id="panicNearAddr" value="mastrophot.testnet" class="w-full bg-spaceBg border border-borderSubtle rounded-xl p-3 text-slate-200 focus:outline-none focus:border-nearPrimary text-xs" readonly>
             </div>
             <div>
-              <label class="block text-slate-400 mb-1 text-[11px]">EVM Backup Address (Cold Hardware):</label>
-              <input type="text" value="0x1111111111111111111111111111111111111111" class="w-full bg-spaceBg border border-borderSubtle rounded-xl p-3 text-slate-200 focus:outline-none focus:border-nearPrimary" readonly>
+              <label class="block text-slate-400 mb-1 text-[11px] font-sans font-semibold">2. Bitcoin Cold Ledger Address:</label>
+              <input type="text" id="panicBtcAddr" value="tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx" class="w-full bg-spaceBg border border-borderSubtle rounded-xl p-3 text-slate-200 focus:outline-none focus:border-nearPrimary text-xs" readonly>
             </div>
             <div>
-              <label class="block text-slate-400 mb-1 text-[11px]">Solana Backup Address (Cold Hardware):</label>
-              <input type="text" value="ColdLedgerSolanaAddress11111111111111111111" class="w-full bg-spaceBg border border-borderSubtle rounded-xl p-3 text-slate-200 focus:outline-none focus:border-nearPrimary" readonly>
+              <label class="block text-slate-400 mb-1 text-[11px] font-sans font-semibold">3. Ethereum / EVM Cold Address:</label>
+              <input type="text" id="panicEvmAddr" value="0x70997970C51812dc3A010C7d01b50e0d17dc79C8" class="w-full bg-spaceBg border border-borderSubtle rounded-xl p-3 text-slate-200 focus:outline-none focus:border-nearPrimary text-xs" readonly>
+            </div>
+            <div>
+              <label class="block text-slate-400 mb-1 text-[11px] font-sans font-semibold">4. Solana Cold Hardware Address:</label>
+              <input type="text" id="panicSolAddr" value="9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM" class="w-full bg-spaceBg border border-borderSubtle rounded-xl p-3 text-slate-200 focus:outline-none focus:border-nearPrimary text-xs" readonly>
             </div>
           </div>
         </div>
 
-        <!-- Timelock Info Box -->
-        <div class="rounded-2xl bg-panelBg border border-borderSubtle p-6 space-y-3">
+        <!-- 2. Inheritance Beneficiaries (Heirs / Family) -->
+        <div class="rounded-2xl bg-panelBg border border-borderSubtle p-6 space-y-4">
+          <div class="flex items-center justify-between border-b border-borderSubtle pb-3">
+            <div class="flex items-center gap-2.5">
+              <span class="w-8 h-8 rounded-lg bg-nearPrimary/10 text-nearPrimary flex items-center justify-center font-bold text-base border border-nearPrimary/20">⚖️</span>
+              <div>
+                <h4 class="font-bold text-sm text-white">Inheritance Beneficiaries (Heirs & Family)</h4>
+                <p class="text-[11px] text-slate-400">Where funds are transferred if you vanish for 90 days and grace period expires.</p>
+              </div>
+            </div>
+            <span class="text-[10px] font-mono bg-emerald-500/10 text-nearPrimary border border-nearPrimary/20 px-2 py-0.5 rounded">Heir Route</span>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 font-mono text-xs">
+            <div>
+              <label class="block text-slate-400 mb-1 text-[11px] font-sans font-semibold">1. NEAR Heir Account:</label>
+              <input type="text" id="heirNearAddr" value="heir-family.testnet" class="w-full bg-spaceBg border border-borderSubtle rounded-xl p-3 text-slate-200 focus:outline-none focus:border-nearPrimary text-xs" readonly>
+            </div>
+            <div>
+              <label class="block text-slate-400 mb-1 text-[11px] font-sans font-semibold">2. Bitcoin Heir Address:</label>
+              <input type="text" id="heirBtcAddr" value="tb1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3q0sl5k7" class="w-full bg-spaceBg border border-borderSubtle rounded-xl p-3 text-slate-200 focus:outline-none focus:border-nearPrimary text-xs" readonly>
+            </div>
+            <div>
+              <label class="block text-slate-400 mb-1 text-[11px] font-sans font-semibold">3. Ethereum / EVM Heir Address:</label>
+              <input type="text" id="heirEvmAddr" value="0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC" class="w-full bg-spaceBg border border-borderSubtle rounded-xl p-3 text-slate-200 focus:outline-none focus:border-nearPrimary text-xs" readonly>
+            </div>
+            <div>
+              <label class="block text-slate-400 mb-1 text-[11px] font-sans font-semibold">4. Solana Heir Address:</label>
+              <input type="text" id="heirSolAddr" value="4Nd1mBQtrMJVYVfKf2PJy9NZz258dPPJJuoeyjgE3HDD" class="w-full bg-spaceBg border border-borderSubtle rounded-xl p-3 text-slate-200 focus:outline-none focus:border-nearPrimary text-xs" readonly>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. Guardian & 72h Timelock Defense -->
+        <div class="rounded-2xl bg-panelBg border border-borderSubtle p-6 space-y-4">
           <div class="flex items-center justify-between">
             <h4 class="font-bold text-sm text-white flex items-center gap-2">
-              <span>⏳</span> 72-Hour Timelock Defense
+              <span>⏳</span> 72-Hour Timelock & Guardian Defense
             </h4>
             <span class="text-xs font-mono text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2.5 py-0.5 rounded-full">
               Anti-Theft Protection
             </span>
           </div>
-          <p class="text-xs text-slate-400 leading-relaxed">
-            If an attacker compromises your login and attempts to replace the rescue addresses with their own, the smart contract locks changes for <b>72 hours</b>. Your Guardian can cancel the modification with one click.
-          </p>
-          <div class="pt-2 flex gap-3">
-            <button onclick="showToast('Address update proposed: 72h timelock initiated')" class="bg-panelHover hover:bg-slate-800 text-slate-200 text-xs font-semibold px-4 py-2.5 rounded-xl border border-borderSubtle transition">
-              Propose Address Update
-            </button>
-            <button onclick="showToast('🛡️ Guardian Veto applied! Malicious address change cancelled.')" class="bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-semibold px-4 py-2.5 rounded-xl border border-red-500/30 transition">
-              Apply Guardian Veto
-            </button>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+            <div class="space-y-2">
+              <label class="block text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Designated Guardian Account:</label>
+              <div class="p-3 rounded-xl bg-spaceBg border border-borderSubtle font-mono text-xs text-slate-200 flex items-center justify-between">
+                <span id="guardianAccountDisplay">guardian.testnet</span>
+                <span class="text-nearPrimary text-[10px]">Verified</span>
+              </div>
+              <p class="text-[11px] text-slate-400 leading-relaxed">
+                If your keys are compromised, an attacker cannot immediately alter backup addresses. Changes are locked for <b>72 hours</b>, during which the Guardian can veto.
+              </p>
+            </div>
+
+            <div class="p-4 rounded-xl bg-spaceBg border border-borderSubtle flex flex-col justify-between">
+              <div class="space-y-1">
+                <div class="text-xs font-bold text-slate-200">Pending Policy Timelock Status:</div>
+                <div id="timelockStatusText" class="text-xs font-mono text-slate-400">No pending changes. System locked.</div>
+              </div>
+              <div class="flex gap-2 pt-3">
+                <button id="savePolicyBtn" onclick="saveAddresses()" class="flex-1 bg-nearPrimary hover:bg-emerald-400 text-spaceBg font-bold py-2.5 px-3 rounded-xl text-xs transition disabled:opacity-50" disabled>
+                  Save & Propose (72h Timelock)
+                </button>
+                <button onclick="applyGuardianVeto()" class="bg-red-500/10 hover:bg-red-500/20 text-red-400 font-bold py-2.5 px-3 rounded-xl text-xs border border-red-500/30 transition">
+                  Apply Veto
+                </button>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -859,6 +923,58 @@
 
     function clearLogs() {
       document.getElementById('auditLogList').innerHTML = '<div class="text-slate-500 text-xs py-4 text-center">Log empty</div>';
+    }
+
+    // Editable Destination Policies
+    let isEditing = false;
+    const inputIds = [
+      'panicNearAddr', 'panicBtcAddr', 'panicEvmAddr', 'panicSolAddr',
+      'heirNearAddr', 'heirBtcAddr', 'heirEvmAddr', 'heirSolAddr'
+    ];
+
+    function toggleEditMode() {
+      isEditing = !isEditing;
+      const editBtnText = document.getElementById('editBtnText');
+      const editBtnIcon = document.getElementById('editBtnIcon');
+      const saveBtn = document.getElementById('savePolicyBtn');
+
+      inputIds.forEach(id => {
+        const el = document.getElementById(id);
+        if (isEditing) {
+          el.removeAttribute('readonly');
+          el.classList.add('border-nearPrimary', 'bg-slate-900');
+          el.classList.remove('bg-spaceBg');
+        } else {
+          el.setAttribute('readonly', true);
+          el.classList.remove('border-nearPrimary', 'bg-slate-900');
+          el.classList.add('bg-spaceBg');
+        }
+      });
+
+      if (isEditing) {
+        editBtnText.innerText = 'Cancel Editing';
+        editBtnIcon.innerText = '✕';
+        saveBtn.removeAttribute('disabled');
+      } else {
+        editBtnText.innerText = 'Edit Addresses';
+        editBtnIcon.innerText = '✏️';
+        saveBtn.setAttribute('disabled', true);
+      }
+    }
+
+    function saveAddresses() {
+      toggleEditMode();
+      const statusEl = document.getElementById('timelockStatusText');
+      statusEl.innerHTML = '<span class="text-amber-400 font-bold">⏱️ 72h Timelock Active: Changes activate in 71h 59m 59s. Guardian can veto.</span>';
+      showToast('Address update proposed! 72-hour anti-theft timelock started.');
+      addLog('[POLICY_PROPOSED] Owner proposed new Panic & Heir destinations. 72h timelock initiated.', 'text-amber-400');
+    }
+
+    function applyGuardianVeto() {
+      const statusEl = document.getElementById('timelockStatusText');
+      statusEl.innerHTML = '<span class="text-slate-400">No pending changes. System locked.</span>';
+      showToast('🛡️ Guardian Veto applied! Malicious or pending changes cancelled.', true);
+      addLog('[GUARDIAN_VETO] Designated Guardian vetoed pending policy change.', 'text-red-400 font-bold');
     }
   </script>
 </body>
