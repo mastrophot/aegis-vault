@@ -1,0 +1,18 @@
+{
+  "name": "lastkey-spike",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Spike testing for NEAR Chain Signatures v1.signer (Bitcoin, EVM, Solana)",
+  "scripts": {
+    "derive": "node scripts/derive_addresses.js"
+  },
+  "dependencies": {
+    "bitcoinjs-lib": "^6.1.6",
+    "bs58": "^6.0.0",
+    "chainsig.js": "^1.1.16",
+    "elliptic": "^6.6.1",
+    "ethers": "^6.13.4",
+    "near-api-js": "^4.0.3",
+    "tiny-secp256k1": "^2.2.3"
+  }
+}
