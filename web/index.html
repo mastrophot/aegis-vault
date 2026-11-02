@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="uk" class="dark">
+<html lang="en" class="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>LastKey | Некостодіальний мультичейн-сейф мерця на NEAR MPC</title>
+  <title>LastKey | Non-Custodial Multichain Dead-Man's Switch & Panic Button</title>
   
   <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -56,22 +56,20 @@
       background-attachment: fixed;
     }
     
-    /* Smooth Scrollbar */
     ::-webkit-scrollbar { width: 6px; }
     ::-webkit-scrollbar-track { background: #070A11; }
     ::-webkit-scrollbar-thumb { background: #1B2438; border-radius: 4px; }
     ::-webkit-scrollbar-thumb:hover { background: #2C3A5A; }
 
-    /* Custom Slider */
     .slider-track {
-      background: linear-gradient(90deg, rgba(239, 68, 68, 0.15) 0%, rgba(239, 68, 68, 0.4) 100%);
+      background: linear-gradient(90deg, rgba(239, 68, 68, 0.15) 0%, rgba(239, 68, 68, 0.45) 100%);
     }
   </style>
 </head>
 <body class="text-slate-100 min-h-screen flex flex-col justify-between selection:bg-nearPrimary/20 selection:text-nearPrimary">
 
   <!-- Header -->
-  <header class="border-b border-borderSubtle bg-spaceBg/80 backdrop-blur-md sticky top-0 z-40">
+  <header class="border-b border-borderSubtle bg-spaceBg/85 backdrop-blur-md sticky top-0 z-40">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
       
       <!-- Brand & Badges -->
@@ -95,7 +93,7 @@
             </span>
           </div>
           <p class="text-xs text-slate-400 font-medium hidden sm:block">
-            Автономний мультичейн-сейф мерця & Panic Button
+            Autonomous Multichain Dead-Man's Switch & Panic Evacuation
           </p>
         </div>
       </div>
@@ -111,7 +109,7 @@
         <!-- Emergency Header Trigger -->
         <button onclick="scrollToPanic()" class="px-4 py-2 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 hover:bg-red-500 hover:text-white font-semibold text-xs tracking-wide transition-all shadow-sm flex items-center gap-2 active:scale-95">
           <span class="w-2 h-2 rounded-full bg-red-500 animate-ping"></span>
-          ПАНІКА
+          PANIC BUTTON
         </button>
       </div>
 
@@ -133,19 +131,19 @@
           <div class="flex items-center gap-2">
             <span id="statePill" class="px-3.5 py-1 rounded-full text-xs font-bold tracking-wide uppercase bg-nearPrimary/10 text-nearPrimary border border-nearPrimary/30 flex items-center gap-1.5 shadow-glow-emerald">
               <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path></svg>
-              СХОВИЩЕ АКТИВНЕ ТА ЗАХИЩЕНЕ
+              VAULT ACTIVE & SECURED
             </span>
-            <span class="text-xs text-slate-400 font-mono">Цикл: 90 днів</span>
+            <span class="text-xs text-slate-400 font-mono">Heartbeat: 90 Days</span>
           </div>
 
           <h2 class="text-2xl sm:text-3xl font-extrabold tracking-tight text-white leading-tight">
-            До активації передачі спадку:
+            Time until inheritance release window:
           </h2>
 
           <!-- Live Countdown -->
           <div class="flex items-baseline gap-2 font-mono">
             <div id="countdownBox" class="text-3xl sm:text-5xl font-black text-white tracking-wider">
-              89<span class="text-slate-500 text-2xl font-normal">д</span> 23<span class="text-slate-500 text-2xl font-normal">г</span> 59<span class="text-slate-500 text-2xl font-normal">х</span> 35<span class="text-slate-500 text-2xl font-normal">с</span>
+              89<span class="text-slate-500 text-2xl font-normal">d</span> 23<span class="text-slate-500 text-2xl font-normal">h</span> 59<span class="text-slate-500 text-2xl font-normal">m</span> 35<span class="text-slate-500 text-2xl font-normal">s</span>
             </div>
           </div>
 
@@ -155,35 +153,37 @@
               <div id="timerBar" class="bg-gradient-to-r from-emerald-500 to-nearPrimary h-full rounded-full transition-all duration-1000 shadow-glow-emerald" style="width: 98%;"></div>
             </div>
             <div class="flex justify-between text-xs text-slate-400 font-mono">
-              <span>Останній ончейн-пінг: <b class="text-slate-200">сьогодні</b></span>
-              <span>Челендж-вікно: <b class="text-slate-200">7 днів</b></span>
+              <span>Last verified heartbeat: <b class="text-slate-200">Today (On-chain)</b></span>
+              <span>Challenge grace window: <b class="text-slate-200">7 Days</b></span>
             </div>
           </div>
 
           <!-- Security Invariant Bullet -->
           <p class="text-xs text-slate-400 leading-relaxed pt-2 flex items-center gap-2">
             <svg class="w-4 h-4 text-nearPrimary flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
-            Ніхто (включно з розробниками) не може вивести кошти. Підпис генерується лише за умовою спливу часу.
+            Zero Custody: Private keys do not exist in single storage. Signatures require threshold consensus on NEAR protocol.
           </p>
         </div>
 
         <!-- Right: Primary Action (I'm Alive) -->
         <div class="lg:col-span-5 flex flex-col gap-3 justify-center bg-spaceBg/60 border border-borderSubtle rounded-2xl p-6">
           <div class="text-center sm:text-left">
-            <h3 class="font-bold text-base text-white">Підтвердження присутності</h3>
+            <h3 class="font-bold text-base text-white">Heartbeat Check-In</h3>
             <p class="text-xs text-slate-400 mt-1">
-              Натисніть кнопку, щоб скинути таймер знову на 90 днів. Це підтверджує, що ви контролюєте свої ключі.
+              Click the button to reset your vault timer back to 90 days. Verifies that you are alive and in control of your keys.
             </p>
           </div>
 
           <button id="pingMainBtn" class="w-full mt-2 bg-gradient-to-r from-emerald-500 via-nearPrimary to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-spaceBg font-extrabold py-4 px-6 rounded-xl transition duration-200 shadow-glow-emerald flex items-center justify-center gap-2.5 active:scale-98">
             <svg class="w-5 h-5 animate-pulse text-spaceBg" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clip-rule="evenodd"></path></svg>
-            <span>Я ЖИВИЙ (Скинути таймер)</span>
+            <span>I AM ALIVE (Reset Timer)</span>
           </button>
 
-          <div class="flex items-center justify-between text-[11px] text-slate-500 font-mono px-1">
-            <span>Газ: ~0.0001 NEAR</span>
-            <span>Миттєве підтвердження</span>
+          <div class="flex items-center justify-between text-[11px] text-slate-400 font-mono px-1">
+            <span class="text-nearPrimary font-semibold flex items-center gap-1">
+              <span class="w-1.5 h-1.5 rounded-full bg-nearPrimary"></span> Gas: 0 NEAR (Sponsored)
+            </span>
+            <span>100% Free Service</span>
           </div>
         </div>
 
@@ -193,16 +193,16 @@
     <!-- Navigation Tabs -->
     <div class="flex border-b border-borderSubtle gap-2 sm:gap-6 overflow-x-auto pb-px">
       <button onclick="switchTab('vault')" id="tab-vault" class="tab-btn px-4 py-3 text-sm font-bold text-nearPrimary border-b-2 border-nearPrimary flex items-center gap-2 transition">
-        <span>🔐</span> Активи та адреси сховища
+        <span>🔐</span> Multichain Vault Assets
       </button>
       <button onclick="switchTab('rescue')" id="tab-rescue" class="tab-btn px-4 py-3 text-sm font-semibold text-slate-400 hover:text-white border-b-2 border-transparent flex items-center gap-2 transition">
-        <span>🛡️</span> Політика евакуації & Ledger
+        <span>🛡️</span> Rescue Policy & Ledger
       </button>
       <button onclick="switchTab('alerts')" id="tab-alerts" class="tab-btn px-4 py-3 text-sm font-semibold text-slate-400 hover:text-white border-b-2 border-transparent flex items-center gap-2 transition">
-        <span>🤖</span> Сповіщення в Telegram
+        <span>🤖</span> Telegram Bot Pairing
       </button>
       <button onclick="switchTab('audit')" id="tab-audit" class="tab-btn px-4 py-3 text-sm font-semibold text-slate-400 hover:text-white border-b-2 border-transparent flex items-center gap-2 transition">
-        <span>📜</span> Журнал подій ончейн
+        <span>📜</span> On-Chain Audit Feed
       </button>
     </div>
 
@@ -211,9 +211,9 @@
       
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h3 class="text-lg font-bold text-white">Мультичейн-адреси вашого сховища</h3>
+          <h3 class="text-lg font-bold text-white">Your Multichain Vault Addresses</h3>
           <p class="text-xs text-slate-400 mt-0.5">
-            Кошти надсилаються на ці адреси. Приватні ключі для них відсутні — підписання доступне тільки через консенсус валідаторів NEAR.
+            Send deposits to these addresses. Private keys do not exist in storage — signing is enforced strictly via NEAR MPC consensus.
           </p>
         </div>
         <span class="text-xs font-mono bg-panelBg border border-borderSubtle text-slate-400 px-3 py-1.5 rounded-lg w-fit">
@@ -242,7 +242,7 @@
 
             <!-- Address Box -->
             <div class="space-y-1.5">
-              <div class="text-[11px] text-slate-400 font-semibold uppercase tracking-wider">Адреса сховища:</div>
+              <div class="text-[11px] text-slate-400 font-semibold uppercase tracking-wider">Vault Address:</div>
               <div class="p-3 rounded-xl bg-spaceBg border border-borderSubtle font-mono text-xs text-amber-200/90 break-all select-all flex items-center justify-between gap-2">
                 <span id="btcAddress">tb1qug7ge5vzhslcywjqs62k5392uy7ta5klvd2f7c</span>
               </div>
@@ -252,10 +252,10 @@
           <!-- Actions -->
           <div class="grid grid-cols-2 gap-2 pt-5 border-t border-borderSubtle mt-5">
             <button onclick="copyAddr('btcAddress')" class="w-full py-2 px-3 rounded-lg bg-panelHover hover:bg-slate-800 text-slate-200 text-xs font-semibold transition border border-borderSubtle flex items-center justify-center gap-1.5">
-              <span>📋</span> Копіювати
+              <span>📋</span> Copy
             </button>
             <button onclick="openQr('Bitcoin', 'tb1qug7ge5vzhslcywjqs62k5392uy7ta5klvd2f7c')" class="w-full py-2 px-3 rounded-lg bg-panelHover hover:bg-slate-800 text-slate-200 text-xs font-semibold transition border border-borderSubtle flex items-center justify-center gap-1.5">
-              <span>📱</span> QR-код
+              <span>📱</span> QR Code
             </button>
           </div>
         </div>
@@ -278,7 +278,7 @@
 
             <!-- Address Box -->
             <div class="space-y-1.5">
-              <div class="text-[11px] text-slate-400 font-semibold uppercase tracking-wider">Адреса сховища:</div>
+              <div class="text-[11px] text-slate-400 font-semibold uppercase tracking-wider">Vault Address:</div>
               <div class="p-3 rounded-xl bg-spaceBg border border-borderSubtle font-mono text-xs text-blue-200/90 break-all select-all flex items-center justify-between gap-2">
                 <span id="evmAddress">0xbaF34172995c3a00bbA2Df888257c8d74E11E96e</span>
               </div>
@@ -288,10 +288,10 @@
           <!-- Actions -->
           <div class="grid grid-cols-2 gap-2 pt-5 border-t border-borderSubtle mt-5">
             <button onclick="copyAddr('evmAddress')" class="w-full py-2 px-3 rounded-lg bg-panelHover hover:bg-slate-800 text-slate-200 text-xs font-semibold transition border border-borderSubtle flex items-center justify-center gap-1.5">
-              <span>📋</span> Копіювати
+              <span>📋</span> Copy
             </button>
             <button onclick="openQr('Ethereum / EVM', '0xbaF34172995c3a00bbA2Df888257c8d74E11E96e')" class="w-full py-2 px-3 rounded-lg bg-panelHover hover:bg-slate-800 text-slate-200 text-xs font-semibold transition border border-borderSubtle flex items-center justify-center gap-1.5">
-              <span>📱</span> QR-код
+              <span>📱</span> QR Code
             </button>
           </div>
         </div>
@@ -314,7 +314,7 @@
 
             <!-- Address Box -->
             <div class="space-y-1.5">
-              <div class="text-[11px] text-slate-400 font-semibold uppercase tracking-wider">Адреса сховища:</div>
+              <div class="text-[11px] text-slate-400 font-semibold uppercase tracking-wider">Vault Address:</div>
               <div class="p-3 rounded-xl bg-spaceBg border border-borderSubtle font-mono text-xs text-purple-200/90 break-all select-all flex items-center justify-between gap-2">
                 <span id="solAddress">b3VPfLqD97c8o5K6hYgQB4kit7Z3tnWBnZK8wWU66G1</span>
               </div>
@@ -324,10 +324,10 @@
           <!-- Actions -->
           <div class="grid grid-cols-2 gap-2 pt-5 border-t border-borderSubtle mt-5">
             <button onclick="copyAddr('solAddress')" class="w-full py-2 px-3 rounded-lg bg-panelHover hover:bg-slate-800 text-slate-200 text-xs font-semibold transition border border-borderSubtle flex items-center justify-center gap-1.5">
-              <span>📋</span> Копіювати
+              <span>📋</span> Copy
             </button>
             <button onclick="openQr('Solana', 'b3VPfLqD97c8o5K6hYgQB4kit7Z3tnWBnZK8wWU66G1')" class="w-full py-2 px-3 rounded-lg bg-panelHover hover:bg-slate-800 text-slate-200 text-xs font-semibold transition border border-borderSubtle flex items-center justify-center gap-1.5">
-              <span>📱</span> QR-код
+              <span>📱</span> QR Code
             </button>
           </div>
         </div>
@@ -338,13 +338,13 @@
       <div id="panicSection" class="mt-8 rounded-3xl bg-gradient-to-r from-red-950/30 via-panelBg to-red-950/20 border-2 border-red-900/50 p-6 sm:p-8 shadow-glow-red">
         <div class="max-w-3xl mx-auto space-y-4 text-center">
           <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-red-500/10 border border-red-500/30 text-red-400 text-xs font-bold uppercase tracking-wider">
-            <span>🚨</span> Екстрена евакуація коштів
+            <span>🚨</span> Emergency Asset Rescue
           </div>
           <h3 class="text-xl sm:text-2xl font-extrabold text-white">
-            Кнопка паніки (Panic Button)
+            Panic Button (Instant Evacuation)
           </h3>
           <p class="text-xs text-slate-300 leading-relaxed max-w-xl mx-auto">
-            Якщо ваш ноутбук викрадено або вас примушують віддати активи — потягніть слайдер. Усі монети з BTC, EVM та Solana буде миттєво підписано через MPC та евакуйовано на заздалегідь підготовлений холодний апаратник.
+            Under physical extortion or device compromise? Swipe the slider below. All balances across BTC, EVM, and Solana are instantly signed via NEAR MPC and evacuated directly to your preconfigured cold hardware wallet.
           </p>
 
           <!-- Interactive Swipe to Panic Control -->
@@ -352,15 +352,15 @@
             <div id="swipeContainer" class="relative w-full h-16 rounded-2xl slider-track border border-red-600/40 p-1 flex items-center select-none overflow-hidden shadow-inner">
               <div id="swipeFill" class="absolute left-0 top-0 bottom-0 bg-red-600/40 w-0 transition-all duration-75"></div>
               <div class="absolute inset-0 flex items-center justify-center pointer-events-none text-xs font-bold text-red-200/90 tracking-wider">
-                ПОТЯГНІТЬ ДЛЯ ПАНІКИ ➔
+                SWIPE FOR EMERGENCY PANIC ➔
               </div>
               <div id="swipeKnob" class="relative z-10 w-14 h-14 rounded-xl bg-red-600 hover:bg-red-500 text-white font-black flex items-center justify-center cursor-grab active:cursor-grabbing shadow-lg shadow-red-950 transition-colors">
                 🚨
               </div>
             </div>
             <div class="flex justify-between items-center text-[11px] text-slate-400 mt-2 px-1">
-              <span>Захист від випадкового кліку</span>
-              <span>5 секунд на скасування після запуску</span>
+              <span>Accidental trigger protection</span>
+              <span>5-second cancel window before broadcast</span>
             </div>
           </div>
         </div>
@@ -372,9 +372,9 @@
     <section id="panel-rescue" class="tab-panel space-y-6 hidden">
       <div class="max-w-3xl mx-auto space-y-6">
         <div class="border-b border-borderSubtle pb-4">
-          <h3 class="text-lg font-bold text-white">Адреси евакуації та спадкоємці</h3>
+          <h3 class="text-lg font-bold text-white">Evacuation Destinations & Heirs</h3>
           <p class="text-xs text-slate-400 mt-1">
-            Куди направляти кошти під час Паніки (на ваш холодний Ledger) або після закінчення челендж-періоду (спадкоємцям).
+            Configure where assets are routed during Panic (your cold Ledger) or after inheritance finalization (heirs).
           </p>
         </div>
 
@@ -382,9 +382,9 @@
         <div class="rounded-2xl bg-panelBg border border-borderSubtle p-6 space-y-5">
           <div class="flex items-center justify-between border-b border-borderSubtle pb-3">
             <h4 class="font-bold text-sm text-emerald-400 flex items-center gap-2">
-              <span>🔒</span> Резервні адреси Паніки (Ваш холодний Ledger)
+              <span>🔒</span> Panic Destination Addresses (Your Cold Ledger)
             </h4>
-            <span class="text-xs font-mono bg-emerald-500/10 text-nearPrimary border border-nearPrimary/20 px-2 py-0.5 rounded">Безпечно</span>
+            <span class="text-xs font-mono bg-emerald-500/10 text-nearPrimary border border-nearPrimary/20 px-2 py-0.5 rounded">Enforced by Contract</span>
           </div>
 
           <div class="space-y-3 font-mono text-xs">
@@ -393,11 +393,11 @@
               <input type="text" value="tb1q99999999999999999999999999999999999999" class="w-full bg-spaceBg border border-borderSubtle rounded-xl p-3 text-slate-200 focus:outline-none focus:border-nearPrimary" readonly>
             </div>
             <div>
-              <label class="block text-slate-400 mb-1 text-[11px]">EVM Backup Address (Ledger / Safe):</label>
+              <label class="block text-slate-400 mb-1 text-[11px]">EVM Backup Address (Ledger / Safe Multisig):</label>
               <input type="text" value="0x1111111111111111111111111111111111111111" class="w-full bg-spaceBg border border-borderSubtle rounded-xl p-3 text-slate-200 focus:outline-none focus:border-nearPrimary" readonly>
             </div>
             <div>
-              <label class="block text-slate-400 mb-1 text-[11px]">Solana Backup Address (Paper/Cold):</label>
+              <label class="block text-slate-400 mb-1 text-[11px]">Solana Backup Address (Cold Hardware):</label>
               <input type="text" value="ColdLedgerSolanaAddress11111111111111111111" class="w-full bg-spaceBg border border-borderSubtle rounded-xl p-3 text-slate-200 focus:outline-none focus:border-nearPrimary" readonly>
             </div>
           </div>
@@ -407,21 +407,21 @@
         <div class="rounded-2xl bg-panelBg border border-borderSubtle p-6 space-y-3">
           <div class="flex items-center justify-between">
             <h4 class="font-bold text-sm text-white flex items-center gap-2">
-              <span>⏳</span> 72-годинний Timelock захист
+              <span>⏳</span> 72-Hour Timelock Protection
             </h4>
             <span class="text-xs font-mono text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2.5 py-0.5 rounded-full">
-              Захист від зламу акаунта
+              Anti-Theft Defense
             </span>
           </div>
           <p class="text-xs text-slate-400 leading-relaxed">
-            Якщо зловмисник зламає ваш NEAR-акаунт і спробує підмінити адреси евакуації на свої, смартконтракт блокує зміни рівно на <b>72 години</b>. У цей час вам надходить сповіщення, і довірений Вартовий (Guardian) накладає вето в 1 клік.
+            If an attacker compromises your NEAR account and attempts to change backup addresses to their own, the smart contract locks changes for <b>72 hours</b>. You receive emergency alerts, and your designated Guardian can veto the modification with a single click.
           </p>
           <div class="pt-2 flex gap-3">
-            <button onclick="showToast('Заявку на зміну адрес відправлено в 72h Timelock')" class="bg-panelHover hover:bg-slate-800 text-slate-200 text-xs font-semibold px-4 py-2.5 rounded-xl border border-borderSubtle transition">
-              Змінити адреси (почати 72г таймлок)
+            <button onclick="showToast('Address update proposed: 72h timelock initiated')" class="bg-panelHover hover:bg-slate-800 text-slate-200 text-xs font-semibold px-4 py-2.5 rounded-xl border border-borderSubtle transition">
+              Propose Address Update (72h Timelock)
             </button>
-            <button onclick="showToast('🛡️ Вето успішно активовано Вартовим. Зміни скасовано.')" class="bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-semibold px-4 py-2.5 rounded-xl border border-red-500/30 transition">
-              Накласти вето Вартового
+            <button onclick="showToast('🛡️ Guardian Veto applied! Pending address change revoked.')" class="bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-semibold px-4 py-2.5 rounded-xl border border-red-500/30 transition">
+              Apply Guardian Veto
             </button>
           </div>
         </div>
@@ -429,13 +429,13 @@
       </div>
     </section>
 
-    <!-- TAB 3: Telegram & Alerts -->
+    <!-- TAB 3: Telegram Bot Pairing (FIXED UX) -->
     <section id="panel-alerts" class="tab-panel space-y-6 hidden">
       <div class="max-w-2xl mx-auto space-y-6">
         <div class="border-b border-borderSubtle pb-4">
-          <h3 class="text-lg font-bold text-white">Сповіщення перед спрацюванням</h3>
+          <h3 class="text-lg font-bold text-white">Cryptographic Telegram Bot Pairing</h3>
           <p class="text-xs text-slate-400 mt-1">
-            Бот нагадає підтвердити присутність заздалегідь, щоб ви не втратили доступ через неуважність.
+            Receive automated reminders before your heartbeat expires. Because Telegram strictly prohibits bots from unsolicited messaging, you pair your account via a secure one-time verification handshake.
           </p>
         </div>
 
@@ -445,35 +445,53 @@
               ✈️
             </div>
             <div>
-              <h4 class="font-bold text-white text-sm">Telegram Bot (@LastKeyAlertBot)</h4>
-              <p class="text-xs text-slate-400 mt-0.5">Офіційний бот для нагадування про ончейн-пінг</p>
+              <h4 class="font-bold text-white text-sm">LastKey Notification Sentinel</h4>
+              <p class="text-xs text-slate-400 mt-0.5">Automated heartbeat warnings & instant panic alerts</p>
             </div>
           </div>
 
+          <!-- Alert Schedule -->
           <div class="space-y-3 text-xs">
-            <div class="flex items-center justify-between p-3 rounded-xl bg-spaceBg border border-borderSubtle">
-              <span class="text-slate-300">Нагадування за 14 днів</span>
-              <span class="text-nearPrimary font-mono font-bold">ВКЛЮЧЕНО</span>
+            <div class="flex items-center justify-between p-3.5 rounded-xl bg-spaceBg border border-borderSubtle">
+              <span class="text-slate-300">14-Day Advance Warning</span>
+              <span class="text-nearPrimary font-mono font-bold">ENABLED</span>
             </div>
-            <div class="flex items-center justify-between p-3 rounded-xl bg-spaceBg border border-borderSubtle">
-              <span class="text-slate-300">Екстрене нагадування за 3 дні</span>
-              <span class="text-nearPrimary font-mono font-bold">ВКЛЮЧЕНО</span>
+            <div class="flex items-center justify-between p-3.5 rounded-xl bg-spaceBg border border-borderSubtle">
+              <span class="text-slate-300">3-Day Urgent Heartbeat Alert</span>
+              <span class="text-nearPrimary font-mono font-bold">ENABLED</span>
             </div>
-            <div class="flex items-center justify-between p-3 rounded-xl bg-spaceBg border border-borderSubtle">
-              <span class="text-slate-300">Алерт при відкритті вікна спадку</span>
-              <span class="text-red-400 font-mono font-bold">МИТТЄВО</span>
+            <div class="flex items-center justify-between p-3.5 rounded-xl bg-spaceBg border border-borderSubtle">
+              <span class="text-slate-300">Instant Panic / Inheritance Challenge Alert</span>
+              <span class="text-red-400 font-mono font-bold">INSTANT</span>
             </div>
           </div>
 
-          <div class="space-y-2 pt-2">
-            <label class="block text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-              Ваш Telegram Chat ID або Username:
-            </label>
-            <div class="flex gap-2">
-              <input type="text" id="tgInput" placeholder="@username або 12345678" value="@mastrophot" class="flex-1 bg-spaceBg border border-borderSubtle rounded-xl p-3 text-xs text-slate-200 focus:outline-none focus:border-nearPrimary font-mono">
-              <button onclick="saveTg()" class="bg-sky-500 hover:bg-sky-400 text-spaceBg font-bold px-5 py-3 rounded-xl text-xs transition active:scale-95">
-                Підключити
+          <!-- Pairing Handshake Box -->
+          <div class="space-y-4 pt-2 border-t border-borderSubtle">
+            <div>
+              <span class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                Pairing Handshake (Zero-Spam Verification):
+              </span>
+              <p class="text-xs text-slate-400 mt-1">
+                Click below to start a direct session with the bot or copy your unique vault linking token.
+              </p>
+            </div>
+
+            <!-- Deep Link Button -->
+            <div class="flex flex-col sm:flex-row gap-3">
+              <button onclick="handleTelegramConnect()" class="flex-1 bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white font-bold py-3.5 px-5 rounded-xl text-xs transition flex items-center justify-center gap-2 shadow-lg shadow-sky-950/40 active:scale-95">
+                <span>✈️</span> <span>Pair With Telegram Bot</span>
               </button>
+              <button onclick="copyPairingToken()" class="py-3.5 px-4 rounded-xl bg-panelHover hover:bg-slate-800 text-slate-300 text-xs font-mono font-semibold border border-borderSubtle transition">
+                Token: <span id="pairingTokenCode" class="text-nearPrimary">LK-7489</span> 📋
+              </button>
+            </div>
+
+            <div id="tgStatusBadge" class="p-3 rounded-xl bg-spaceBg border border-borderSubtle flex items-center justify-between text-xs font-mono text-slate-400">
+              <span>Status:</span>
+              <span class="text-amber-400 flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span> Ready for Pairing
+              </span>
             </div>
           </div>
         </div>
@@ -484,10 +502,10 @@
     <section id="panel-audit" class="tab-panel space-y-6 hidden">
       <div class="border-b border-borderSubtle pb-4 flex justify-between items-center">
         <div>
-          <h3 class="text-lg font-bold text-white">Журнал ончейн-подій</h3>
-          <p class="text-xs text-slate-400 mt-0.5">Незмінний аудит дій сховища в мережі NEAR Testnet</p>
+          <h3 class="text-lg font-bold text-white">On-Chain Audit Stream</h3>
+          <p class="text-xs text-slate-400 mt-0.5">Immutable record of vault state transitions on NEAR Testnet</p>
         </div>
-        <button onclick="clearLogs()" class="text-xs text-slate-500 hover:text-slate-300 font-mono">Очистити локальний кеш</button>
+        <button onclick="clearLogs()" class="text-xs text-slate-500 hover:text-slate-300 font-mono">Clear Local Cache</button>
       </div>
 
       <div id="auditLogList" class="space-y-2.5 font-mono text-xs max-h-96 overflow-y-auto pr-1">
@@ -495,17 +513,17 @@
         <div class="p-3.5 rounded-xl bg-panelBg border border-borderSubtle flex items-center justify-between">
           <div class="flex items-center gap-3">
             <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
-            <span class="text-slate-200">[INIT] Сховище успішно створено та ініціалізовано на контракті lastkey-vault-2151.testnet</span>
+            <span class="text-slate-200">[INIT] Vault smart contract deployed on lastkey-vault-2151.testnet</span>
           </div>
-          <span class="text-slate-500 text-[10px]">Блок #1893910</span>
+          <span class="text-slate-500 text-[10px]">Block #1893910</span>
         </div>
         <!-- Log Item -->
         <div class="p-3.5 rounded-xl bg-panelBg border border-borderSubtle flex items-center justify-between">
           <div class="flex items-center gap-3">
             <span class="w-2 h-2 rounded-full bg-nearPrimary"></span>
-            <span class="text-slate-200">[POLICY] Резервні адреси для Bitcoin, EVM та Solana зафіксовані</span>
+            <span class="text-slate-200">[POLICY] Multi-chain rescue destinations confirmed for BTC, EVM, and Solana</span>
           </div>
-          <span class="text-slate-500 text-[10px]">Блок #1893911</span>
+          <span class="text-slate-500 text-[10px]">Block #1893911</span>
         </div>
       </div>
     </section>
@@ -519,9 +537,9 @@
         🚨
       </div>
       <div class="space-y-2">
-        <h3 class="text-xl font-extrabold text-white">ПАНІКА АКТИВОВАНА!</h3>
+        <h3 class="text-xl font-extrabold text-white">PANIC SEQUENCE TRIGGERED</h3>
         <p class="text-xs text-slate-300">
-          Запит на евакуацію всіх монет на холодний Ledger буде надіслано через:
+          Threshold MPC signature request to evacuate all assets to your cold hardware Ledger broadcasts in:
         </p>
       </div>
 
@@ -531,9 +549,9 @@
 
       <div class="space-y-3">
         <button id="abortBtn" class="w-full bg-white hover:bg-slate-200 text-black font-extrabold py-3.5 px-6 rounded-xl text-xs transition tracking-wider shadow-lg active:scale-95">
-          🛑 СКАСУВАТИ ЕВАКУАЦІЮ (Я ВИПАДКОВО)
+          🛑 ABORT EVACUATION (ACCIDENTAL TRIGGER)
         </button>
-        <p class="text-[11px] text-slate-500">Якщо не скасувати, кошти миттєво підуть на безпечну адресу.</p>
+        <p class="text-[11px] text-slate-500">If uncancelled, all funds are immediately secured to cold storage.</p>
       </div>
     </div>
   </div>
@@ -542,7 +560,7 @@
   <div id="qrModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
     <div class="bg-panelBg border border-borderSubtle rounded-3xl max-w-sm w-full p-6 text-center space-y-4 shadow-2xl">
       <div class="flex justify-between items-center">
-        <h4 id="qrTitle" class="font-bold text-sm text-white">QR Код</h4>
+        <h4 id="qrTitle" class="font-bold text-sm text-white">QR Code</h4>
         <button onclick="closeQr()" class="text-slate-400 hover:text-white text-lg">✕</button>
       </div>
       <div class="bg-white p-4 rounded-2xl inline-block shadow-inner">
@@ -550,21 +568,21 @@
       </div>
       <div id="qrAddressText" class="text-[11px] font-mono text-slate-400 break-all bg-spaceBg p-3 rounded-xl border border-borderSubtle"></div>
       <button onclick="copyCurrentQr()" class="w-full bg-nearPrimary hover:bg-emerald-400 text-spaceBg font-bold py-2.5 rounded-xl text-xs transition">
-        Копіювати адресу
+        Copy Address
       </button>
     </div>
   </div>
 
   <!-- Toast Notification -->
   <div id="toast" class="fixed bottom-6 right-6 bg-nearPrimary text-spaceBg font-bold px-5 py-3 rounded-2xl shadow-glow-emerald text-xs font-mono transition-all duration-300 translate-y-24 opacity-0 z-50 flex items-center gap-2">
-    <span>✅</span> <span id="toastMsg">Сповіщення</span>
+    <span>✅</span> <span id="toastMsg">Notification</span>
   </div>
 
   <!-- Footer -->
   <footer class="border-t border-borderSubtle py-6 text-center text-xs text-slate-500 font-mono">
     <div class="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-3">
       <span>LastKey © 2026 • NEAR Hackathon 2026</span>
-      <span>Native NEAR Chain Signatures (Zero-Custody MPC)</span>
+      <span>100% Free & Open Source • Zero-Custody Chain Signatures</span>
     </div>
   </footer>
 
@@ -575,20 +593,22 @@
     let isEvacuated = false;
     let abortTimer = null;
     let currentQrAddr = '';
+    const pairingToken = 'LK-' + Math.floor(1000 + Math.random() * 9000);
 
     // Elements
     const countdownBox = document.getElementById('countdownBox');
     const timerBar = document.getElementById('timerBar');
     const toast = document.getElementById('toast');
     const toastMsg = document.getElementById('toastMsg');
+    document.getElementById('pairingTokenCode').innerText = pairingToken;
 
     function formatTime(sec) {
-      if (sec <= 0) return '00д 00г 00х 00с';
+      if (sec <= 0) return '00d 00h 00m 00s';
       const d = Math.floor(sec / (24 * 3600));
       const h = Math.floor((sec % (24 * 3600)) / 3600);
       const m = Math.floor((sec % 3600) / 60);
       const s = sec % 60;
-      return `${d}<span class="text-slate-500 text-2xl font-normal">д</span> ${String(h).padStart(2,'0')}<span class="text-slate-500 text-2xl font-normal">г</span> ${String(m).padStart(2,'0')}<span class="text-slate-500 text-2xl font-normal">х</span> ${String(s).padStart(2,'0')}<span class="text-slate-500 text-2xl font-normal">с</span>`;
+      return `${d}<span class="text-slate-500 text-2xl font-normal">d</span> ${String(h).padStart(2,'0')}<span class="text-slate-500 text-2xl font-normal">h</span> ${String(m).padStart(2,'0')}<span class="text-slate-500 text-2xl font-normal">m</span> ${String(s).padStart(2,'0')}<span class="text-slate-500 text-2xl font-normal">s</span>`;
     }
 
     // Interval Timer
@@ -617,7 +637,7 @@
           <span class="w-2 h-2 rounded-full ${color.includes('red') ? 'bg-red-500' : 'bg-nearPrimary'}"></span>
           <span class="${color}">${text}</span>
         </div>
-        <span class="text-slate-500 text-[10px]">щойно</span>
+        <span class="text-slate-500 text-[10px]">just now</span>
       `;
       container.prepend(row);
     }
@@ -625,19 +645,19 @@
     function copyAddr(elemId) {
       const text = document.getElementById(elemId).innerText;
       navigator.clipboard.writeText(text);
-      showToast('Адресу скопійовано в буфер обміну!');
+      showToast('Address copied to clipboard!');
     }
 
     // Ping
     document.getElementById('pingMainBtn').addEventListener('click', () => {
       if (isEvacuated) {
-        showToast('Помилка: сховище вже евакуйовано!', true);
+        showToast('Error: Vault already evacuated!', true);
         return;
       }
       totalSeconds = 90 * 24 * 3600;
       countdownBox.innerHTML = formatTime(totalSeconds);
-      showToast('💓 Серцебиття підтверджено! Таймер скинуто на 90 днів.');
-      addLog('[PING] Власник викликав ping(). Таймер перезапущено на 90 днів.', 'text-nearPrimary');
+      showToast('💓 Heartbeat confirmed! Timer reset to 90 days. Gas: 0 NEAR.');
+      addLog('[HEARTBEAT] Owner ping received. Timer reset to 90 days.', 'text-nearPrimary');
     });
 
     // Tab Switching
@@ -661,7 +681,7 @@
     // QR Code
     function openQr(title, address) {
       currentQrAddr = address;
-      document.getElementById('qrTitle').innerText = `${title} QR-код`;
+      document.getElementById('qrTitle').innerText = `${title} QR Code`;
       document.getElementById('qrAddressText').innerText = address;
       const qrEl = document.getElementById('qrcode');
       qrEl.innerHTML = '';
@@ -681,7 +701,7 @@
 
     function copyCurrentQr() {
       navigator.clipboard.writeText(currentQrAddr);
-      showToast('Адресу скопійовано!');
+      showToast('Address copied!');
       closeQr();
     }
 
@@ -763,34 +783,45 @@
     document.getElementById('abortBtn').addEventListener('click', () => {
       clearInterval(abortTimer);
       document.getElementById('abortModal').classList.add('hidden');
-      showToast('Паніку скасовано вчасно. Сховище у безпеці.');
-      addLog('[ABORT] Користувач скасував паніку під час 5-секундного вікна.', 'text-slate-300');
+      showToast('Panic evacuation cancelled in time. Vault remains secure.');
+      addLog('[ABORT] Emergency panic aborted by user during 5s challenge window.', 'text-slate-300');
     });
 
     function executePanic() {
       isEvacuated = true;
       const pill = document.getElementById('statePill');
-      pill.innerText = '🚨 СХОВИЩЕ ЕВАКУЙОВАНО (PANIC ACTIVE)';
+      pill.innerText = '🚨 VAULT EVACUATED (PANIC ACTIVE)';
       pill.className = 'px-3.5 py-1 rounded-full text-xs font-bold tracking-wide uppercase bg-red-500/20 text-red-400 border border-red-500/40 flex items-center gap-1.5 shadow-glow-red';
 
-      countdownBox.innerHTML = '00<span class="text-slate-500 text-2xl font-normal">д</span> 00<span class="text-slate-500 text-2xl font-normal">г</span> 00<span class="text-slate-500 text-2xl font-normal">х</span> 00<span class="text-slate-500 text-2xl font-normal">с</span>';
+      countdownBox.innerHTML = '00<span class="text-slate-500 text-2xl font-normal">d</span> 00<span class="text-slate-500 text-2xl font-normal">h</span> 00<span class="text-slate-500 text-2xl font-normal">m</span> 00<span class="text-slate-500 text-2xl font-normal">s</span>';
       countdownBox.className = 'text-3xl sm:text-5xl font-black text-red-500 tracking-wider font-mono';
       timerBar.className = 'bg-red-500 h-full rounded-full';
       timerBar.style.width = '100%';
 
-      showToast('🚨 ПАНІКА ВИКОНАНА! Усі активи переведено на Ledger.', true);
-      addLog('[PANIC_TRIGGERED] Стан переведено в Evacuated. Релеєр отримав команду.', 'text-red-400 font-bold');
-      addLog('[SWEEP] Транзакції для BTC, ETH, SOL підписано через v1.signer та відправлено.', 'text-amber-400');
+      showToast('🚨 PANIC DISPATCHED! All funds evacuated to cold storage.', true);
+      addLog('[PANIC_TRIGGERED] Vault shifted to Evacuated state. Relayer notified.', 'text-red-400 font-bold');
+      addLog('[SWEEP] Sweep transactions signed via NEAR MPC v1.signer for BTC, EVM, SOL', 'text-amber-400');
     }
 
-    function saveTg() {
-      const val = document.getElementById('tgInput').value;
-      showToast(`Telegram ${val} підключено! Тестове сповіщення надіслано.`);
-      addLog(`[ALERT_SETUP] Підключено Telegram-сповіщення для ${val}`, 'text-sky-400');
+    function handleTelegramConnect() {
+      showToast(`Pairing link generated! Token: ${pairingToken}`);
+      const badge = document.getElementById('tgStatusBadge');
+      badge.innerHTML = `
+        <span>Status:</span>
+        <span class="text-nearPrimary font-bold flex items-center gap-1.5">
+          <span class="w-2 h-2 rounded-full bg-nearPrimary"></span> Paired (Chat ID Linked)
+        </span>
+      `;
+      addLog(`[ALERT_CONNECTED] Telegram Sentinel paired with token ${pairingToken}`, 'text-sky-400');
+    }
+
+    function copyPairingToken() {
+      navigator.clipboard.writeText(`/pair ${pairingToken}`);
+      showToast(`Token copied: /pair ${pairingToken}`);
     }
 
     function clearLogs() {
-      document.getElementById('auditLogList').innerHTML = '<div class="text-slate-500 text-xs py-4 text-center">Журнал порожній</div>';
+      document.getElementById('auditLogList').innerHTML = '<div class="text-slate-500 text-xs py-4 text-center">Log empty</div>';
     }
   </script>
 </body>
