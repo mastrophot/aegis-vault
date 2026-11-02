@@ -1,5 +1,5 @@
 /**
- * LastKey — Multi-Chain Address Derivation Spike
+ * Aegis — Multi-Chain Address Derivation Engine
  * Verifies deterministic foreign address derivation for Bitcoin, EVM, and Solana
  * via NEAR Chain Signatures MPC (v1.signer-prod.testnet)
  */
@@ -7,7 +7,7 @@
 const { contracts, chainAdapters } = require('chainsig.js');
 const { Connection } = require('@solana/web3.js');
 
-async function deriveAllVaultAddresses(accountId, path = 'lastkey/0', networkId = 'testnet') {
+async function deriveAllVaultAddresses(accountId, path = 'aegis/0', networkId = 'testnet') {
   console.log(`\n🔑 Deriving Vault Addresses via NEAR MPC (${networkId.toUpperCase()})`);
   console.log(`• NEAR Account: ${accountId}`);
   console.log(`• Derivation Path: ${path}\n`);
@@ -49,7 +49,7 @@ async function deriveAllVaultAddresses(accountId, path = 'lastkey/0', networkId 
 
 if (require.main === module) {
   const accountId = process.argv[2] || 'mastrophot.testnet';
-  const path = process.argv[3] || 'lastkey/0';
+  const path = process.argv[3] || 'aegis/0';
   const networkId = process.argv[4] || 'testnet';
   deriveAllVaultAddresses(accountId, path, networkId)
     .then(() => process.exit(0))

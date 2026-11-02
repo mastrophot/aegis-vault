@@ -19,7 +19,7 @@ async function runSweepSimulation() {
 
   const relayer = new LastKeySweepRelayer({ networkId: 'testnet' });
   const ownerAccount = 'mastrophot.testnet';
-  const derivationPath = 'lastkey/0';
+  const derivationPath = 'aegis/0';
 
   // 1. Address Derivation
   console.log('1️⃣  Deriving Vault Addresses from NEAR MPC...');

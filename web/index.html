@@ -204,119 +204,175 @@
     <!-- TAB 1: Multichain Vault Assets -->
     <section id="panel-vault" class="tab-panel space-y-6">
       
+      <!-- Dual Heartbeat Live Banner -->
+      <div class="p-4 rounded-2xl bg-gradient-to-r from-emerald-950/40 via-panelBg to-teal-950/20 border border-nearPrimary/30 flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-nearPrimary/10 text-nearPrimary flex items-center justify-center font-bold text-lg border border-nearPrimary/30 flex-shrink-0">
+            ⚡
+          </div>
+          <div>
+            <div class="text-xs font-bold text-white flex items-center gap-2">
+              <span>Dual Heartbeat System Active</span>
+              <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-nearPrimary border border-nearPrimary/20">Automatic + Manual</span>
+            </div>
+            <p class="text-[11px] text-slate-400 mt-0.5">
+              The 90-day timer automatically resets whenever you perform <b>any on-chain transaction</b> from <span class="text-slate-200 font-mono">mastrophot.testnet</span>, or when you click "I AM ALIVE" manually.
+            </p>
+          </div>
+        </div>
+        <div class="flex items-center gap-2 text-xs font-mono text-nearPrimary bg-spaceBg px-3 py-1.5 rounded-xl border border-borderSubtle whitespace-nowrap">
+          <span class="w-2 h-2 rounded-full bg-nearPrimary animate-pulse"></span>
+          <span>Indexer: Listening</span>
+        </div>
+      </div>
+
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h3 class="text-lg font-bold text-white">Your Dedicated Vault Addresses</h3>
+          <h3 class="text-lg font-bold text-white">Your Dedicated Multichain Vault</h3>
           <p class="text-xs text-slate-400 mt-0.5">
-            Store your long-term reserves here. In an emergency or inheritance event, the smart contract automatically evacuates all coins.
+            Store reserves across all 4 major ecosystems. In an emergency or inheritance event, smart contracts automatically evacuate all funds.
           </p>
         </div>
         <span class="text-xs font-mono bg-panelBg border border-borderSubtle text-slate-400 px-3 py-1.5 rounded-lg w-fit">
-          Key Path: <span class="text-nearPrimary">lastkey/0</span>
+          MPC Path: <span class="text-nearPrimary">aegis/0</span>
         </span>
       </div>
 
-      <!-- Asset Cards Grid -->
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <!-- 4-Chain Asset Cards Grid -->
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
 
-        <!-- Bitcoin Card -->
-        <div class="rounded-2xl bg-panelBg border border-borderSubtle hover:border-btcBrand/40 transition duration-300 p-6 flex flex-col justify-between shadow-xl relative overflow-hidden group">
-          <div class="space-y-4">
+        <!-- 1. NEAR Protocol Card -->
+        <div class="rounded-2xl bg-panelBg border border-borderSubtle hover:border-nearPrimary/40 transition duration-300 p-5 flex flex-col justify-between shadow-xl relative overflow-hidden group">
+          <div class="space-y-3.5">
             <div class="flex items-center justify-between">
-              <div class="flex items-center gap-3">
-                <div class="w-10 h-10 rounded-xl bg-btcBrand/10 text-btcBrand flex items-center justify-center font-black text-xl border border-btcBrand/20">
+              <div class="flex items-center gap-2.5">
+                <div class="w-9 h-9 rounded-xl bg-nearPrimary/10 text-nearPrimary flex items-center justify-center font-black text-lg border border-nearPrimary/25">
+                  Ⓝ
+                </div>
+                <div>
+                  <h4 class="font-bold text-white text-sm">NEAR Protocol</h4>
+                  <span class="text-[10px] text-slate-400 font-mono">Native WASM</span>
+                </div>
+              </div>
+              <span class="text-[10px] font-mono font-semibold px-2 py-0.5 rounded bg-emerald-500/10 text-nearPrimary border border-nearPrimary/20">Testnet</span>
+            </div>
+
+            <div class="space-y-1">
+              <div class="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Vault Contract:</div>
+              <div class="p-2.5 rounded-xl bg-spaceBg border border-borderSubtle font-mono text-[11px] text-emerald-300/90 break-all select-all flex items-center justify-between gap-1">
+                <span id="nearAddress">lastkey-vault-2151.testnet</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-2 pt-4 border-t border-borderSubtle mt-4">
+            <button onclick="copyAddr('nearAddress')" class="w-full py-2 px-2.5 rounded-lg bg-panelHover hover:bg-slate-800 text-slate-200 text-xs font-semibold transition border border-borderSubtle flex items-center justify-center gap-1">
+              <span>📋</span> Copy
+            </button>
+            <button onclick="openQr('NEAR Protocol', 'lastkey-vault-2151.testnet')" class="w-full py-2 px-2.5 rounded-lg bg-panelHover hover:bg-slate-800 text-slate-200 text-xs font-semibold transition border border-borderSubtle flex items-center justify-center gap-1">
+              <span>📱</span> QR
+            </button>
+          </div>
+        </div>
+
+        <!-- 2. Bitcoin Card -->
+        <div class="rounded-2xl bg-panelBg border border-borderSubtle hover:border-btcBrand/40 transition duration-300 p-5 flex flex-col justify-between shadow-xl relative overflow-hidden group">
+          <div class="space-y-3.5">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2.5">
+                <div class="w-9 h-9 rounded-xl bg-btcBrand/10 text-btcBrand flex items-center justify-center font-black text-lg border border-btcBrand/25">
                   ₿
                 </div>
                 <div>
                   <h4 class="font-bold text-white text-sm">Bitcoin Reserve</h4>
-                  <span class="text-[11px] text-slate-400 font-mono">SegWit (P2WPKH)</span>
+                  <span class="text-[10px] text-slate-400 font-mono">SegWit (P2WPKH)</span>
                 </div>
               </div>
-              <span class="text-xs font-mono font-semibold px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">Testnet</span>
+              <span class="text-[10px] font-mono font-semibold px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">Testnet</span>
             </div>
 
-            <div class="space-y-1.5">
-              <div class="text-[11px] text-slate-400 font-semibold uppercase tracking-wider">Vault Address:</div>
-              <div class="p-3 rounded-xl bg-spaceBg border border-borderSubtle font-mono text-xs text-amber-200/90 break-all select-all flex items-center justify-between gap-2">
-                <span id="btcAddress">tb1qug7ge5vzhslcywjqs62k5392uy7ta5klvd2f7c</span>
+            <div class="space-y-1">
+              <div class="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Vault Address:</div>
+              <div class="p-2.5 rounded-xl bg-spaceBg border border-borderSubtle font-mono text-[11px] text-amber-200/90 break-all select-all flex items-center justify-between gap-1">
+                <span id="btcAddress">tb1q9n8u3mmfm2d30uvt2dsv6g9has9w6w8mgg6qm5</span>
               </div>
             </div>
           </div>
 
-          <div class="grid grid-cols-2 gap-2 pt-5 border-t border-borderSubtle mt-5">
-            <button onclick="copyAddr('btcAddress')" class="w-full py-2 px-3 rounded-lg bg-panelHover hover:bg-slate-800 text-slate-200 text-xs font-semibold transition border border-borderSubtle flex items-center justify-center gap-1.5">
+          <div class="grid grid-cols-2 gap-2 pt-4 border-t border-borderSubtle mt-4">
+            <button onclick="copyAddr('btcAddress')" class="w-full py-2 px-2.5 rounded-lg bg-panelHover hover:bg-slate-800 text-slate-200 text-xs font-semibold transition border border-borderSubtle flex items-center justify-center gap-1">
               <span>📋</span> Copy
             </button>
-            <button onclick="openQr('Bitcoin', 'tb1qug7ge5vzhslcywjqs62k5392uy7ta5klvd2f7c')" class="w-full py-2 px-3 rounded-lg bg-panelHover hover:bg-slate-800 text-slate-200 text-xs font-semibold transition border border-borderSubtle flex items-center justify-center gap-1.5">
-              <span>📱</span> QR Code
+            <button onclick="openQr('Bitcoin', 'tb1q9n8u3mmfm2d30uvt2dsv6g9has9w6w8mgg6qm5')" class="w-full py-2 px-2.5 rounded-lg bg-panelHover hover:bg-slate-800 text-slate-200 text-xs font-semibold transition border border-borderSubtle flex items-center justify-center gap-1">
+              <span>📱</span> QR
             </button>
           </div>
         </div>
 
-        <!-- Ethereum / EVM Card -->
-        <div class="rounded-2xl bg-panelBg border border-borderSubtle hover:border-ethBrand/40 transition duration-300 p-6 flex flex-col justify-between shadow-xl relative overflow-hidden group">
-          <div class="space-y-4">
+        <!-- 3. Ethereum / EVM Card -->
+        <div class="rounded-2xl bg-panelBg border border-borderSubtle hover:border-ethBrand/40 transition duration-300 p-5 flex flex-col justify-between shadow-xl relative overflow-hidden group">
+          <div class="space-y-3.5">
             <div class="flex items-center justify-between">
-              <div class="flex items-center gap-3">
-                <div class="w-10 h-10 rounded-xl bg-ethBrand/10 text-ethBrand flex items-center justify-center font-black text-xl border border-ethBrand/20">
+              <div class="flex items-center gap-2.5">
+                <div class="w-9 h-9 rounded-xl bg-ethBrand/10 text-ethBrand flex items-center justify-center font-black text-lg border border-ethBrand/25">
                   Ξ
                 </div>
                 <div>
                   <h4 class="font-bold text-white text-sm">Ethereum & EVM</h4>
-                  <span class="text-[11px] text-slate-400 font-mono">Base / Sepolia / ETH</span>
+                  <span class="text-[10px] text-slate-400 font-mono">Base / Sepolia / ETH</span>
                 </div>
               </div>
-              <span class="text-xs font-mono font-semibold px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">EIP-1559</span>
+              <span class="text-[10px] font-mono font-semibold px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">EIP-1559</span>
             </div>
 
-            <div class="space-y-1.5">
-              <div class="text-[11px] text-slate-400 font-semibold uppercase tracking-wider">Vault Address:</div>
-              <div class="p-3 rounded-xl bg-spaceBg border border-borderSubtle font-mono text-xs text-blue-200/90 break-all select-all flex items-center justify-between gap-2">
-                <span id="evmAddress">0xbaF34172995c3a00bbA2Df888257c8d74E11E96e</span>
+            <div class="space-y-1">
+              <div class="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Vault Address:</div>
+              <div class="p-2.5 rounded-xl bg-spaceBg border border-borderSubtle font-mono text-[11px] text-blue-200/90 break-all select-all flex items-center justify-between gap-1">
+                <span id="evmAddress">0x647CD3B783e517c3138F7D291ec24DaE5f7c5e2D</span>
               </div>
             </div>
           </div>
 
-          <div class="grid grid-cols-2 gap-2 pt-5 border-t border-borderSubtle mt-5">
-            <button onclick="copyAddr('evmAddress')" class="w-full py-2 px-3 rounded-lg bg-panelHover hover:bg-slate-800 text-slate-200 text-xs font-semibold transition border border-borderSubtle flex items-center justify-center gap-1.5">
+          <div class="grid grid-cols-2 gap-2 pt-4 border-t border-borderSubtle mt-4">
+            <button onclick="copyAddr('evmAddress')" class="w-full py-2 px-2.5 rounded-lg bg-panelHover hover:bg-slate-800 text-slate-200 text-xs font-semibold transition border border-borderSubtle flex items-center justify-center gap-1">
               <span>📋</span> Copy
             </button>
-            <button onclick="openQr('Ethereum / EVM', '0xbaF34172995c3a00bbA2Df888257c8d74E11E96e')" class="w-full py-2 px-3 rounded-lg bg-panelHover hover:bg-slate-800 text-slate-200 text-xs font-semibold transition border border-borderSubtle flex items-center justify-center gap-1.5">
-              <span>📱</span> QR Code
+            <button onclick="openQr('Ethereum / EVM', '0x647CD3B783e517c3138F7D291ec24DaE5f7c5e2D')" class="w-full py-2 px-2.5 rounded-lg bg-panelHover hover:bg-slate-800 text-slate-200 text-xs font-semibold transition border border-borderSubtle flex items-center justify-center gap-1">
+              <span>📱</span> QR
             </button>
           </div>
         </div>
 
-        <!-- Solana Card -->
-        <div class="rounded-2xl bg-panelBg border border-borderSubtle hover:border-solBrand/40 transition duration-300 p-6 flex flex-col justify-between shadow-xl relative overflow-hidden group">
-          <div class="space-y-4">
+        <!-- 4. Solana Card -->
+        <div class="rounded-2xl bg-panelBg border border-borderSubtle hover:border-solBrand/40 transition duration-300 p-5 flex flex-col justify-between shadow-xl relative overflow-hidden group">
+          <div class="space-y-3.5">
             <div class="flex items-center justify-between">
-              <div class="flex items-center gap-3">
-                <div class="w-10 h-10 rounded-xl bg-solBrand/10 text-solBrand flex items-center justify-center font-black text-xl border border-solBrand/20">
+              <div class="flex items-center gap-2.5">
+                <div class="w-9 h-9 rounded-xl bg-solBrand/10 text-solBrand flex items-center justify-center font-black text-lg border border-solBrand/25">
                   ◎
                 </div>
                 <div>
                   <h4 class="font-bold text-white text-sm">Solana Reserve</h4>
-                  <span class="text-[11px] text-slate-400 font-mono">Devnet / Mainnet</span>
+                  <span class="text-[10px] text-slate-400 font-mono">Devnet / Mainnet</span>
                 </div>
               </div>
-              <span class="text-xs font-mono font-semibold px-2 py-0.5 rounded bg-purple-500/10 text-purple-400 border border-purple-500/20">Ed25519</span>
+              <span class="text-[10px] font-mono font-semibold px-2 py-0.5 rounded bg-purple-500/10 text-purple-400 border border-purple-500/20">Ed25519</span>
             </div>
 
-            <div class="space-y-1.5">
-              <div class="text-[11px] text-slate-400 font-semibold uppercase tracking-wider">Vault Address:</div>
-              <div class="p-3 rounded-xl bg-spaceBg border border-borderSubtle font-mono text-xs text-purple-200/90 break-all select-all flex items-center justify-between gap-2">
-                <span id="solAddress">b3VPfLqD97c8o5K6hYgQB4kit7Z3tnWBnZK8wWU66G1</span>
+            <div class="space-y-1">
+              <div class="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Vault Address:</div>
+              <div class="p-2.5 rounded-xl bg-spaceBg border border-borderSubtle font-mono text-[11px] text-purple-200/90 break-all select-all flex items-center justify-between gap-1">
+                <span id="solAddress">BK1AUhVeSWHidV4moZg2a4S4wkT6dBd14x887fzjDNkU</span>
               </div>
             </div>
           </div>
 
-          <div class="grid grid-cols-2 gap-2 pt-5 border-t border-borderSubtle mt-5">
-            <button onclick="copyAddr('solAddress')" class="w-full py-2 px-3 rounded-lg bg-panelHover hover:bg-slate-800 text-slate-200 text-xs font-semibold transition border border-borderSubtle flex items-center justify-center gap-1.5">
+          <div class="grid grid-cols-2 gap-2 pt-4 border-t border-borderSubtle mt-4">
+            <button onclick="copyAddr('solAddress')" class="w-full py-2 px-2.5 rounded-lg bg-panelHover hover:bg-slate-800 text-slate-200 text-xs font-semibold transition border border-borderSubtle flex items-center justify-center gap-1">
               <span>📋</span> Copy
             </button>
-            <button onclick="openQr('Solana', 'b3VPfLqD97c8o5K6hYgQB4kit7Z3tnWBnZK8wWU66G1')" class="w-full py-2 px-3 rounded-lg bg-panelHover hover:bg-slate-800 text-slate-200 text-xs font-semibold transition border border-borderSubtle flex items-center justify-center gap-1.5">
-              <span>📱</span> QR Code
+            <button onclick="openQr('Solana', 'BK1AUhVeSWHidV4moZg2a4S4wkT6dBd14x887fzjDNkU')" class="w-full py-2 px-2.5 rounded-lg bg-panelHover hover:bg-slate-800 text-slate-200 text-xs font-semibold transition border border-borderSubtle flex items-center justify-center gap-1">
+              <span>📱</span> QR
             </button>
           </div>
         </div>
