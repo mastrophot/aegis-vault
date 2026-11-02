@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>LastKey | Non-Custodial Multichain Dead-Man's Switch & Panic Button</title>
+  <title>Aegis | Non-Custodial Multichain Vault & Panic Defense</title>
   
   <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -76,7 +76,7 @@
       <div class="flex items-center gap-4">
         <div class="relative group">
           <div class="w-11 h-11 rounded-2xl bg-gradient-to-tr from-nearPrimary via-emerald-400 to-teal-300 flex items-center justify-center text-spaceBg font-extrabold text-2xl shadow-glow-emerald transition transform group-hover:scale-105">
-            ⚿
+            🛡️
           </div>
           <span class="absolute -bottom-1 -right-1 flex h-3.5 w-3.5">
             <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-nearPrimary opacity-75"></span>
@@ -86,29 +86,26 @@
         <div>
           <div class="flex items-center gap-2.5">
             <h1 class="text-xl font-bold tracking-tight text-white flex items-center">
-              Last<span class="text-nearPrimary">Key</span>
+              Aegis <span class="text-nearPrimary ml-1.5 text-xs font-mono px-2 py-0.5 rounded-full bg-emerald-500/10 border border-nearPrimary/25">NEAR MPC</span>
             </h1>
-            <span class="text-[11px] font-mono font-semibold px-2 py-0.5 rounded-full bg-emerald-500/10 text-nearPrimary border border-nearPrimary/25 flex items-center gap-1">
-              <span class="w-1.5 h-1.5 rounded-full bg-nearPrimary"></span> NEAR MPC v1.signer
-            </span>
           </div>
           <p class="text-xs text-slate-400 font-medium hidden sm:block">
-            Autonomous Multichain Dead-Man's Switch & Panic Evacuation
+            Multichain Dead-Man's Switch & Emergency Evacuation
           </p>
         </div>
       </div>
 
-      <!-- Network & Vault Account Info -->
+      <!-- Network & Direct Panic Trigger -->
       <div class="flex items-center gap-3">
         <a href="https://testnet.nearblocks.io/address/lastkey-vault-2151.testnet" target="_blank" rel="noopener noreferrer" class="hidden sm:flex items-center gap-2.5 px-3.5 py-1.5 rounded-xl bg-panelBg border border-borderSubtle hover:border-borderBright transition text-xs font-mono text-slate-300">
           <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
-          <span>lastkey-vault-2151.testnet</span>
+          <span>vault-2151.testnet</span>
           <svg class="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
         </a>
 
-        <!-- Emergency Header Trigger -->
-        <button onclick="scrollToPanic()" class="px-4 py-2 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 hover:bg-red-500 hover:text-white font-semibold text-xs tracking-wide transition-all shadow-sm flex items-center gap-2 active:scale-95">
-          <span class="w-2 h-2 rounded-full bg-red-500 animate-ping"></span>
+        <!-- DIRECT PANIC BUTTON: Launches confirmation modal directly -->
+        <button onclick="startAbortCountdown()" class="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-xs tracking-wider transition-all shadow-glow-red flex items-center gap-2 active:scale-95">
+          <span class="w-2 h-2 rounded-full bg-white animate-ping"></span>
           PANIC BUTTON
         </button>
       </div>
@@ -137,7 +134,7 @@
           </div>
 
           <h2 class="text-2xl sm:text-3xl font-extrabold tracking-tight text-white leading-tight">
-            Time until inheritance release window:
+            Time until inheritance claim window:
           </h2>
 
           <!-- Live Countdown -->
@@ -153,24 +150,24 @@
               <div id="timerBar" class="bg-gradient-to-r from-emerald-500 to-nearPrimary h-full rounded-full transition-all duration-1000 shadow-glow-emerald" style="width: 98%;"></div>
             </div>
             <div class="flex justify-between text-xs text-slate-400 font-mono">
-              <span>Last verified heartbeat: <b class="text-slate-200">Today (On-chain)</b></span>
-              <span>Challenge grace window: <b class="text-slate-200">7 Days</b></span>
+              <span>Last check-in: <b class="text-slate-200">Today</b></span>
+              <span>Grace period: <b class="text-slate-200">7 Days</b></span>
             </div>
           </div>
 
-          <!-- Security Invariant Bullet -->
+          <!-- Human-friendly Security Guarantee -->
           <p class="text-xs text-slate-400 leading-relaxed pt-2 flex items-center gap-2">
             <svg class="w-4 h-4 text-nearPrimary flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
-            Zero Custody: Private keys do not exist in single storage. Signatures require threshold consensus on NEAR protocol.
+            100% Non-Custodial: Only you control this vault. No servers, backdoors, or third parties can access your assets.
           </p>
         </div>
 
         <!-- Right: Primary Action (I'm Alive) -->
         <div class="lg:col-span-5 flex flex-col gap-3 justify-center bg-spaceBg/60 border border-borderSubtle rounded-2xl p-6">
           <div class="text-center sm:text-left">
-            <h3 class="font-bold text-base text-white">Heartbeat Check-In</h3>
+            <h3 class="font-bold text-base text-white">Check-In Presence</h3>
             <p class="text-xs text-slate-400 mt-1">
-              Click the button to reset your vault timer back to 90 days. Verifies that you are alive and in control of your keys.
+              Click to reset your timer back to 90 days. Confirms that you are alive and maintain control over your keys.
             </p>
           </div>
 
@@ -180,10 +177,8 @@
           </button>
 
           <div class="flex items-center justify-between text-[11px] text-slate-400 font-mono px-1">
-            <span class="text-nearPrimary font-semibold flex items-center gap-1">
-              <span class="w-1.5 h-1.5 rounded-full bg-nearPrimary"></span> Gas: 0 NEAR (Sponsored)
-            </span>
-            <span>100% Free Service</span>
+            <span>Network Fee: ~0.0001 NEAR (&lt; 0.001 USD)</span>
+            <span class="text-nearPrimary">Zero Platform Fee</span>
           </div>
         </div>
 
@@ -193,16 +188,16 @@
     <!-- Navigation Tabs -->
     <div class="flex border-b border-borderSubtle gap-2 sm:gap-6 overflow-x-auto pb-px">
       <button onclick="switchTab('vault')" id="tab-vault" class="tab-btn px-4 py-3 text-sm font-bold text-nearPrimary border-b-2 border-nearPrimary flex items-center gap-2 transition">
-        <span>🔐</span> Multichain Vault Assets
+        <span>🔐</span> Protected Assets
       </button>
       <button onclick="switchTab('rescue')" id="tab-rescue" class="tab-btn px-4 py-3 text-sm font-semibold text-slate-400 hover:text-white border-b-2 border-transparent flex items-center gap-2 transition">
-        <span>🛡️</span> Rescue Policy & Ledger
+        <span>🛡️</span> Rescue Destination
       </button>
       <button onclick="switchTab('alerts')" id="tab-alerts" class="tab-btn px-4 py-3 text-sm font-semibold text-slate-400 hover:text-white border-b-2 border-transparent flex items-center gap-2 transition">
-        <span>🤖</span> Telegram Bot Pairing
+        <span>🤖</span> Telegram Sentinel
       </button>
       <button onclick="switchTab('audit')" id="tab-audit" class="tab-btn px-4 py-3 text-sm font-semibold text-slate-400 hover:text-white border-b-2 border-transparent flex items-center gap-2 transition">
-        <span>📜</span> On-Chain Audit Feed
+        <span>📜</span> Audit Stream
       </button>
     </div>
 
@@ -211,13 +206,13 @@
       
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h3 class="text-lg font-bold text-white">Your Multichain Vault Addresses</h3>
+          <h3 class="text-lg font-bold text-white">Your Dedicated Vault Addresses</h3>
           <p class="text-xs text-slate-400 mt-0.5">
-            Send deposits to these addresses. Private keys do not exist in storage — signing is enforced strictly via NEAR MPC consensus.
+            Store your long-term reserves here. In an emergency or inheritance event, the smart contract automatically evacuates all coins.
           </p>
         </div>
         <span class="text-xs font-mono bg-panelBg border border-borderSubtle text-slate-400 px-3 py-1.5 rounded-lg w-fit">
-          Derivation Path: <span class="text-nearPrimary">lastkey/0</span>
+          Key Path: <span class="text-nearPrimary">lastkey/0</span>
         </span>
       </div>
 
@@ -233,14 +228,13 @@
                   ₿
                 </div>
                 <div>
-                  <h4 class="font-bold text-white text-sm">Bitcoin</h4>
+                  <h4 class="font-bold text-white text-sm">Bitcoin Reserve</h4>
                   <span class="text-[11px] text-slate-400 font-mono">SegWit (P2WPKH)</span>
                 </div>
               </div>
               <span class="text-xs font-mono font-semibold px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">Testnet</span>
             </div>
 
-            <!-- Address Box -->
             <div class="space-y-1.5">
               <div class="text-[11px] text-slate-400 font-semibold uppercase tracking-wider">Vault Address:</div>
               <div class="p-3 rounded-xl bg-spaceBg border border-borderSubtle font-mono text-xs text-amber-200/90 break-all select-all flex items-center justify-between gap-2">
@@ -249,7 +243,6 @@
             </div>
           </div>
 
-          <!-- Actions -->
           <div class="grid grid-cols-2 gap-2 pt-5 border-t border-borderSubtle mt-5">
             <button onclick="copyAddr('btcAddress')" class="w-full py-2 px-3 rounded-lg bg-panelHover hover:bg-slate-800 text-slate-200 text-xs font-semibold transition border border-borderSubtle flex items-center justify-center gap-1.5">
               <span>📋</span> Copy
@@ -276,7 +269,6 @@
               <span class="text-xs font-mono font-semibold px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">EIP-1559</span>
             </div>
 
-            <!-- Address Box -->
             <div class="space-y-1.5">
               <div class="text-[11px] text-slate-400 font-semibold uppercase tracking-wider">Vault Address:</div>
               <div class="p-3 rounded-xl bg-spaceBg border border-borderSubtle font-mono text-xs text-blue-200/90 break-all select-all flex items-center justify-between gap-2">
@@ -285,7 +277,6 @@
             </div>
           </div>
 
-          <!-- Actions -->
           <div class="grid grid-cols-2 gap-2 pt-5 border-t border-borderSubtle mt-5">
             <button onclick="copyAddr('evmAddress')" class="w-full py-2 px-3 rounded-lg bg-panelHover hover:bg-slate-800 text-slate-200 text-xs font-semibold transition border border-borderSubtle flex items-center justify-center gap-1.5">
               <span>📋</span> Copy
@@ -305,14 +296,13 @@
                   ◎
                 </div>
                 <div>
-                  <h4 class="font-bold text-white text-sm">Solana</h4>
+                  <h4 class="font-bold text-white text-sm">Solana Reserve</h4>
                   <span class="text-[11px] text-slate-400 font-mono">Devnet / Mainnet</span>
                 </div>
               </div>
               <span class="text-xs font-mono font-semibold px-2 py-0.5 rounded bg-purple-500/10 text-purple-400 border border-purple-500/20">Ed25519</span>
             </div>
 
-            <!-- Address Box -->
             <div class="space-y-1.5">
               <div class="text-[11px] text-slate-400 font-semibold uppercase tracking-wider">Vault Address:</div>
               <div class="p-3 rounded-xl bg-spaceBg border border-borderSubtle font-mono text-xs text-purple-200/90 break-all select-all flex items-center justify-between gap-2">
@@ -321,7 +311,6 @@
             </div>
           </div>
 
-          <!-- Actions -->
           <div class="grid grid-cols-2 gap-2 pt-5 border-t border-borderSubtle mt-5">
             <button onclick="copyAddr('solAddress')" class="w-full py-2 px-3 rounded-lg bg-panelHover hover:bg-slate-800 text-slate-200 text-xs font-semibold transition border border-borderSubtle flex items-center justify-center gap-1.5">
               <span>📋</span> Copy
@@ -341,10 +330,10 @@
             <span>🚨</span> Emergency Asset Rescue
           </div>
           <h3 class="text-xl sm:text-2xl font-extrabold text-white">
-            Panic Button (Instant Evacuation)
+            Swipe-to-Panic Protection
           </h3>
           <p class="text-xs text-slate-300 leading-relaxed max-w-xl mx-auto">
-            Under physical extortion or device compromise? Swipe the slider below. All balances across BTC, EVM, and Solana are instantly signed via NEAR MPC and evacuated directly to your preconfigured cold hardware wallet.
+            Physical threat or local device compromise? Swipe the slider below. All funds across BTC, EVM, and Solana are instantly signed and evacuated directly to your preconfigured cold hardware wallet.
           </p>
 
           <!-- Interactive Swipe to Panic Control -->
@@ -352,15 +341,15 @@
             <div id="swipeContainer" class="relative w-full h-16 rounded-2xl slider-track border border-red-600/40 p-1 flex items-center select-none overflow-hidden shadow-inner">
               <div id="swipeFill" class="absolute left-0 top-0 bottom-0 bg-red-600/40 w-0 transition-all duration-75"></div>
               <div class="absolute inset-0 flex items-center justify-center pointer-events-none text-xs font-bold text-red-200/90 tracking-wider">
-                SWIPE FOR EMERGENCY PANIC ➔
+                SWIPE TO EVACUATE ➔
               </div>
               <div id="swipeKnob" class="relative z-10 w-14 h-14 rounded-xl bg-red-600 hover:bg-red-500 text-white font-black flex items-center justify-center cursor-grab active:cursor-grabbing shadow-lg shadow-red-950 transition-colors">
                 🚨
               </div>
             </div>
             <div class="flex justify-between items-center text-[11px] text-slate-400 mt-2 px-1">
-              <span>Accidental trigger protection</span>
-              <span>5-second cancel window before broadcast</span>
+              <span>Prevents accidental clicks</span>
+              <span>5s cancel countdown after release</span>
             </div>
           </div>
         </div>
@@ -372,9 +361,9 @@
     <section id="panel-rescue" class="tab-panel space-y-6 hidden">
       <div class="max-w-3xl mx-auto space-y-6">
         <div class="border-b border-borderSubtle pb-4">
-          <h3 class="text-lg font-bold text-white">Evacuation Destinations & Heirs</h3>
+          <h3 class="text-lg font-bold text-white">Rescue Addresses & Heirs</h3>
           <p class="text-xs text-slate-400 mt-1">
-            Configure where assets are routed during Panic (your cold Ledger) or after inheritance finalization (heirs).
+            Specify where funds must be swept during Panic (your cold Ledger) or after inheritance finalization (heirs).
           </p>
         </div>
 
@@ -382,18 +371,18 @@
         <div class="rounded-2xl bg-panelBg border border-borderSubtle p-6 space-y-5">
           <div class="flex items-center justify-between border-b border-borderSubtle pb-3">
             <h4 class="font-bold text-sm text-emerald-400 flex items-center gap-2">
-              <span>🔒</span> Panic Destination Addresses (Your Cold Ledger)
+              <span>🔒</span> Cold Backup Hardware Addresses
             </h4>
-            <span class="text-xs font-mono bg-emerald-500/10 text-nearPrimary border border-nearPrimary/20 px-2 py-0.5 rounded">Enforced by Contract</span>
+            <span class="text-xs font-mono bg-emerald-500/10 text-nearPrimary border border-nearPrimary/20 px-2 py-0.5 rounded">Enforced By Contract</span>
           </div>
 
           <div class="space-y-3 font-mono text-xs">
             <div>
-              <label class="block text-slate-400 mb-1 text-[11px]">Bitcoin Backup Address (P2WPKH / Taproot):</label>
+              <label class="block text-slate-400 mb-1 text-[11px]">Bitcoin Backup Address (Cold Hardware):</label>
               <input type="text" value="tb1q99999999999999999999999999999999999999" class="w-full bg-spaceBg border border-borderSubtle rounded-xl p-3 text-slate-200 focus:outline-none focus:border-nearPrimary" readonly>
             </div>
             <div>
-              <label class="block text-slate-400 mb-1 text-[11px]">EVM Backup Address (Ledger / Safe Multisig):</label>
+              <label class="block text-slate-400 mb-1 text-[11px]">EVM Backup Address (Cold Hardware):</label>
               <input type="text" value="0x1111111111111111111111111111111111111111" class="w-full bg-spaceBg border border-borderSubtle rounded-xl p-3 text-slate-200 focus:outline-none focus:border-nearPrimary" readonly>
             </div>
             <div>
@@ -407,20 +396,20 @@
         <div class="rounded-2xl bg-panelBg border border-borderSubtle p-6 space-y-3">
           <div class="flex items-center justify-between">
             <h4 class="font-bold text-sm text-white flex items-center gap-2">
-              <span>⏳</span> 72-Hour Timelock Protection
+              <span>⏳</span> 72-Hour Timelock Defense
             </h4>
             <span class="text-xs font-mono text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2.5 py-0.5 rounded-full">
-              Anti-Theft Defense
+              Anti-Theft Protection
             </span>
           </div>
           <p class="text-xs text-slate-400 leading-relaxed">
-            If an attacker compromises your NEAR account and attempts to change backup addresses to their own, the smart contract locks changes for <b>72 hours</b>. You receive emergency alerts, and your designated Guardian can veto the modification with a single click.
+            If an attacker compromises your login and attempts to replace the rescue addresses with their own, the smart contract locks changes for <b>72 hours</b>. Your Guardian can cancel the modification with one click.
           </p>
           <div class="pt-2 flex gap-3">
             <button onclick="showToast('Address update proposed: 72h timelock initiated')" class="bg-panelHover hover:bg-slate-800 text-slate-200 text-xs font-semibold px-4 py-2.5 rounded-xl border border-borderSubtle transition">
-              Propose Address Update (72h Timelock)
+              Propose Address Update
             </button>
-            <button onclick="showToast('🛡️ Guardian Veto applied! Pending address change revoked.')" class="bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-semibold px-4 py-2.5 rounded-xl border border-red-500/30 transition">
+            <button onclick="showToast('🛡️ Guardian Veto applied! Malicious address change cancelled.')" class="bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-semibold px-4 py-2.5 rounded-xl border border-red-500/30 transition">
               Apply Guardian Veto
             </button>
           </div>
@@ -429,13 +418,13 @@
       </div>
     </section>
 
-    <!-- TAB 3: Telegram Bot Pairing (FIXED UX) -->
+    <!-- TAB 3: Telegram Bot Pairing -->
     <section id="panel-alerts" class="tab-panel space-y-6 hidden">
       <div class="max-w-2xl mx-auto space-y-6">
         <div class="border-b border-borderSubtle pb-4">
-          <h3 class="text-lg font-bold text-white">Cryptographic Telegram Bot Pairing</h3>
+          <h3 class="text-lg font-bold text-white">Telegram Sentinel Pairing</h3>
           <p class="text-xs text-slate-400 mt-1">
-            Receive automated reminders before your heartbeat expires. Because Telegram strictly prohibits bots from unsolicited messaging, you pair your account via a secure one-time verification handshake.
+            Receive automated reminders before your heartbeat expires. Pair your Telegram securely with a one-time token.
           </p>
         </div>
 
@@ -445,45 +434,42 @@
               ✈️
             </div>
             <div>
-              <h4 class="font-bold text-white text-sm">LastKey Notification Sentinel</h4>
+              <h4 class="font-bold text-white text-sm">Aegis Sentinel Bot</h4>
               <p class="text-xs text-slate-400 mt-0.5">Automated heartbeat warnings & instant panic alerts</p>
             </div>
           </div>
 
-          <!-- Alert Schedule -->
           <div class="space-y-3 text-xs">
             <div class="flex items-center justify-between p-3.5 rounded-xl bg-spaceBg border border-borderSubtle">
               <span class="text-slate-300">14-Day Advance Warning</span>
               <span class="text-nearPrimary font-mono font-bold">ENABLED</span>
             </div>
             <div class="flex items-center justify-between p-3.5 rounded-xl bg-spaceBg border border-borderSubtle">
-              <span class="text-slate-300">3-Day Urgent Heartbeat Alert</span>
+              <span class="text-slate-300">3-Day Urgent Alert</span>
               <span class="text-nearPrimary font-mono font-bold">ENABLED</span>
             </div>
             <div class="flex items-center justify-between p-3.5 rounded-xl bg-spaceBg border border-borderSubtle">
-              <span class="text-slate-300">Instant Panic / Inheritance Challenge Alert</span>
+              <span class="text-slate-300">Instant Panic Evacuation Alert</span>
               <span class="text-red-400 font-mono font-bold">INSTANT</span>
             </div>
           </div>
 
-          <!-- Pairing Handshake Box -->
           <div class="space-y-4 pt-2 border-t border-borderSubtle">
             <div>
               <span class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
                 Pairing Handshake (Zero-Spam Verification):
               </span>
               <p class="text-xs text-slate-400 mt-1">
-                Click below to start a direct session with the bot or copy your unique vault linking token.
+                Click below to pair your Telegram chat directly with your vault.
               </p>
             </div>
 
-            <!-- Deep Link Button -->
             <div class="flex flex-col sm:flex-row gap-3">
               <button onclick="handleTelegramConnect()" class="flex-1 bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white font-bold py-3.5 px-5 rounded-xl text-xs transition flex items-center justify-center gap-2 shadow-lg shadow-sky-950/40 active:scale-95">
                 <span>✈️</span> <span>Pair With Telegram Bot</span>
               </button>
               <button onclick="copyPairingToken()" class="py-3.5 px-4 rounded-xl bg-panelHover hover:bg-slate-800 text-slate-300 text-xs font-mono font-semibold border border-borderSubtle transition">
-                Token: <span id="pairingTokenCode" class="text-nearPrimary">LK-7489</span> 📋
+                Token: <span id="pairingTokenCode" class="text-nearPrimary">AEGIS-7489</span> 📋
               </button>
             </div>
 
@@ -509,7 +495,6 @@
       </div>
 
       <div id="auditLogList" class="space-y-2.5 font-mono text-xs max-h-96 overflow-y-auto pr-1">
-        <!-- Log Item -->
         <div class="p-3.5 rounded-xl bg-panelBg border border-borderSubtle flex items-center justify-between">
           <div class="flex items-center gap-3">
             <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
@@ -517,7 +502,6 @@
           </div>
           <span class="text-slate-500 text-[10px]">Block #1893910</span>
         </div>
-        <!-- Log Item -->
         <div class="p-3.5 rounded-xl bg-panelBg border border-borderSubtle flex items-center justify-between">
           <div class="flex items-center gap-3">
             <span class="w-2 h-2 rounded-full bg-nearPrimary"></span>
@@ -539,7 +523,7 @@
       <div class="space-y-2">
         <h3 class="text-xl font-extrabold text-white">PANIC SEQUENCE TRIGGERED</h3>
         <p class="text-xs text-slate-300">
-          Threshold MPC signature request to evacuate all assets to your cold hardware Ledger broadcasts in:
+          Emergency evacuation of all assets to your cold hardware Ledger broadcasts in:
         </p>
       </div>
 
@@ -581,21 +565,19 @@
   <!-- Footer -->
   <footer class="border-t border-borderSubtle py-6 text-center text-xs text-slate-500 font-mono">
     <div class="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-3">
-      <span>LastKey © 2026 • NEAR Hackathon 2026</span>
-      <span>100% Free & Open Source • Zero-Custody Chain Signatures</span>
+      <span>Aegis Vault © 2026 • NEAR Hackathon 2026</span>
+      <span>100% Non-Custodial Multi-Chain Security</span>
     </div>
   </footer>
 
   <!-- Script Logic -->
   <script>
-    // State
     let totalSeconds = 90 * 24 * 3600 - 45;
     let isEvacuated = false;
     let abortTimer = null;
     let currentQrAddr = '';
-    const pairingToken = 'LK-' + Math.floor(1000 + Math.random() * 9000);
+    const pairingToken = 'AEGIS-' + Math.floor(1000 + Math.random() * 9000);
 
-    // Elements
     const countdownBox = document.getElementById('countdownBox');
     const timerBar = document.getElementById('timerBar');
     const toast = document.getElementById('toast');
@@ -611,7 +593,6 @@
       return `${d}<span class="text-slate-500 text-2xl font-normal">d</span> ${String(h).padStart(2,'0')}<span class="text-slate-500 text-2xl font-normal">h</span> ${String(m).padStart(2,'0')}<span class="text-slate-500 text-2xl font-normal">m</span> ${String(s).padStart(2,'0')}<span class="text-slate-500 text-2xl font-normal">s</span>`;
     }
 
-    // Interval Timer
     setInterval(() => {
       if (!isEvacuated && totalSeconds > 0) {
         totalSeconds--;
@@ -656,8 +637,8 @@
       }
       totalSeconds = 90 * 24 * 3600;
       countdownBox.innerHTML = formatTime(totalSeconds);
-      showToast('💓 Heartbeat confirmed! Timer reset to 90 days. Gas: 0 NEAR.');
-      addLog('[HEARTBEAT] Owner ping received. Timer reset to 90 days.', 'text-nearPrimary');
+      showToast('💓 Heartbeat confirmed! Timer reset to 90 days.');
+      addLog('[HEARTBEAT] Check-in confirmed. Timer reset to 90 days.', 'text-nearPrimary');
     });
 
     // Tab Switching
@@ -671,11 +652,6 @@
       document.getElementById(`tab-${name}`).classList.add('text-nearPrimary', 'border-nearPrimary');
       document.getElementById(`tab-${name}`).classList.remove('text-slate-400', 'border-transparent');
       document.getElementById(`panel-${name}`).classList.remove('hidden');
-    }
-
-    function scrollToPanic() {
-      switchTab('vault');
-      document.getElementById('panicSection').scrollIntoView({ behavior: 'smooth' });
     }
 
     // QR Code
@@ -761,14 +737,19 @@
     window.addEventListener('touchmove', onMove);
     window.addEventListener('touchend', onEnd);
 
-    // Abort 5s Countdown
+    // DIRECT ABORT COUNTDOWN (Triggers immediately from Header or Slider)
     function startAbortCountdown() {
+      if (isEvacuated) {
+        showToast('Vault already evacuated!', true);
+        return;
+      }
       const modal = document.getElementById('abortModal');
       const counterEl = document.getElementById('abortCountdown');
       modal.classList.remove('hidden');
       let count = 5;
       counterEl.innerText = count;
 
+      if (abortTimer) clearInterval(abortTimer);
       abortTimer = setInterval(() => {
         count--;
         counterEl.innerText = count;
@@ -784,7 +765,7 @@
       clearInterval(abortTimer);
       document.getElementById('abortModal').classList.add('hidden');
       showToast('Panic evacuation cancelled in time. Vault remains secure.');
-      addLog('[ABORT] Emergency panic aborted by user during 5s challenge window.', 'text-slate-300');
+      addLog('[ABORT] Emergency panic aborted by user during 5s countdown.', 'text-slate-300');
     });
 
     function executePanic() {
@@ -800,16 +781,16 @@
 
       showToast('🚨 PANIC DISPATCHED! All funds evacuated to cold storage.', true);
       addLog('[PANIC_TRIGGERED] Vault shifted to Evacuated state. Relayer notified.', 'text-red-400 font-bold');
-      addLog('[SWEEP] Sweep transactions signed via NEAR MPC v1.signer for BTC, EVM, SOL', 'text-amber-400');
+      addLog('[SWEEP] Sweep transactions signed via NEAR MPC for BTC, EVM, SOL', 'text-amber-400');
     }
 
     function handleTelegramConnect() {
-      showToast(`Pairing link generated! Token: ${pairingToken}`);
+      showToast(`Pairing token: ${pairingToken}`);
       const badge = document.getElementById('tgStatusBadge');
       badge.innerHTML = `
         <span>Status:</span>
         <span class="text-nearPrimary font-bold flex items-center gap-1.5">
-          <span class="w-2 h-2 rounded-full bg-nearPrimary"></span> Paired (Chat ID Linked)
+          <span class="w-2 h-2 rounded-full bg-nearPrimary"></span> Paired with Sentinel
         </span>
       `;
       addLog(`[ALERT_CONNECTED] Telegram Sentinel paired with token ${pairingToken}`, 'text-sky-400');
