@@ -1,99 +1,131 @@
-# ⚿ LastKey — Multichain Dead-Man's Switch & Panic Button
+# 🛡️ Aegis — Autonomous Multichain Dead-Man's Switch & Panic Evacuation Vault
 
 > **NEAR HACKATHON 2026 Submission**  
-> *Category:* Web3 Infrastructure / Multi-Chain Security / Chain Abstraction  
-> *Core Primitive:* Native NEAR Chain Signatures (`v1.signer` MPC network) & Pure Rust Smart Contract.
+> **Track:** Web3 Infrastructure · Multi-Chain Security · Chain Abstraction  
+> **Core Primitive:** Native NEAR Chain Signatures (`v1.signer` MPC Network) & Pure Rust Smart Contract  
+> **Live Demo:** [https://mastrophot.github.io/aegis-vault/](https://mastrophot.github.io/aegis-vault/)  
+> **NEAR Testnet Contract:** [`lastkey-vault-2151.testnet`](https://testnet.nearblocks.io/address/lastkey-vault-2151.testnet)
 
 ---
 
-## 🎯 Проблема (The Problem)
+## 🎯 The Problem
 
-1. **Мільярди втрачених активів**: Коли криптоінвестор раптово гине або втрачає доступ до ключів, його родина не має доступу до сід-фраз чи біржових акаунтів. Активи назавжди зникають у блокчейні.
-2. **Ризик "терморектального криптоаналізу" та грабежу**: При фізичній атаці або здирництві жертву змушують відкрити гаманець. Існуючі "перемикачі мерця" (Sass/Web2) вимагають довіри до централізованого сервера або віддачі приватних ключів третім особам (Custodial risk).
-3. **Фрагментація екосистем**: Стандартні смарт-контракти спадкування працюють виключно в межах одного EVM чи однієї мережі. Не існувало єдиного некостодіального рішення, здатного одночасно керувати Bitcoin, EVM та Solana без посередників.
-
----
-
-## 💡 Рішення (The Solution)
-
-**LastKey** — це некостодіальний мультичейн-сейф мерця та апаратна "кнопка паніки", що використовує **NEAR Chain Signatures** як універсальний контролер:
-
-- **0% довіри (Zero Custody)**: Жодних приватних ключів не зберігається на жодному сервері. Мультичейн-адреси (Bitcoin SegWit, EVM, Solana) деривуються математично з кореневого публічного ключа NEAR MPC мережі.
-- **Heartbeat (Я живий)**: Власник періодично (наприклад, раз на 90 днів) відправляє безкоштовний пінг або здійснює ончейн-транзакцію.
-- **Двохетапний челендж спадку**: Якщо таймер сплив, спадкоємці можуть відкрити 7-денне вікно запиту. Якщо власник живий, він в 1 клік скасовує запит. Якщо за 7 днів реакції немає — смартконтракт авторизує переказ активів на адреси спадкоємців.
-- **Panic Button (Миттєва евакуація)**: За першої ознаки небезпеки власник або його Вартовий (Guardian) тисне Panic Button — контракт миттєво генерує евакуаційні транзакції для BTC, ETH, SOL виключно на заздалегідь підготовлений холодний апаратний Ledger.
-- **72h Timelock + Guardian Veto**: Навіть якщо хакер отримає доступ до акаунта NEAR і спробує змінити адресу евакуації на свою, контракт активує 72-годинний таймлок. Вартовий або запасний ключ блокують зміну через `veto_policy()`.
+1. **Billions in Lost Crypto Assets**: When a crypto asset holder unexpectedly passes away or loses access, their family cannot access disparate seed phrases, hardware wallets, or cross-chain accounts. Assets remain permanently stranded on-chain.
+2. **Physical Extortion & Duress ("\$5 Wrench Attack")**: Under physical coercion or home invasion, victims are forced to unlock their primary devices. Existing Web2 dead-man's switches rely on centralized servers or custodial escrow of private keys.
+3. **Cross-Ecosystem Fragmentation**: Traditional inheritance smart contracts operate exclusively within a single EVM or single L1 environment. No non-custodial solution could concurrently manage **Bitcoin (UTXO)**, **EVM (Account/EIP-1559)**, and **Solana (Account/Ed25519)** from a single autonomous decentralized root of trust without intermediaries.
 
 ---
 
-## 🏗️ Архітектура (Architecture)
+## 💡 The Solution: Aegis
+
+**Aegis** is a non-custodial, multichain dead-man's switch and emergency panic evacuation system powered by **NEAR Protocol Chain Signatures**. It turns a single NEAR smart contract into a universal threshold signer for Bitcoin, EVM, and Solana.
+
+* **Zero Custody (100% Non-Custodial)**: No private keys ever touch a server. Multichain deposit addresses (Bitcoin Native SegWit, EVM, and Solana) are mathematically derived from NEAR MPC's root public key via deterministic derivation paths (`aegis/v{epoch}`).
+* **Proof-of-Life Heartbeat (`ping()`)**: The vault owner maintains active status by sending a periodic lightweight on-chain ping (e.g., every 90 days).
+* **Two-Stage Inheritance Protocol**: If the inactivity timer expires, heirs can open a challenge claim window. If the owner is alive, they cancel the claim with 1 click. If unchallenged within the grace period, the contract transitions to `Inheritance` state and authorizes push fund evacuation to designated heir addresses.
+* **Emergency Panic Button (Instant Evacuation)**: Under immediate threat, the owner triggers `panic()` (with 3-second hold buffer or 1-click armed mode). The vault immediately locks, bumps the derivation epoch to burn old addresses, and authorizes evacuation of 100% of all multichain assets directly to pre-configured cold backup wallets.
+* **Anti-Hacking 72h Policy Timelock**: Altering egress destination addresses (`backup` or `heirs`) enforces a strict 72-hour on-chain cooldown. If the owner's NEAR account is compromised, the rogue proposal can be cancelled during the window before it becomes effective.
+* **Cryptographic Anti-Blind-Signing & Structural Payload Verification**:
+  * **EVM**: The smart contract verifies raw transaction bytecode (`> 64` hex characters), verifies that the 20-byte destination strictly matches designated backup/heir addresses, and executes `keccak256` on-chain. Relayers cannot submit blind hashes.
+  * **Solana**: The smart contract parses the binary Solana Message header and account indices, enforcing `unsigned_writable_count == 1` and ensuring `account_1` is strictly the designated destination wallet (preventing substring/decoy injection attacks).
+  * **Bitcoin**: Supports BIP-143 SegWit sighash authorization, automatic dust filtering (< 546 sats), and BIP-125 Opt-in RBF.
+* **Immutable On-Chain Testament**: Embeds arbitrary last words/instructions directly into Bitcoin `OP_RETURN`, EVM calldata, and Solana memo upon execution.
+
+---
+
+## 🏗️ System Architecture
 
 ```
-                  ┌──────────────────────────────────────────────┐
-                  │          Користувач / Спадкоємець             │
-                  └──────────────────────┬───────────────────────┘
-                                         │  (ping / panic / claim)
-                                         ▼
-                  ┌──────────────────────────────────────────────┐
-                  │      LastKey Vault Contract (Rust / WASM)    │
-                  │        near-sdk 5.5.0 on NEAR Protocol        │
-                  │  - Стан: Active / Claiming / Evacuated       │
-                  │  - Математично закріплені адреси Backup/Heir │
-                  └──────────────────────┬───────────────────────┘
-                                         │  request_sweep_signature()
-                                         │  (1 yoctoNEAR + 50 TGas)
-                                         ▼
-                  ┌──────────────────────────────────────────────┐
-                  │       NEAR MPC Network (v1.signer)           │
-                  │  - Threshold ECDSA (secp256k1)               │
-                  │  - Threshold EdDSA (ed25519)                 │
-                  └──────┬────────────────┬───────────────┬──────┘
-                         │                │               │
-                         ▼                ▼               ▼
-                  ┌────────────┐   ┌────────────┐  ┌─────────────┐
-                  │  Bitcoin   │   │    EVM     │  │   Solana    │
-                  │  (SegWit)  │   │(Base / ETH)│  │  (Devnet)   │
-                  │ P2WPKH tx  │   │  EIP-1559  │  │SystemProgram│
-                  └────────────┘   └────────────┘  └─────────────┘
+                       ┌──────────────────────────────────────────────┐
+                       │           Owner / Designated Heirs           │
+                       └──────────────────────┬───────────────────────┘
+                                              │  ping() / panic() / claim()
+                                              ▼
+                       ┌──────────────────────────────────────────────┐
+                       │         Aegis Vault Smart Contract           │
+                       │           (Rust / near-sdk 5.5)              │
+                       │  - State Machine: Active / Claim / Evacuated │
+                       │  - Structural Payload Verification (EVM/SOL) │
+                       │  - 72h Policy Cooldown & Epoch Rotation      │
+                       └──────────────────────┬───────────────────────┘
+                                              │  request_sweep_signature()
+                                              │  (Attached Gas: 250 TGas)
+                                              ▼
+                       ┌──────────────────────────────────────────────┐
+                       │          NEAR MPC Network (v1.signer)        │
+                       │  - Threshold Secp256k1 (Bitcoin / EVM)       │
+                       │  - Threshold Ed25519   (Solana / NEAR)       │
+                       └──────┬────────────────┬───────────────┬──────┘
+                              │                │               │
+                              ▼                ▼               ▼
+                       ┌────────────┐   ┌────────────┐  ┌─────────────┐
+                       │  Bitcoin   │   │    EVM     │  │   Solana    │
+                       │  (SegWit)  │   │(Base/Sepol)│  │(Dev/Mainnet)│
+                       │ BIP-143    │   │  EIP-1559  │  │System/SPL22 │
+                       │ P2WPKH     │   │ Raw Byte   │  │Header Check │
+                       └────────────┘   └────────────┘  └─────────────┘
 ```
 
 ---
 
-## 📦 Структура репозиторію
+## 📁 Repository Structure
 
-- `contracts/vault/`: Смартконтракт на Rust (`near-sdk 5.5.0`):
-  - `contracts/vault/src/lib.rs`: логіка станів, захист від підміни адрес, таймлок, крос-контрактні виклики до `v1.signer`, повний набір юніт-тестів.
-- `relayer/`: Автономний сервіс моніторингу та евакуації:
-  - `relayer/sweep_relayer.js`: збірка транзакцій для Bitcoin PSBT, EVM EIP-1559 та Solana через `chainsig.js`.
-- `scripts/`:
-  - `scripts/derive_addresses.js`: деривація мультичейн-адрес без приватних ключів.
-  - `scripts/test_sweep_flow.js`: симуляція повного циклу евакуації для трьох мереж.
-- `web/`:
-  - `web/index.html`: автономний темний веб-інтерфейс з таймером, деривованими адресами, кнопкою паніки та журналом ончейн-подій.
+* [`contracts/vault/`](contracts/vault/): Production-hardened Rust smart contract (`near-sdk 5.5.0`):
+  * [`src/lib.rs`](contracts/vault/src/lib.rs): State machine, Solana structural bytecode parser, EVM destination verification, BIP-143 Bitcoin sighash authorization, safe `migrate()` upgrade handler, and 9 unit tests.
+* [`relayer/`](relayer/): Autonomous multichain sweep relayer service:
+  * [`sweep_relayer.js`](relayer/sweep_relayer.js): PSBT constructor with BIP-66 DER signature injection, EVM zero-asset queue with L2 rollup buffer, Solana JIT blockhash fetcher, and fault-isolation runner.
+* [`scripts/`](scripts/):
+  * [`derive_addresses.js`](scripts/derive_addresses.js): Cryptographic MPC derivation of Bitcoin, EVM, and Solana addresses from NEAR contract identity.
+  * [`test_sweep_flow.js`](scripts/test_sweep_flow.js): Comprehensive end-to-end simulation verifying all 6 multichain evacuation flows.
+  * [`deploy_testnet.js`](scripts/deploy_testnet.js): Automated NEAR Testnet deployment script.
+* [`web/`](web/): High-performance cyber-hardened user interface:
+  * [`index.html`](web/index.html): Real-time Web3 frontend with live NEAR RPC contract polling, `window.nearApi` transaction dispatcher, MyNearWallet testnet authentication, interactive multichain address derivation display, and hold-to-evacuate panic trigger.
+* [`AEGIS_AUDIT_BUNDLE.md`](AEGIS_AUDIT_BUNDLE.md): Consolidated, single-file audit bundle containing complete codebase, verified security invariants, and test vectors.
 
 ---
 
-## 🚀 Швидкий запуск (Getting Started)
+## ⚡ Quick Start & Verification
 
-### 1. Тестування деривації адрес
-```bash
-npm run derive
-```
-
-### 2. Тестування релеєра евакуації
-```bash
-node scripts/test_sweep_flow.js
-```
-
-### 3. Компіляція та юніт-тести смартконтракту
+### 1. Run Unit Tests (Rust Smart Contract)
 ```bash
 cd contracts/vault
 cargo test
-cargo check --target wasm32-unknown-unknown
 ```
+*Result: 9/9 unit tests passing (anti-blind-signing, Solana substring rejection, epoch rotation, policy timelock).*
 
-### 4. Запуск веб-інтерфейсу
-Відкрийте `web/index.html` у будь-якому сучасному браузері або підніміть локальний сервер:
+### 2. Build WebAssembly Contract
+```bash
+cargo build --target wasm32-unknown-unknown --release
+```
+*Output: `contracts/vault/target/wasm32-unknown-unknown/release/lastkey_vault.wasm` (306 KB)*
+
+### 3. Run Multichain Relayer Verification
+```bash
+node scripts/test_sweep_flow.js
+```
+*Result: 100% of multichain relayer pipelines verified (EVM EIP-1559, Bitcoin BIP-143 PSBT with DER injection, Solana SystemProgram & Token-2022, NEAR Native).*
+
+### 4. Run Frontend Locally
 ```bash
 npx serve web
+# Or open web/index.html directly in any browser
 ```
+*Live Deployment:* [https://mastrophot.github.io/aegis-vault/](https://mastrophot.github.io/aegis-vault/)
+
+---
+
+## 🔒 Security & Invariants
+
+| Attack Vector | Defense Mechanism | Invariant Location |
+| :--- | :--- | :--- |
+| **Relayer Blind-Signing** | Raw transaction bytecode validation; destination must match on-chain policy | [`contracts/vault/src/lib.rs`](contracts/vault/src/lib.rs#L365-L375) |
+| **Solana Substring Injection** | Strict parsing of Solana Message header (`unsigned_writable_count == 1`) | [`contracts/vault/src/lib.rs`](contracts/vault/src/lib.rs#L440-L490) |
+| **Bitcoin Dust Rejection** | Automatic pruning of UTXOs under 546 sats to prevent mempool rejection | [`relayer/sweep_relayer.js`](relayer/sweep_relayer.js#L350-L360) |
+| **Solana Blockhash Expiry** | JIT finalized blockhash refresh immediately prior to MPC signature request | [`relayer/sweep_relayer.js`](relayer/sweep_relayer.js#L585-L600) |
+| **EVM Nonce Stall** | Continuous nonce fault isolation skips broken/honeypot tokens without gaps | [`relayer/sweep_relayer.js`](relayer/sweep_relayer.js#L260-L290) |
+| **Unauthorized Policy Takeover** | 72-hour timelock on destination updates with instant owner cancellation | [`contracts/vault/src/lib.rs`](contracts/vault/src/lib.rs#L210-L245) |
+
+---
+
+## 📜 License
+Apache-2.0 / MIT
