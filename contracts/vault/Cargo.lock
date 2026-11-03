@@ -1146,6 +1146,7 @@ name = "lastkey-vault"
 version = "0.1.0"
 dependencies = [
  "borsh",
+ "bs58 0.5.1",
  "hex",
  "near-sdk",
  "serde",

@@ -3,3 +3,6 @@ contracts/vault/target/
 target/
 .DS_Store
 .credentials/
+.env
+*.log
+*.wasm

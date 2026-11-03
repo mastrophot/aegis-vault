@@ -101,12 +101,10 @@ async function deploy() {
   // 5. Initialize Contract (LastKeyVault::new)
   console.log(`⚙️  Initializing Vault contract...`);
   const owner = 'mastrophot.testnet';
-  const guardian = 'mastrophot.testnet'; // or dedicated guardian
   const mpcContract = 'v1.signer-prod.testnet';
 
   const initArgs = {
     owner,
-    guardian,
     mpc_contract: mpcContract,
     backup: {
       btc: 'tb1qug7ge5vzhslcywjqs62k5392uy7ta5klvd2f7c',

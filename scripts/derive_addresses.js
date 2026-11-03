@@ -7,10 +7,10 @@
 const { contracts, chainAdapters } = require('chainsig.js');
 const { Connection } = require('@solana/web3.js');
 
-async function deriveAllVaultAddresses(accountId, path = 'aegis/0', networkId = 'testnet') {
+async function deriveAllVaultAddresses(accountId = 'lastkey-vault-2151.testnet', path = 'aegis/v0', networkId = 'testnet') {
   console.log(`\n🔑 Deriving Vault Addresses via NEAR MPC (${networkId.toUpperCase()})`);
-  console.log(`• NEAR Account: ${accountId}`);
-  console.log(`• Derivation Path: ${path}\n`);
+  console.log(`• NEAR Vault Contract: ${accountId}`);
+  console.log(`• Derivation Path:     ${path}\n`);
 
   const contract = new contracts.ChainSignatureContract({ networkId });
 
@@ -48,8 +48,8 @@ async function deriveAllVaultAddresses(accountId, path = 'aegis/0', networkId = 
 }
 
 if (require.main === module) {
-  const accountId = process.argv[2] || 'mastrophot.testnet';
-  const path = process.argv[3] || 'aegis/0';
+  const accountId = process.argv[2] || 'lastkey-vault-2151.testnet';
+  const path = process.argv[3] || 'aegis/v0';
   const networkId = process.argv[4] || 'testnet';
   deriveAllVaultAddresses(accountId, path, networkId)
     .then(() => process.exit(0))

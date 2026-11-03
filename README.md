@@ -62,14 +62,14 @@
 ## 📦 Структура репозиторію
 
 - `contracts/vault/`: Смартконтракт на Rust (`near-sdk 5.5.0`):
-  - [lib.rs](file:///Users/maximbutrik/.gemini/antigravity/scratch/lastkey/contracts/vault/src/lib.rs): логіка станів, захист від підміни адрес, таймлок, крос-контрактні виклики до `v1.signer`, повний набір юніт-тестів.
+  - `contracts/vault/src/lib.rs`: логіка станів, захист від підміни адрес, таймлок, крос-контрактні виклики до `v1.signer`, повний набір юніт-тестів.
 - `relayer/`: Автономний сервіс моніторингу та евакуації:
-  - [sweep_relayer.js](file:///Users/maximbutrik/.gemini/antigravity/scratch/lastkey/relayer/sweep_relayer.js): збірка транзакцій для Bitcoin PSBT, EVM EIP-1559 та Solana через `chainsig.js`.
+  - `relayer/sweep_relayer.js`: збірка транзакцій для Bitcoin PSBT, EVM EIP-1559 та Solana через `chainsig.js`.
 - `scripts/`:
-  - [derive_addresses.js](file:///Users/maximbutrik/.gemini/antigravity/scratch/lastkey/scripts/derive_addresses.js): деривація мультичейн-адрес без приватних ключів.
-  - [test_sweep_flow.js](file:///Users/maximbutrik/.gemini/antigravity/scratch/lastkey/scripts/test_sweep_flow.js): симуляція повного циклу евакуації для трьох мереж.
+  - `scripts/derive_addresses.js`: деривація мультичейн-адрес без приватних ключів.
+  - `scripts/test_sweep_flow.js`: симуляція повного циклу евакуації для трьох мереж.
 - `web/`:
-  - [index.html](file:///Users/maximbutrik/.gemini/antigravity/scratch/lastkey/web/index.html): автономний темний веб-інтерфейс з таймером, деривованими адресами, кнопкою паніки та журналом ончейн-подій.
+  - `web/index.html`: автономний темний веб-інтерфейс з таймером, деривованими адресами, кнопкою паніки та журналом ончейн-подій.
 
 ---
 
