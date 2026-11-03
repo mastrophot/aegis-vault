@@ -1840,12 +1840,24 @@ module.exports = { LastKeySweepRelayer };
           <svg class="w-3.5 h-3.5 text-textGray" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
         </a>
 
-        <!-- User Wallet Status Pill -->
-        <div class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-nearElevated border border-nearBorder text-xs font-mono">
-          <span class="w-2 h-2 rounded-full bg-nearGreen"></span>
-          <span class="font-bold text-nearGreen hidden sm:inline">mastrophot.testnet</span>
-          <span class="font-bold text-nearGreen sm:hidden">mastrophot...</span>
-          <span class="text-textMuted border-l border-nearBorder pl-2 font-normal hidden sm:inline">261.78 NEAR</span>
+        <!-- User Wallet Connection Area -->
+        <div id="walletArea" class="flex items-center">
+          <!-- Disconnected state (default) -->
+          <button id="connectWalletBtn" onclick="openWalletModal()" class="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-nearGreen/10 border border-nearGreen/40 hover:bg-nearGreen/20 text-xs font-mono font-bold text-nearGreen hover:text-white transition shadow-sm">
+            <svg class="w-3.5 h-3.5 text-nearGreen" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /><path stroke-linecap="round" stroke-linejoin="round" d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" /></svg>
+            <span>Connect Wallet</span>
+          </button>
+
+          <!-- Connected state (hidden by default) -->
+          <div id="connectedWalletPill" class="hidden flex items-center gap-2 px-3 py-1.5 rounded-full bg-nearElevated border border-nearBorder text-xs font-mono">
+            <span class="w-2 h-2 rounded-full bg-nearGreen"></span>
+            <span id="headerAccountName" class="font-bold text-nearGreen hidden sm:inline">account.testnet</span>
+            <span id="headerAccountNameMobile" class="font-bold text-nearGreen sm:hidden">acc...</span>
+            <span id="headerAccountBalance" class="text-textMuted border-l border-nearBorder pl-2 font-normal hidden sm:inline">0.00 NEAR</span>
+            <button onclick="disconnectWallet()" title="Disconnect" class="ml-1 text-textGray hover:text-red-400 transition p-0.5">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
+            </button>
+          </div>
         </div>
 
         <!-- Vertical Divider -->
@@ -2673,7 +2685,7 @@ module.exports = { LastKeySweepRelayer };
                   <span class="px-3.5 py-2.5 text-xs font-mono font-bold text-[#A6B0C3] bg-white/[0.03] border-r border-white/[0.06]">
                     @
                   </span>
-                  <input id="tgUsernameInput" type="text" value="mastrophot" class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#6E788C] outline-none" placeholder="username or Chat ID">
+                  <input id="tgUsernameInput" type="text" value="" class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#6E788C] outline-none" placeholder="username or Chat ID">
                 </div>
               </div>
             </div>
@@ -2710,7 +2722,7 @@ module.exports = { LastKeySweepRelayer };
                   <span class="px-3.5 py-2.5 text-xs text-[#8C929D] bg-white/[0.03] border-r border-white/[0.06]">
                     ✉
                   </span>
-                  <input id="emailAlertInput" type="email" value="backup@mastrophot.io" class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none" placeholder="your-email@domain.com">
+                  <input id="emailAlertInput" type="email" value="" class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none" placeholder="your-email@domain.com">
                 </div>
               </div>
             </div>
@@ -2772,6 +2784,66 @@ module.exports = { LastKeySweepRelayer };
     </div>
   </div>
 
+  <!-- Wallet Connection Modal -->
+  <div id="walletModal" class="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4 hidden">
+    <div class="near-card border-nearGreen/40 rounded-3xl max-w-md w-full p-6 space-y-5 shadow-near-glow">
+      <div class="flex items-center justify-between border-b border-white/[0.08] pb-4">
+        <div class="flex items-center gap-2.5">
+          <div class="w-8 h-8 rounded-lg bg-nearGreenMuted border border-nearGreen/30 flex items-center justify-center text-nearGreen">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+          </div>
+          <div>
+            <h3 class="text-sm font-bold text-white tracking-tight">Connect NEAR Testnet Wallet</h3>
+            <p class="text-[11px] text-[#A6B0C3] font-mono">Select your connection method</p>
+          </div>
+        </div>
+        <button onclick="closeWalletModal()" class="text-textGray hover:text-white transition p-1">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+        </button>
+      </div>
+
+      <!-- Option 1: Official MyNearWallet -->
+      <div class="p-4 rounded-2xl bg-white/[0.03] border border-nearGreen/30 hover:border-nearGreen transition space-y-3">
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <div class="font-bold text-sm text-white flex items-center gap-1.5">
+              <span>MyNearWallet (Official Testnet)</span>
+              <span class="text-[10px] font-mono text-nearGreen bg-nearGreenMuted px-2 py-0.5 rounded-full">Recommended</span>
+            </div>
+            <p class="text-xs text-[#8C929D] mt-1 leading-relaxed">
+              Standard web wallet redirect. Authorizes the contract via secure testnet session keys.
+            </p>
+          </div>
+        </div>
+        <button onclick="signInMyNearWallet()" class="w-full py-2.5 rounded-xl bg-nearGreen hover:bg-nearGreenHover text-black font-mono font-bold text-xs tracking-wider transition active:scale-98 flex items-center justify-center gap-2 shadow-sm">
+          <span>Connect via MyNearWallet</span>
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M14 5l7 7m0 0l-7 7m7-7H3" /></svg>
+        </button>
+      </div>
+
+      <!-- Option 2: Quick Key / Testnet Developer Login -->
+      <div class="p-4 rounded-2xl bg-white/[0.02] border border-white/[0.08] space-y-3">
+        <div>
+          <div class="font-bold text-xs text-white uppercase font-mono tracking-wider">
+            Developer / Direct Key Sign-In
+          </div>
+          <p class="text-[11px] text-[#8C929D] mt-0.5 leading-snug">
+            Paste your testnet account ID and private key for instant zero-redirect on-chain signing.
+          </p>
+        </div>
+        
+        <div class="space-y-2">
+          <input id="modalAccountInput" type="text" placeholder="e.g. alice.testnet" class="w-full rounded-xl bg-white/[0.03] border border-white/[0.08] px-3.5 py-2 text-xs font-mono text-white placeholder:text-[#585E6A] outline-none focus:border-nearGreen transition">
+          <input id="modalKeyInput" type="password" placeholder="ed25519:..." class="w-full rounded-xl bg-white/[0.03] border border-white/[0.08] px-3.5 py-2 text-xs font-mono text-white placeholder:text-[#585E6A] outline-none focus:border-nearGreen transition">
+        </div>
+
+        <button onclick="saveManualCredentials()" class="w-full py-2 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] text-white border border-white/[0.1] font-mono font-bold text-xs tracking-wider transition active:scale-98">
+          Save Credentials & Sign In
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- QR Code Modal -->
   <div id="qrModal" class="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4 hidden">
     <div class="near-card rounded-3xl max-w-md w-full p-7 space-y-5 text-center shadow-2xl">
@@ -2807,10 +2879,10 @@ module.exports = { LastKeySweepRelayer };
         </p>
       </div>
       <div class="p-3.5 rounded-2xl bg-nearElevated border border-nearBorder font-mono text-xs text-nearGreen font-bold">
-        <span id="modalTgTarget">@mastrophot</span>
+        <span id="modalTgTarget">@telegram_handle</span>
       </div>
       <div class="text-[11px] text-textGray">
-        Also simulated to: <span id="modalEmailTarget" class="text-textSilver font-mono">backup@mastrophot.io</span>
+        Also simulated to: <span id="modalEmailTarget" class="text-textSilver font-mono">backup@example.com</span>
       </div>
       <button onclick="closeTestAlertModal()" class="w-full bg-nearElevated hover:bg-nearHover text-textWhite font-bold py-3 near-pill-btn text-xs sm:text-sm transition border border-nearBorder">
         Close
@@ -2961,21 +3033,21 @@ module.exports = { LastKeySweepRelayer };
     // Bunker Epochs (BIP-32 style MPC Derivations for Post-Quantum ECDSA Bunker Mode)
     const VAULT_EPOCHS = [
       {
-        epoch: 'v0',
+        epoch: '0',
         btc: 'tb1qv35jld0spv722nmar7gz3nqxp0cf70yhcaadl4',
         evm: '0x4BbDe20cc8A8fB5eA9c1a202830efC145E95c5dD',
         sol: 'FpcQP7AUfTxY8pZc6vKn6Jk8JPRhe69C4JHivzUCBNvf',
         near: 'lastkey-vault-2151.testnet'
       },
       {
-        epoch: 'v1',
+        epoch: '1',
         btc: 'tb1q7ycanwtqulrv6t259wrddt9m8vh63wnznt9f62',
         evm: '0x6a9AEa291240599deD484C11E048306036c12AAe',
         sol: '3er9NnueZhA5czpKZL76WMVP7pCkq6aCCqd2sBbD4Ke7',
         near: 'lastkey-vault-2151.testnet'
       },
       {
-        epoch: 'v2',
+        epoch: '2',
         btc: 'tb1qpk7aql6r76y3yl4y7338n7sup0ev0nakflhzhd',
         evm: '0x0D3C38F502b8C79cE6dA508AE0AAB23a24DD4a9F',
         sol: '9gyKbcppDuvAABBiy2LHVDhcoVE5ksBPu5V7KxLJTKip',
@@ -3051,16 +3123,186 @@ module.exports = { LastKeySweepRelayer };
       }
     }
 
+    // NEAR Wallet State & Management
+    let nearConnection = null;
+    let nearWallet = null;
+
+    async function initNearWallet() {
+      if (!window.nearApi) return;
+      try {
+        const { connect, keyStores, WalletConnection } = window.nearApi;
+        const keyStore = new keyStores.BrowserLocalStorageKeyStore();
+        nearConnection = await connect({
+          networkId: 'testnet',
+          keyStore,
+          nodeUrl: NEAR_RPC_URL,
+          walletUrl: 'https://testnet.mynearwallet.com',
+          helperUrl: 'https://helper.testnet.near.org'
+        });
+        nearWallet = new WalletConnection(nearConnection, 'aegis_app');
+
+        // Check if returned from MyNearWallet redirect
+        if (nearWallet.isSignedIn()) {
+          const accountId = nearWallet.getAccountId();
+          localStorage.setItem('aegis_signer_account', accountId);
+          updateWalletConnectedUI(accountId);
+          fetchAccountNearBalance(accountId);
+          return;
+        }
+
+        // Check manual credentials in localStorage
+        const manualAccount = localStorage.getItem('aegis_signer_account');
+        const manualKey = localStorage.getItem('aegis_testnet_signer_key');
+        if (manualAccount && manualKey) {
+          updateWalletConnectedUI(manualAccount);
+          fetchAccountNearBalance(manualAccount);
+          return;
+        }
+
+        updateWalletDisconnectedUI();
+      } catch (err) {
+        console.warn('[Aegis] Wallet init error:', err);
+        updateWalletDisconnectedUI();
+      }
+    }
+
+    function updateWalletConnectedUI(accountId) {
+      const connectBtn = document.getElementById('connectWalletBtn');
+      const connectedPill = document.getElementById('connectedWalletPill');
+      const accountNameEl = document.getElementById('headerAccountName');
+      const accountNameMobileEl = document.getElementById('headerAccountNameMobile');
+      if (connectBtn) connectBtn.classList.add('hidden');
+      if (connectedPill) connectedPill.classList.remove('hidden');
+      if (accountNameEl) {
+        accountNameEl.innerText = accountId;
+        accountNameEl.title = accountId;
+      }
+      if (accountNameMobileEl) {
+        accountNameMobileEl.innerText = accountId.length > 12 ? accountId.slice(0, 10) + '...' : accountId;
+      }
+    }
+
+    function updateWalletDisconnectedUI() {
+      const connectBtn = document.getElementById('connectWalletBtn');
+      const connectedPill = document.getElementById('connectedWalletPill');
+      if (connectBtn) connectBtn.classList.remove('hidden');
+      if (connectedPill) connectedPill.classList.add('hidden');
+    }
+
+    async function fetchAccountNearBalance(accountId) {
+      try {
+        const response = await fetch(NEAR_RPC_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            id: 'bal-check',
+            method: 'query',
+            params: {
+              request_type: 'view_account',
+              finality: 'final',
+              account_id: accountId
+            }
+          })
+        });
+        const data = await response.json();
+        if (data.result && data.result.amount) {
+          const yocto = BigInt(data.result.amount);
+          const whole = yocto / 1000000000000000000000000n;
+          const frac = (yocto % 1000000000000000000000000n) / 10000000000000000000000n;
+          const formatted = `${whole}.${frac.toString().padStart(2, '0').slice(0, 2)}`;
+          const balEl = document.getElementById('headerAccountBalance');
+          if (balEl) balEl.innerText = `${formatted} NEAR`;
+        }
+      } catch (e) {
+        console.warn('Balance check error:', e);
+      }
+    }
+
+    function signInMyNearWallet() {
+      if (!nearWallet) {
+        showToast('Initializing NEAR provider, please retry in 1s...', true);
+        return;
+      }
+      closeWalletModal();
+      nearWallet.requestSignIn({
+        contractId: CONTRACT_ID,
+        title: 'Aegis Multichain Dead-Mans Switch'
+      });
+    }
+
+    function saveManualCredentials() {
+      const accInput = document.getElementById('modalAccountInput');
+      const keyInput = document.getElementById('modalKeyInput');
+      const accountId = accInput ? accInput.value.trim() : '';
+      const privKey = keyInput ? keyInput.value.trim() : '';
+
+      if (!accountId || !accountId.includes('.')) {
+        showToast('Enter a valid NEAR Testnet account (e.g. name.testnet)', true);
+        return;
+      }
+      if (!privKey.startsWith('ed25519:')) {
+        showToast('Private key must start with ed25519:...', true);
+        return;
+      }
+
+      localStorage.setItem('aegis_signer_account', accountId);
+      localStorage.setItem('aegis_testnet_signer_key', privKey);
+      closeWalletModal();
+      updateWalletConnectedUI(accountId);
+      fetchAccountNearBalance(accountId);
+      showToast(`Connected as ${accountId}`);
+    }
+
+    function disconnectWallet() {
+      if (nearWallet && nearWallet.isSignedIn()) {
+        nearWallet.signOut();
+      }
+      localStorage.removeItem('aegis_signer_account');
+      localStorage.removeItem('aegis_testnet_signer_key');
+      updateWalletDisconnectedUI();
+      showToast('Wallet disconnected');
+    }
+
+    function openWalletModal() {
+      const modal = document.getElementById('walletModal');
+      if (modal) modal.classList.remove('hidden');
+    }
+
+    function closeWalletModal() {
+      const modal = document.getElementById('walletModal');
+      if (modal) modal.classList.add('hidden');
+    }
+
     // Direct On-Chain Contract Caller via NEAR Testnet RPC
     async function dispatchNearTransaction(methodName, args = {}) {
       showToast(`Broadcasting on-chain ${methodName}() to NEAR Testnet...`);
       try {
         console.log(`[Aegis On-Chain] Dispatching ${methodName} on ${CONTRACT_ID} with args:`, args);
 
-        const storedKey = localStorage.getItem('aegis_testnet_signer_key');
-        const signerAccountId = localStorage.getItem('aegis_signer_account') || 'mastrophot.testnet';
+        const attachedDeposit = (methodName === 'panic' || methodName === 'ping' || methodName === 'propose_policy') ? '1' : '0';
 
-        if (window.nearApi && storedKey) {
+        // 1. Signed in via MyNearWallet
+        if (nearWallet && nearWallet.isSignedIn()) {
+          const outcome = await nearWallet.account().functionCall({
+            contractId: CONTRACT_ID,
+            methodName: methodName,
+            args: args,
+            gas: '30000000000000', // 30 TGas
+            attachedDeposit
+          });
+          const txHash = outcome?.transaction?.hash || outcome?.transaction_outcome?.id || 'Confirmed';
+          console.log(`✅ [Aegis] MyNearWallet transaction confirmed: ${txHash}`, outcome);
+          showToast(`✅ ${methodName}() confirmed on-chain! Tx: ${txHash.slice(0, 8)}...`);
+          setTimeout(() => fetchLiveContractState(), 2000);
+          return outcome;
+        }
+
+        // 2. Signed in via Developer Private Key
+        const storedKey = localStorage.getItem('aegis_testnet_signer_key');
+        const signerAccountId = localStorage.getItem('aegis_signer_account');
+
+        if (window.nearApi && storedKey && signerAccountId) {
           const { connect, keyStores, KeyPair } = window.nearApi;
           const keyStore = new keyStores.InMemoryKeyStore();
           const keyPair = KeyPair.fromString(storedKey.trim());
@@ -3079,19 +3321,19 @@ module.exports = { LastKeySweepRelayer };
             methodName: methodName,
             args: args,
             gas: '30000000000000', // 30 TGas
-            attachedDeposit: (methodName === 'panic' || methodName === 'ping' || methodName === 'propose_policy') ? '1' : '0' // 1 yoctoNEAR
+            attachedDeposit
           });
 
           const txHash = outcome?.transaction?.hash || outcome?.transaction_outcome?.id || 'Confirmed';
-          console.log(`✅ [Aegis] Transaction finalized: ${txHash}`, outcome);
+          console.log(`✅ [Aegis] KeyPair transaction confirmed: ${txHash}`, outcome);
           showToast(`✅ ${methodName}() confirmed on-chain! Tx: ${txHash.slice(0, 8)}...`);
           setTimeout(() => fetchLiveContractState(), 2000);
           return outcome;
-        } else {
-          console.warn(`[Aegis Web3] No aegis_testnet_signer_key in localStorage. Set localStorage.setItem('aegis_testnet_signer_key', 'ed25519:...') to sign directly.`);
-          showToast(`Transaction sent: ${methodName}(). Waiting for block confirmation...`);
-          setTimeout(() => fetchLiveContractState(), 3000);
         }
+
+        // 3. Not signed in: Prompt wallet connection
+        showToast('Please connect your NEAR testnet wallet first!', true);
+        openWalletModal();
       } catch (err) {
         console.error(`❌ [Aegis] Failed to dispatch ${methodName}:`, err);
         showToast(`Error dispatching ${methodName}: ${err.message}`, true);
@@ -3655,12 +3897,12 @@ module.exports = { LastKeySweepRelayer };
     }
 
     function sendTestAlert() {
-      const tg = document.getElementById('tgUsernameInput').value.trim() || 'mastrophot';
+      const tg = document.getElementById('tgUsernameInput').value.trim() || 'not configured';
       const email = document.getElementById('emailAlertInput').value.trim() || 'not configured';
       document.getElementById('modalTgTarget').innerText = tg;
       document.getElementById('modalEmailTarget').innerText = email;
       document.getElementById('testAlertModal').classList.remove('hidden');
-      showToast(`Test alert queued for ${tg}`);
+      showToast(tg !== 'not configured' ? `Test alert queued for ${tg}` : 'Please enter a Telegram handle or email first', tg === 'not configured');
     }
 
     function closeTestAlertModal() {
@@ -3866,8 +4108,9 @@ module.exports = { LastKeySweepRelayer };
       showToast('Address update cancelled. Previous addresses retained.', true);
     }
 
-    // Initialize Live On-Chain Polling on page load
+    // Initialize Live On-Chain Polling and Wallet Connection on page load
     document.addEventListener('DOMContentLoaded', () => {
+      initNearWallet();
       fetchLiveContractState();
       setInterval(fetchLiveContractState, 15000);
     });
