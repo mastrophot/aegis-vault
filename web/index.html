@@ -1136,61 +1136,97 @@
 
   <!-- Wallet Connection Modal -->
   <div id="walletModal" class="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4 hidden">
-    <div class="near-card border-nearGreen/40 rounded-3xl max-w-md w-full p-6 space-y-5 shadow-near-glow">
+    <div class="near-card border-nearGreen/40 rounded-3xl max-w-md w-full p-6 space-y-4 shadow-near-glow">
+      
+      <!-- Modal Header -->
       <div class="flex items-center justify-between border-b border-white/[0.08] pb-4">
-        <div class="flex items-center gap-2.5">
-          <div class="w-8 h-8 rounded-lg bg-nearGreenMuted border border-nearGreen/30 flex items-center justify-center text-nearGreen">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-          </div>
-          <div>
-            <h3 class="text-sm font-bold text-white tracking-tight">Connect NEAR Testnet Wallet</h3>
-            <p class="text-[11px] text-[#A6B0C3] font-mono">Select your connection method</p>
-          </div>
+        <div>
+          <h3 class="text-base font-bold text-white tracking-tight">Connect NEAR Wallet</h3>
+          <p class="text-xs text-[#A6B0C3] font-mono mt-0.5">Choose your wallet to authorize on-chain vault operations</p>
         </div>
         <button onclick="closeWalletModal()" class="text-textGray hover:text-white transition p-1">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
         </button>
       </div>
 
-      <!-- Option 1: Official MyNearWallet -->
-      <div class="p-4 rounded-2xl bg-white/[0.03] border border-nearGreen/30 hover:border-nearGreen transition space-y-3">
-        <div class="flex items-start justify-between gap-3">
-          <div>
-            <div class="font-bold text-sm text-white flex items-center gap-1.5">
-              <span>MyNearWallet (Official Testnet)</span>
-              <span class="text-[10px] font-mono text-nearGreen bg-nearGreenMuted px-2 py-0.5 rounded-full">Recommended</span>
-            </div>
-            <p class="text-xs text-[#8C929D] mt-1 leading-relaxed">
-              Standard web wallet redirect. Authorizes the contract via secure testnet session keys.
-            </p>
-          </div>
-        </div>
-        <button onclick="signInMyNearWallet()" class="w-full py-2.5 rounded-xl bg-nearGreen hover:bg-nearGreenHover text-black font-mono font-bold text-xs tracking-wider transition active:scale-98 flex items-center justify-center gap-2 shadow-sm">
-          <span>Connect via MyNearWallet</span>
-          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M14 5l7 7m0 0l-7 7m7-7H3" /></svg>
-        </button>
-      </div>
-
-      <!-- Option 2: Quick Key / Testnet Developer Login -->
-      <div class="p-4 rounded-2xl bg-white/[0.02] border border-white/[0.08] space-y-3">
-        <div>
-          <div class="font-bold text-xs text-white uppercase font-mono tracking-wider">
-            Developer / Direct Key Sign-In
-          </div>
-          <p class="text-[11px] text-[#8C929D] mt-0.5 leading-snug">
-            Paste your testnet account ID and private key for instant zero-redirect on-chain signing.
-          </p>
-        </div>
+      <!-- Wallets Selection List -->
+      <div class="space-y-2.5">
         
-        <div class="space-y-2">
-          <input id="modalAccountInput" type="text" placeholder="e.g. alice.testnet" class="w-full rounded-xl bg-white/[0.03] border border-white/[0.08] px-3.5 py-2 text-xs font-mono text-white placeholder:text-[#585E6A] outline-none focus:border-nearGreen transition">
-          <input id="modalKeyInput" type="password" placeholder="ed25519:..." class="w-full rounded-xl bg-white/[0.03] border border-white/[0.08] px-3.5 py-2 text-xs font-mono text-white placeholder:text-[#585E6A] outline-none focus:border-nearGreen transition">
-        </div>
+        <!-- 1. Meteor Wallet -->
+        <button onclick="signInMeteorWallet()" class="w-full p-3.5 rounded-2xl bg-white/[0.03] hover:bg-purple-950/30 border border-white/[0.08] hover:border-purple-500/50 transition flex items-center justify-between group active:scale-[0.99]">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-purple-600/20 border border-purple-500/30 flex items-center justify-center text-purple-400 group-hover:scale-105 transition font-bold font-mono">
+              <svg class="w-5 h-5 text-purple-400" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 2L14.4 7.2L20 8L16 12L17 17.6L12 15L7 17.6L8 12L4 8L9.6 7.2L12 2Z"/>
+              </svg>
+            </div>
+            <div class="text-left">
+              <div class="font-bold text-sm text-white group-hover:text-purple-300 transition flex items-center gap-2">
+                <span>Meteor Wallet</span>
+                <span class="text-[9px] font-mono text-purple-300 bg-purple-900/40 border border-purple-500/30 px-2 py-0.5 rounded-full">Extension & Web</span>
+              </div>
+              <p class="text-[11px] text-[#8C929D] font-mono">Browser extension & testnet.meteorwallet.app</p>
+            </div>
+          </div>
+          <svg class="w-4 h-4 text-textGray group-hover:text-white transition group-hover:translate-x-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+        </button>
 
-        <button onclick="saveManualCredentials()" class="w-full py-2 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] text-white border border-white/[0.1] font-mono font-bold text-xs tracking-wider transition active:scale-98">
-          Save Credentials & Sign In
+        <!-- 2. MyNearWallet -->
+        <button onclick="signInMyNearWallet()" class="w-full p-3.5 rounded-2xl bg-white/[0.03] hover:bg-nearGreenMuted border border-white/[0.08] hover:border-nearGreen/50 transition flex items-center justify-between group active:scale-[0.99]">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-nearGreenMuted border border-nearGreen/30 flex items-center justify-center text-nearGreen group-hover:scale-105 transition">
+              <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M4 19V5L12 15.5V5H19.5V19L11.5 8.5V19H4Z" fill="#00EC97"/>
+              </svg>
+            </div>
+            <div class="text-left">
+              <div class="font-bold text-sm text-white group-hover:text-nearGreen transition flex items-center gap-2">
+                <span>MyNearWallet</span>
+                <span class="text-[9px] font-mono text-nearGreen bg-nearGreenMuted border border-nearGreen/30 px-2 py-0.5 rounded-full">Web Wallet</span>
+              </div>
+              <p class="text-[11px] text-[#8C929D] font-mono">Official NEAR web login (testnet.mynearwallet.com)</p>
+            </div>
+          </div>
+          <svg class="w-4 h-4 text-textGray group-hover:text-white transition group-hover:translate-x-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+        </button>
+
+        <!-- 3. HERE Wallet -->
+        <button onclick="signInHereWallet()" class="w-full p-3.5 rounded-2xl bg-white/[0.03] hover:bg-amber-950/30 border border-white/[0.08] hover:border-amber-500/50 transition flex items-center justify-between group active:scale-[0.99]">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 group-hover:scale-105 transition font-bold font-mono">
+              H
+            </div>
+            <div class="text-left">
+              <div class="font-bold text-sm text-white group-hover:text-amber-300 transition flex items-center gap-2">
+                <span>HERE Wallet</span>
+                <span class="text-[9px] font-mono text-amber-300 bg-amber-950/40 border border-amber-500/30 px-2 py-0.5 rounded-full">Mobile App</span>
+              </div>
+              <p class="text-[11px] text-[#8C929D] font-mono">Mobile app with biometric passkey confirmation</p>
+            </div>
+          </div>
+          <svg class="w-4 h-4 text-textGray group-hover:text-white transition group-hover:translate-x-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
         </button>
       </div>
+
+      <!-- Collapsible Developer Mode -->
+      <div class="pt-2 border-t border-white/[0.08]">
+        <button type="button" onclick="toggleDevLogin()" class="w-full text-left flex items-center justify-between text-xs font-mono text-[#8C929D] hover:text-white transition py-1">
+          <span class="flex items-center gap-1.5">
+            <svg class="w-3.5 h-3.5 text-nearCyan" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
+            <span>Developer Mode / Direct Private Key</span>
+          </span>
+          <span id="devLoginChevron" class="text-xs">▼</span>
+        </button>
+
+        <div id="devLoginPanel" class="mt-2 space-y-2 hidden">
+          <input id="modalAccountInput" type="text" placeholder="Account ID (e.g. alice.testnet)" class="w-full rounded-xl bg-white/[0.03] border border-white/[0.08] px-3.5 py-2 text-xs font-mono text-white placeholder:text-[#585E6A] outline-none focus:border-nearGreen transition">
+          <input id="modalKeyInput" type="password" placeholder="Private Key (ed25519:...)" class="w-full rounded-xl bg-white/[0.03] border border-white/[0.08] px-3.5 py-2 text-xs font-mono text-white placeholder:text-[#585E6A] outline-none focus:border-nearGreen transition">
+          <button onclick="saveManualCredentials()" class="w-full py-2 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] text-white border border-white/[0.1] font-mono font-bold text-xs tracking-wider transition active:scale-98">
+            Connect Key Directly
+          </button>
+        </div>
+      </div>
+
     </div>
   </div>
 
@@ -1477,7 +1513,36 @@
     let nearConnection = null;
     let nearWallet = null;
 
+    function toggleDevLogin() {
+      const panel = document.getElementById('devLoginPanel');
+      const chevron = document.getElementById('devLoginChevron');
+      if (panel) {
+        const isHidden = panel.classList.toggle('hidden');
+        if (chevron) {
+          chevron.innerText = isHidden ? '▼' : '▲';
+        }
+      }
+    }
+
     async function initNearWallet() {
+      // 1. Check Meteor Wallet injected provider
+      if (window.meteorWallet) {
+        try {
+          if (typeof window.meteorWallet.isSignedIn === 'function' && window.meteorWallet.isSignedIn()) {
+            const meteorAcc = window.meteorWallet.getAccountId();
+            if (meteorAcc) {
+              localStorage.setItem('aegis_signer_account', meteorAcc);
+              localStorage.setItem('aegis_wallet_type', 'meteor');
+              updateWalletConnectedUI(meteorAcc);
+              fetchAccountNearBalance(meteorAcc);
+              return;
+            }
+          }
+        } catch (e) {
+          console.warn('[Aegis] Meteor check error:', e);
+        }
+      }
+
       if (!window.nearApi) return;
       try {
         const { connect, keyStores, WalletConnection } = window.nearApi;
@@ -1495,6 +1560,7 @@
         if (nearWallet.isSignedIn()) {
           const accountId = nearWallet.getAccountId();
           localStorage.setItem('aegis_signer_account', accountId);
+          localStorage.setItem('aegis_wallet_type', 'mynearwallet');
           updateWalletConnectedUI(accountId);
           fetchAccountNearBalance(accountId);
           return;
@@ -1569,6 +1635,41 @@
       }
     }
 
+    async function signInMeteorWallet() {
+      closeWalletModal();
+      if (window.meteorWallet) {
+        try {
+          showToast('Connecting Meteor Wallet...');
+          if (typeof window.meteorWallet.requestSignIn === 'function') {
+            await window.meteorWallet.requestSignIn({ contract_id: CONTRACT_ID });
+          } else if (typeof window.meteorWallet.signIn === 'function') {
+            await window.meteorWallet.signIn({ contractId: CONTRACT_ID });
+          }
+          const accountId = window.meteorWallet.getAccountId ? window.meteorWallet.getAccountId() : null;
+          if (accountId) {
+            localStorage.setItem('aegis_signer_account', accountId);
+            localStorage.setItem('aegis_wallet_type', 'meteor');
+            updateWalletConnectedUI(accountId);
+            fetchAccountNearBalance(accountId);
+            showToast(`Connected via Meteor: ${accountId}`);
+          }
+        } catch (e) {
+          console.error('Meteor login error:', e);
+          showToast(`Meteor error: ${e.message}`, true);
+        }
+      } else {
+        // Extension not found, redirect to Meteor testnet web
+        showToast('Meteor extension not detected. Opening Meteor Testnet...', true);
+        window.open('https://testnet.meteorwallet.app', '_blank');
+      }
+    }
+
+    function signInHereWallet() {
+      closeWalletModal();
+      showToast('Opening HERE Wallet web portal...', false);
+      window.open('https://web.herewallet.app', '_blank');
+    }
+
     function signInMyNearWallet() {
       if (!nearWallet) {
         showToast('Initializing NEAR provider, please retry in 1s...', true);
@@ -1598,6 +1699,7 @@
 
       localStorage.setItem('aegis_signer_account', accountId);
       localStorage.setItem('aegis_testnet_signer_key', privKey);
+      localStorage.setItem('aegis_wallet_type', 'direct_key');
       closeWalletModal();
       updateWalletConnectedUI(accountId);
       fetchAccountNearBalance(accountId);
@@ -1605,10 +1707,14 @@
     }
 
     function disconnectWallet() {
+      if (window.meteorWallet && typeof window.meteorWallet.signOut === 'function') {
+        try { window.meteorWallet.signOut(); } catch (e) {}
+      }
       if (nearWallet && nearWallet.isSignedIn()) {
         nearWallet.signOut();
       }
       localStorage.removeItem('aegis_signer_account');
+      localStorage.removeItem('aegis_wallet_type');
       localStorage.removeItem('aegis_testnet_signer_key');
       updateWalletDisconnectedUI();
       showToast('Wallet disconnected');
@@ -1632,7 +1738,27 @@
 
         const attachedDeposit = (methodName === 'panic' || methodName === 'ping' || methodName === 'propose_policy') ? '1' : '0';
 
-        // 1. Signed in via MyNearWallet
+        // 1. Signed in via Meteor Wallet
+        const walletType = localStorage.getItem('aegis_wallet_type');
+        if ((walletType === 'meteor' || (!nearWallet?.isSignedIn() && window.meteorWallet)) && window.meteorWallet) {
+          if (typeof window.meteorWallet.isSignedIn === 'function' && window.meteorWallet.isSignedIn()) {
+            const account = window.meteorWallet.account();
+            const outcome = await account.functionCall({
+              contractId: CONTRACT_ID,
+              methodName: methodName,
+              args: args,
+              gas: '30000000000000', // 30 TGas
+              attachedDeposit
+            });
+            const txHash = outcome?.transaction?.hash || outcome?.transaction_outcome?.id || 'Confirmed';
+            console.log(`✅ [Aegis] Meteor Wallet transaction confirmed: ${txHash}`, outcome);
+            showToast(`✅ ${methodName}() confirmed on-chain! Tx: ${txHash.slice(0, 8)}...`);
+            setTimeout(() => fetchLiveContractState(), 2000);
+            return outcome;
+          }
+        }
+
+        // 2. Signed in via MyNearWallet
         if (nearWallet && nearWallet.isSignedIn()) {
           const outcome = await nearWallet.account().functionCall({
             contractId: CONTRACT_ID,
@@ -1648,7 +1774,7 @@
           return outcome;
         }
 
-        // 2. Signed in via Developer Private Key
+        // 3. Signed in via Developer Private Key
         const storedKey = localStorage.getItem('aegis_testnet_signer_key');
         const signerAccountId = localStorage.getItem('aegis_signer_account');
 
@@ -1681,7 +1807,7 @@
           return outcome;
         }
 
-        // 3. Not signed in: Prompt wallet connection
+        // 4. Not signed in: Prompt wallet connection
         showToast('Please connect your NEAR testnet wallet first!', true);
         openWalletModal();
       } catch (err) {
