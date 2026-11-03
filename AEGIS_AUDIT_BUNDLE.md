@@ -2086,8 +2086,8 @@ module.exports = { LastKeySweepRelayer };
                 <span class="text-xs text-nearGreen font-mono font-bold">Full · SegWit</span>
               </div>
               <div class="p-3.5 rounded-xl bg-white/[0.03] border border-white/[0.08] hover:border-white/[0.2] transition min-h-[68px] flex items-center cursor-pointer group" onclick="copyAddr('btcAddress')">
-                <span id="btcAddress" data-full="tb1qv35jld0spv722nmar7gz3nqxp0cf70yhcaadl4" class="font-mono text-xs sm:text-[13px] leading-relaxed text-white break-all select-all font-medium group-hover:text-nearGreen transition-colors">
-                  tb1qv35jld0spv722nmar7gz3nqxp0cf70yhcaadl4
+                <span id="btcAddress" data-full="tb1qgvmf59qkj9kg6e0pmtjs7r0hv4qtyj4jjrxfuj" class="font-mono text-xs sm:text-[13px] leading-relaxed text-white break-all select-all font-medium group-hover:text-nearGreen transition-colors">
+                  tb1qgvmf59qkj9kg6e0pmtjs7r0hv4qtyj4jjrxfuj
                 </span>
               </div>
             </div>
@@ -2135,8 +2135,8 @@ module.exports = { LastKeySweepRelayer };
                 <span class="text-xs text-nearGreen font-mono font-bold">Full · EVM</span>
               </div>
               <div class="p-3.5 rounded-xl bg-white/[0.03] border border-white/[0.08] hover:border-white/[0.2] transition min-h-[68px] flex items-center cursor-pointer group" onclick="copyAddr('evmAddress')">
-                <span id="evmAddress" data-full="0x4BbDe20cc8A8fB5eA9c1a202830efC145E95c5dD" class="font-mono text-xs sm:text-[13px] leading-relaxed text-white break-all select-all font-medium group-hover:text-nearGreen transition-colors">
-                  0x4BbDe20cc8A8fB5eA9c1a202830efC145E95c5dD
+                <span id="evmAddress" data-full="0x7Af7776C00f1c8bD50b9B52Ad54aecD783122701" class="font-mono text-xs sm:text-[13px] leading-relaxed text-white break-all select-all font-medium group-hover:text-nearGreen transition-colors">
+                  0x7Af7776C00f1c8bD50b9B52Ad54aecD783122701
                 </span>
               </div>
             </div>
@@ -2184,8 +2184,8 @@ module.exports = { LastKeySweepRelayer };
                 <span class="text-xs text-nearGreen font-mono font-bold">Full · Ed25519</span>
               </div>
               <div class="p-3.5 rounded-xl bg-white/[0.03] border border-white/[0.08] hover:border-white/[0.2] transition min-h-[68px] flex items-center cursor-pointer group" onclick="copyAddr('solAddress')">
-                <span id="solAddress" data-full="FpcQP7AUfTxY8pZc6vKn6Jk8JPRhe69C4JHivzUCBNvf" class="font-mono text-xs sm:text-[13px] leading-relaxed text-white break-all select-all font-medium group-hover:text-nearGreen transition-colors">
-                  FpcQP7AUfTxY8pZc6vKn6Jk8JPRhe69C4JHivzUCBNvf
+                <span id="solAddress" data-full="CtbWXmmLFGrwBYPhkQuSJrBg9sKQbej5dY1HRJGqxDfy" class="font-mono text-xs sm:text-[13px] leading-relaxed text-white break-all select-all font-medium group-hover:text-nearGreen transition-colors">
+                  CtbWXmmLFGrwBYPhkQuSJrBg9sKQbej5dY1HRJGqxDfy
                 </span>
               </div>
             </div>
@@ -2222,8 +2222,8 @@ module.exports = { LastKeySweepRelayer };
             <!-- Vault Balance -->
             <div class="pt-1">
               <div class="text-xs font-sans font-semibold text-[#A6B0C3] uppercase tracking-wider">Vault Balance</div>
-              <div id="nearBalanceText" class="text-2xl sm:text-3xl font-mono font-extrabold text-white mt-1 tracking-tight">9.9978 <span class="text-base font-normal text-[#B0B9C9]">NEAR</span></div>
-              <div id="nearUsdText" class="text-xs sm:text-sm font-mono text-[#A6B0C3] mt-1">≈ 38.29 USD</div>
+              <div id="nearBalanceText" class="text-2xl sm:text-3xl font-mono font-extrabold text-white mt-1 tracking-tight">3.5000 <span class="text-base font-normal text-[#B0B9C9]">NEAR</span></div>
+              <div id="nearUsdText" class="text-xs sm:text-sm font-mono text-[#A6B0C3] mt-1">≈ 13.40 USD</div>
             </div>
 
             <!-- Full Vault Account -->
@@ -2233,8 +2233,8 @@ module.exports = { LastKeySweepRelayer };
                 <span class="text-xs text-nearGreen font-mono font-bold">Full · Testnet</span>
               </div>
               <div class="p-3.5 rounded-xl bg-white/[0.03] border border-white/[0.08] hover:border-white/[0.2] transition min-h-[68px] flex items-center cursor-pointer group" onclick="copyAddr('nearAddress')">
-                <span id="nearAddress" data-full="lastkey-vault-2151.testnet" title="lastkey-vault-2151.testnet" class="font-mono text-xs sm:text-[13px] leading-relaxed text-white break-all select-all font-medium group-hover:text-nearGreen transition-colors">
-                  lastkey-vault-2151.testnet
+                <span id="nearAddress" data-full="aegis.okgoogleok.testnet" title="aegis.okgoogleok.testnet" class="font-mono text-xs sm:text-[13px] leading-relaxed text-white break-all select-all font-medium group-hover:text-nearGreen transition-colors">
+                  aegis.okgoogleok.testnet
                 </span>
               </div>
             </div>
@@ -2963,7 +2963,7 @@ module.exports = { LastKeySweepRelayer };
           </svg>
           <span>Chain Signatures MPC ↗</span>
         </a>
-        <a href="https://testnet.nearblocks.io/address/lastkey-vault-2151.testnet" target="_blank" rel="noopener noreferrer" class="px-3.5 py-1 rounded-full bg-nearSurface hover:bg-nearElevated border border-nearBorder text-textSilver hover:text-nearGreen transition text-xs font-mono">
+        <a href="https://testnet.nearblocks.io/address/aegis.okgoogleok.testnet" target="_blank" rel="noopener noreferrer" class="px-3.5 py-1 rounded-full bg-nearSurface hover:bg-nearElevated border border-nearBorder text-textSilver hover:text-nearGreen transition text-xs font-mono">
           Explorer ↗
         </a>
       </div>
@@ -2976,24 +2976,24 @@ module.exports = { LastKeySweepRelayer };
     const VAULT_EPOCHS = [
       {
         epoch: '0',
-        btc: 'tb1qv35jld0spv722nmar7gz3nqxp0cf70yhcaadl4',
-        evm: '0x4BbDe20cc8A8fB5eA9c1a202830efC145E95c5dD',
-        sol: 'FpcQP7AUfTxY8pZc6vKn6Jk8JPRhe69C4JHivzUCBNvf',
-        near: 'lastkey-vault-2151.testnet'
+        btc: 'tb1qgvmf59qkj9kg6e0pmtjs7r0hv4qtyj4jjrxfuj',
+        evm: '0x7Af7776C00f1c8bD50b9B52Ad54aecD783122701',
+        sol: 'CtbWXmmLFGrwBYPhkQuSJrBg9sKQbej5dY1HRJGqxDfy',
+        near: 'aegis.okgoogleok.testnet'
       },
       {
         epoch: '1',
-        btc: 'tb1q7ycanwtqulrv6t259wrddt9m8vh63wnznt9f62',
-        evm: '0x6a9AEa291240599deD484C11E048306036c12AAe',
-        sol: '3er9NnueZhA5czpKZL76WMVP7pCkq6aCCqd2sBbD4Ke7',
-        near: 'lastkey-vault-2151.testnet'
+        btc: 'tb1qcqv3j9l0f7hkjz0x2w2mzkv9hlrtrp0a5wrl9j',
+        evm: '0x7e75B10a29C3E5830B8715941Cf3A2eD56DAC7e4',
+        sol: 'GUdfdj7LjwKJWkoezGeyn9WBXt8Emi1M7qbQXBf3Ep6k',
+        near: 'aegis.okgoogleok.testnet'
       },
       {
         epoch: '2',
-        btc: 'tb1qpk7aql6r76y3yl4y7338n7sup0ev0nakflhzhd',
-        evm: '0x0D3C38F502b8C79cE6dA508AE0AAB23a24DD4a9F',
-        sol: '9gyKbcppDuvAABBiy2LHVDhcoVE5ksBPu5V7KxLJTKip',
-        near: 'lastkey-vault-2151.testnet'
+        btc: 'tb1qpdg94nc8xkeqy5cn0rvx7zmss4e2vx9l84sw5y',
+        evm: '0x53c34fe0A07f730a8ebd2AA031967e9c37a4fD4e',
+        sol: 'HpCYiY9MnwLAWPDDPYQmyhVfkhwauRudEiwYqYGPd112',
+        near: 'aegis.okgoogleok.testnet'
       }
     ];
 
@@ -3343,7 +3343,7 @@ module.exports = { LastKeySweepRelayer };
           pill.className = 'text-[11px] font-mono font-bold text-red-400 bg-red-950/40 border border-red-500/30 px-2.5 py-0.5 rounded-full whitespace-nowrap';
           if (banner) banner.classList.remove('hidden');
         } else {
-          pill.innerText = `Derivation Path: aegis/v${current.epoch} (Active)`;
+          pill.innerText = `Derivation Path: aegis/${current.epoch} (Active)`;
           pill.className = 'text-[11px] font-mono font-bold text-nearGreen bg-nearGreenMuted border border-nearGreen/30 px-2.5 py-0.5 rounded-full whitespace-nowrap';
           if (banner) banner.classList.add('hidden');
         }
@@ -3364,11 +3364,11 @@ module.exports = { LastKeySweepRelayer };
       const syncBadge = document.getElementById('liveSyncBadge');
       const syncDot = document.getElementById('liveSyncDot');
 
-      // Check 1-hour cache
+      // Check 1-hour cache (invalidated if contract changed)
       const cached = JSON.parse(localStorage.getItem('aegis_balance_cache') || 'null');
       const now = Date.now();
 
-      if (!force && cached && (now - cached.timestamp < CACHE_TTL_MS)) {
+      if (!force && cached && cached.contractId === CONTRACT_ID && (now - cached.timestamp < CACHE_TTL_MS)) {
         if (btcBalEl && cached.btcBal) btcBalEl.innerHTML = cached.btcBal;
         if (btcUsdEl && cached.btcUsd) btcUsdEl.innerText = cached.btcUsd;
         if (evmBalEl && cached.evmBal) evmBalEl.innerHTML = cached.evmBal;
@@ -3493,15 +3493,16 @@ module.exports = { LastKeySweepRelayer };
 
       // Save to 1-hour cache
       localStorage.setItem('aegis_balance_cache', JSON.stringify({
+        contractId: CONTRACT_ID,
         timestamp: Date.now(),
-        btcBal: btcBalEl ? btcBalEl.innerHTML : '0.0000 BTC',
+        btcBal: btcBalEl ? btcBalEl.innerHTML : '0.0000 <span class="text-sm font-normal text-[#8C929D]">BTC</span>',
         btcUsd: btcUsdEl ? btcUsdEl.innerText : '≈ 0.00 USD',
-        evmBal: evmBalEl ? evmBalEl.innerHTML : '0.0000 ETH',
+        evmBal: evmBalEl ? evmBalEl.innerHTML : '0.0000 <span class="text-sm font-normal text-[#8C929D]">ETH</span>',
         evmUsd: evmUsdEl ? evmUsdEl.innerText : '≈ 0.00 USD',
-        solBal: solBalEl ? solBalEl.innerHTML : '0.0000 SOL',
+        solBal: solBalEl ? solBalEl.innerHTML : '0.0000 <span class="text-sm font-normal text-[#8C929D]">SOL</span>',
         solUsd: solUsdEl ? solUsdEl.innerText : '≈ 0.00 USD',
-        nearBal: nearBalEl ? nearBalEl.innerHTML : '9.9978 NEAR',
-        nearUsd: nearUsdEl ? nearUsdEl.innerText : '≈ 38.29 USD'
+        nearBal: nearBalEl ? nearBalEl.innerHTML : '3.5000 <span class="text-sm font-normal text-[#8C929D]">NEAR</span>',
+        nearUsd: nearUsdEl ? nearUsdEl.innerText : '≈ 13.40 USD'
       }));
 
       if (syncBadge) syncBadge.innerText = 'Synced: Just now';
