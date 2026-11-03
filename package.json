@@ -7,12 +7,25 @@
     "derive": "node scripts/derive_addresses.js"
   },
   "dependencies": {
+    "@near-wallet-selector/bitte-wallet": "^10.1.4",
+    "@near-wallet-selector/core": "^10.1.4",
+    "@near-wallet-selector/here-wallet": "^10.1.4",
+    "@near-wallet-selector/meteor-wallet": "^10.1.4",
+    "@near-wallet-selector/modal-ui": "^10.1.4",
+    "@near-wallet-selector/nightly": "^10.1.4",
+    "@near-wallet-selector/sender": "^10.1.4",
     "bitcoinjs-lib": "^6.1.6",
     "bs58": "^6.0.0",
     "chainsig.js": "^1.1.16",
     "elliptic": "^6.6.1",
+    "esbuild": "^0.28.2",
     "ethers": "^6.13.4",
     "near-api-js": "^4.0.3",
+    "near-seed-phrase": "^0.2.1",
     "tiny-secp256k1": "^2.2.3"
+  },
+  "devDependencies": {
+    "@esbuild-plugins/node-modules-polyfill": "^0.2.2",
+    "vite": "^8.3.5"
   }
 }

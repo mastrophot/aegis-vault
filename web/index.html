@@ -16,6 +16,9 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
   <!-- NEAR API JS (Official Web3 Provider) -->
   <script src="https://cdn.jsdelivr.net/npm/near-api-js@2.1.4/dist/near-api-js.min.js"></script>
+  <!-- NEAR Wallet Selector Official Styles & Standalone Bundle -->
+  <link rel="stylesheet" href="./modal-ui.css">
+  <script src="./wallet-bundle.js"></script>
   
   <script>
     tailwind.config = {
@@ -1506,61 +1509,45 @@
     }
 
     async function initNearWallet() {
-      // 1. Check Meteor Wallet injected provider
-      if (window.meteorWallet) {
+      // 1. Initialize Official NEAR Wallet Selector
+      if (window.AegisWallet && typeof window.AegisWallet.init === 'function') {
         try {
-          if (typeof window.meteorWallet.isSignedIn === 'function' && window.meteorWallet.isSignedIn()) {
-            const meteorAcc = window.meteorWallet.getAccountId();
-            if (meteorAcc) {
-              localStorage.setItem('aegis_signer_account', meteorAcc);
-              localStorage.setItem('aegis_wallet_type', 'meteor');
-              updateWalletConnectedUI(meteorAcc);
-              fetchAccountNearBalance(meteorAcc);
-              return;
+          await window.AegisWallet.init(CONTRACT_ID, (accountId) => {
+            console.log('📡 [Aegis] WalletSelector account state changed:', accountId);
+            if (accountId) {
+              localStorage.setItem('aegis_signer_account', accountId);
+              localStorage.setItem('aegis_wallet_type', 'wallet_selector');
+              updateWalletConnectedUI(accountId);
+              fetchAccountNearBalance(accountId);
+            } else if (localStorage.getItem('aegis_wallet_type') === 'wallet_selector') {
+              localStorage.removeItem('aegis_signer_account');
+              localStorage.removeItem('aegis_wallet_type');
+              updateWalletDisconnectedUI();
             }
+          });
+          const activeAcc = window.AegisWallet.getAccountId ? window.AegisWallet.getAccountId() : null;
+          if (activeAcc) {
+            localStorage.setItem('aegis_signer_account', activeAcc);
+            localStorage.setItem('aegis_wallet_type', 'wallet_selector');
+            updateWalletConnectedUI(activeAcc);
+            fetchAccountNearBalance(activeAcc);
+            return;
           }
-        } catch (e) {
-          console.warn('[Aegis] Meteor check error:', e);
+        } catch (err) {
+          console.warn('[Aegis] WalletSelector init error:', err);
         }
       }
 
-      if (!window.nearApi) return;
-      try {
-        const { connect, keyStores, WalletConnection } = window.nearApi;
-        const keyStore = new keyStores.BrowserLocalStorageKeyStore();
-        nearConnection = await connect({
-          networkId: 'testnet',
-          keyStore,
-          nodeUrl: NEAR_RPC_URL,
-          walletUrl: 'https://testnet.mynearwallet.com',
-          helperUrl: 'https://helper.testnet.near.org'
-        });
-        nearWallet = new WalletConnection(nearConnection, 'aegis_app');
-
-        // Check if returned from MyNearWallet redirect
-        if (nearWallet.isSignedIn()) {
-          const accountId = nearWallet.getAccountId();
-          localStorage.setItem('aegis_signer_account', accountId);
-          localStorage.setItem('aegis_wallet_type', 'mynearwallet');
-          updateWalletConnectedUI(accountId);
-          fetchAccountNearBalance(accountId);
-          return;
-        }
-
-        // Check manual credentials in localStorage
-        const manualAccount = localStorage.getItem('aegis_signer_account');
-        const manualKey = localStorage.getItem('aegis_testnet_signer_key');
-        if (manualAccount && manualKey) {
-          updateWalletConnectedUI(manualAccount);
-          fetchAccountNearBalance(manualAccount);
-          return;
-        }
-
-        updateWalletDisconnectedUI();
-      } catch (err) {
-        console.warn('[Aegis] Wallet init error:', err);
-        updateWalletDisconnectedUI();
+      // 2. Check direct developer credentials in localStorage
+      const manualAccount = localStorage.getItem('aegis_signer_account');
+      const manualKey = localStorage.getItem('aegis_testnet_signer_key');
+      if (manualAccount && manualKey) {
+        updateWalletConnectedUI(manualAccount);
+        fetchAccountNearBalance(manualAccount);
+        return;
       }
+
+      updateWalletDisconnectedUI();
     }
 
     function updateWalletConnectedUI(accountId) {
@@ -1616,51 +1603,9 @@
       }
     }
 
-    async function signInMeteorWallet() {
-      closeWalletModal();
-      if (window.meteorWallet) {
-        try {
-          showToast('Connecting Meteor Wallet...');
-          if (typeof window.meteorWallet.requestSignIn === 'function') {
-            await window.meteorWallet.requestSignIn({ contract_id: CONTRACT_ID });
-          } else if (typeof window.meteorWallet.signIn === 'function') {
-            await window.meteorWallet.signIn({ contractId: CONTRACT_ID });
-          }
-          const accountId = window.meteorWallet.getAccountId ? window.meteorWallet.getAccountId() : null;
-          if (accountId) {
-            localStorage.setItem('aegis_signer_account', accountId);
-            localStorage.setItem('aegis_wallet_type', 'meteor');
-            updateWalletConnectedUI(accountId);
-            fetchAccountNearBalance(accountId);
-            showToast(`Connected via Meteor: ${accountId}`);
-          }
-        } catch (e) {
-          console.error('Meteor login error:', e);
-          showToast(`Meteor error: ${e.message}`, true);
-        }
-      } else {
-        // Extension not found, redirect to Meteor testnet web
-        showToast('Meteor extension not detected. Opening Meteor Testnet...', true);
-        window.open('https://testnet.meteorwallet.app', '_blank');
-      }
-    }
-
-    function signInHereWallet() {
-      closeWalletModal();
-      showToast('Opening HERE Wallet web portal...', false);
-      window.open('https://web.herewallet.app', '_blank');
-    }
-
-    function signInMyNearWallet() {
-      if (!nearWallet) {
-        showToast('Initializing NEAR provider, please retry in 1s...', true);
-        return;
-      }
-      closeWalletModal();
-      nearWallet.requestSignIn({
-        contractId: CONTRACT_ID,
-        title: 'Aegis Multichain Dead-Mans Switch'
-      });
+    function openDevLoginModal() {
+      const modal = document.getElementById('walletModal');
+      if (modal) modal.classList.remove('hidden');
     }
 
     function saveManualCredentials() {
@@ -1687,12 +1632,9 @@
       showToast(`Connected as ${accountId}`);
     }
 
-    function disconnectWallet() {
-      if (window.meteorWallet && typeof window.meteorWallet.signOut === 'function') {
-        try { window.meteorWallet.signOut(); } catch (e) {}
-      }
-      if (nearWallet && nearWallet.isSignedIn()) {
-        nearWallet.signOut();
+    async function disconnectWallet() {
+      if (window.AegisWallet && typeof window.AegisWallet.signOut === 'function') {
+        try { await window.AegisWallet.signOut(); } catch (e) {}
       }
       localStorage.removeItem('aegis_signer_account');
       localStorage.removeItem('aegis_wallet_type');
@@ -1702,8 +1644,12 @@
     }
 
     function openWalletModal() {
-      const modal = document.getElementById('walletModal');
-      if (modal) modal.classList.remove('hidden');
+      if (window.AegisWallet && typeof window.AegisWallet.openModal === 'function') {
+        window.AegisWallet.openModal();
+      } else {
+        const modal = document.getElementById('walletModal');
+        if (modal) modal.classList.remove('hidden');
+      }
     }
 
     function closeWalletModal() {
@@ -1719,43 +1665,23 @@
 
         const attachedDeposit = (methodName === 'panic' || methodName === 'ping' || methodName === 'propose_policy') ? '1' : '0';
 
-        // 1. Signed in via Meteor Wallet
-        const walletType = localStorage.getItem('aegis_wallet_type');
-        if ((walletType === 'meteor' || (!nearWallet?.isSignedIn() && window.meteorWallet)) && window.meteorWallet) {
-          if (typeof window.meteorWallet.isSignedIn === 'function' && window.meteorWallet.isSignedIn()) {
-            const account = window.meteorWallet.account();
-            const outcome = await account.functionCall({
-              contractId: CONTRACT_ID,
-              methodName: methodName,
-              args: args,
-              gas: '30000000000000', // 30 TGas
-              attachedDeposit
-            });
-            const txHash = outcome?.transaction?.hash || outcome?.transaction_outcome?.id || 'Confirmed';
-            console.log(`✅ [Aegis] Meteor Wallet transaction confirmed: ${txHash}`, outcome);
-            showToast(`✅ ${methodName}() confirmed on-chain! Tx: ${txHash.slice(0, 8)}...`);
-            setTimeout(() => fetchLiveContractState(), 2000);
-            return outcome;
-          }
-        }
-
-        // 2. Signed in via MyNearWallet
-        if (nearWallet && nearWallet.isSignedIn()) {
-          const outcome = await nearWallet.account().functionCall({
-            contractId: CONTRACT_ID,
-            methodName: methodName,
-            args: args,
-            gas: '30000000000000', // 30 TGas
+        // 1. Signed in via Official NEAR Wallet Selector (Meteor, HERE, Nightly, Sender, Bitte)
+        if (window.AegisWallet && window.AegisWallet.getAccountId()) {
+          const outcome = await window.AegisWallet.callContractMethod(
+            CONTRACT_ID,
+            methodName,
+            args,
+            '30000000000000', // 30 TGas
             attachedDeposit
-          });
+          );
           const txHash = outcome?.transaction?.hash || outcome?.transaction_outcome?.id || 'Confirmed';
-          console.log(`✅ [Aegis] MyNearWallet transaction confirmed: ${txHash}`, outcome);
+          console.log(`✅ [Aegis] WalletSelector transaction confirmed: ${txHash}`, outcome);
           showToast(`✅ ${methodName}() confirmed on-chain! Tx: ${txHash.slice(0, 8)}...`);
           setTimeout(() => fetchLiveContractState(), 2000);
           return outcome;
         }
 
-        // 3. Signed in via Developer Private Key
+        // 2. Signed in via Developer Private Key
         const storedKey = localStorage.getItem('aegis_testnet_signer_key');
         const signerAccountId = localStorage.getItem('aegis_signer_account');
 
@@ -1788,7 +1714,7 @@
           return outcome;
         }
 
-        // 4. Not signed in: Prompt wallet connection
+        // 3. Not signed in: Prompt wallet connection
         showToast('Please connect your NEAR testnet wallet first!', true);
         openWalletModal();
       } catch (err) {
