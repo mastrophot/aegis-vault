@@ -2326,6 +2326,7 @@ import { setupHereWallet } from "@near-wallet-selector/here-wallet";
 import { setupNightly } from "@near-wallet-selector/nightly";
 import { setupSender } from "@near-wallet-selector/sender";
 import { setupBitteWallet } from "@near-wallet-selector/bitte-wallet";
+import { setupEthereumWallets } from "@near-wallet-selector/ethereum-wallets";
 import { contracts, chainAdapters } from "chainsig.js";
 import { Connection } from "@solana/web3.js";
 
@@ -2341,7 +2342,8 @@ export async function getSelector(contractId = "aegis.okgoogleok.testnet") {
         setupHereWallet(),
         setupNightly(),
         setupSender(),
-        setupBitteWallet()
+        setupBitteWallet(),
+        setupEthereumWallets({ devMode: true })
       ],
     });
     modal = setupModal(selector, {
