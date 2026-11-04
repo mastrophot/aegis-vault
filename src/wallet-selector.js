@@ -46,6 +46,29 @@ export async function disconnectMeteor() {
 }
 
 export async function signAndSendNearTx(contractId, methodName, args = {}, deposit = "0", gas = "30000000000000") {
+  const argsBytes = typeof Buffer !== "undefined"
+    ? Buffer.from(JSON.stringify(args))
+    : new TextEncoder().encode(JSON.stringify(args));
+
+  // Meteor Wallet adapter calls najActionToInternal on every action.
+  // NAJ action requires .functionCall, while standard core requires .type and .params.
+  // This hybridAction satisfies both!
+  const hybridAction = {
+    functionCall: {
+      methodName: methodName,
+      args: argsBytes,
+      gas: gas,
+      deposit: deposit
+    },
+    type: "FunctionCall",
+    params: {
+      methodName: methodName,
+      args: args,
+      gas: gas,
+      deposit: deposit
+    }
+  };
+
   try {
     const sel = await getSelector();
     const wallet = await sel.wallet("meteor-wallet");
@@ -55,28 +78,27 @@ export async function signAndSendNearTx(contractId, methodName, args = {}, depos
     return await wallet.signAndSendTransaction({
       signerId: signerId,
       receiverId: contractId,
-      actions: [
-        {
-          type: "FunctionCall",
-          params: {
-            methodName: methodName,
-            args: args,
-            gas: gas,
-            deposit: deposit
-          }
-        }
-      ]
+      actions: [hybridAction]
     });
   } catch (err) {
-    if (typeof window !== "undefined" && window.meteorWallet && typeof window.meteorWallet.account === "function") {
-      const account = window.meteorWallet.account();
-      return await account.functionCall({
-        contractId: contractId,
-        methodName: methodName,
-        args: args,
-        gas: gas,
-        attachedDeposit: deposit
-      });
+    console.warn("[AegisMeteor] Selector signAndSendTransaction error, trying direct fallback:", err);
+    if (typeof window !== "undefined" && window.meteorWallet) {
+      if (typeof window.meteorWallet.signAndSendTransaction === "function") {
+        return await window.meteorWallet.signAndSendTransaction({
+          receiverId: contractId,
+          actions: [hybridAction]
+        });
+      }
+      if (typeof window.meteorWallet.account === "function") {
+        const account = window.meteorWallet.account();
+        return await account.functionCall({
+          contractId: contractId,
+          methodName: methodName,
+          args: args,
+          gas: gas,
+          attachedDeposit: deposit
+        });
+      }
     }
     throw err;
   }
