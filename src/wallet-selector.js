@@ -16,7 +16,6 @@ import { setupHereWallet } from "@near-wallet-selector/here-wallet";
 import { setupNightly } from "@near-wallet-selector/nightly";
 import { setupSender } from "@near-wallet-selector/sender";
 import { setupBitteWallet } from "@near-wallet-selector/bitte-wallet";
-import { setupEthereumWallets } from "@near-wallet-selector/ethereum-wallets";
 import { contracts, chainAdapters } from "chainsig.js";
 import { Connection } from "@solana/web3.js";
 
@@ -32,23 +31,80 @@ export async function getSelector(contractId = "aegis.okgoogleok.testnet") {
         setupHereWallet(),
         setupNightly(),
         setupSender(),
-        setupBitteWallet(),
-        setupEthereumWallets({ devMode: true })
+        setupBitteWallet()
       ],
     });
     modal = setupModal(selector, {
       contractId: contractId,
-      description: "Connect your Web3 wallet to authorize Aegis multichain vault actions."
+      description: "Connect your NEAR wallet to manage Aegis multichain vault."
     });
   }
   return selector;
 }
 
-export async function connectWallet(contractId = "aegis.okgoogleok.testnet") {
+export async function connectNearWallet(contractId = "aegis.okgoogleok.testnet") {
   await getSelector(contractId);
   if (modal) {
     modal.show();
   }
+}
+
+export async function connectEvmWallet() {
+  if (typeof window === "undefined" || !window.ethereum) {
+    throw new Error("No EVM wallet detected. Please install MetaMask, Rabby, or Coinbase Wallet.");
+  }
+  const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
+  if (!accounts || accounts.length === 0) {
+    throw new Error("No Ethereum account authorized.");
+  }
+  const address = accounts[0];
+  const chainId = await window.ethereum.request({ method: "eth_chainId" });
+  return { address, chainId };
+}
+
+export async function connectSolanaWallet() {
+  if (typeof window === "undefined") throw new Error("Window not defined");
+  const provider = window.phantom?.solana || window.solana;
+  if (!provider) {
+    throw new Error("No Solana wallet detected. Please install Phantom or Solflare.");
+  }
+  const resp = await provider.connect();
+  const address = resp.publicKey ? resp.publicKey.toString() : provider.publicKey.toString();
+  return { address };
+}
+
+export async function connectBitcoinWallet() {
+  if (typeof window === "undefined") throw new Error("Window not defined");
+  if (window.unisat) {
+    const accounts = await window.unisat.requestAccounts();
+    if (!accounts || accounts.length === 0) throw new Error("No Bitcoin account authorized.");
+    return { address: accounts[0], type: "unisat" };
+  }
+  if (window.okxwallet?.bitcoin) {
+    const res = await window.okxwallet.bitcoin.connect();
+    return { address: res.address, type: "okx" };
+  }
+  if (window.XverseProviders?.BitcoinProvider) {
+    throw new Error("Please connect Xverse via Bitcoin provider");
+  }
+  throw new Error("No Bitcoin wallet detected. Please install UniSat or OKX Wallet.");
+}
+
+export function detectInstalledWallets() {
+  if (typeof window === "undefined") return {};
+  return {
+    meteor: typeof window.meteorWallet !== "undefined",
+    near: typeof window.near !== "undefined",
+    nightly: typeof window.nightly !== "undefined",
+    metaMask: typeof window.ethereum !== "undefined" && Boolean(window.ethereum.isMetaMask),
+    rabby: typeof window.ethereum !== "undefined" && Boolean(window.ethereum.isRabby),
+    coinbase: typeof window.ethereum !== "undefined" && Boolean(window.ethereum.isCoinbaseWallet),
+    evmGeneric: typeof window.ethereum !== "undefined",
+    phantom: Boolean(window.phantom?.solana || (window.solana && window.solana.isPhantom)),
+    solanaGeneric: typeof window.solana !== "undefined",
+    unisat: typeof window.unisat !== "undefined",
+    okx: typeof window.okxwallet !== "undefined"
+  };
 }
 
 export async function disconnectWallet() {
@@ -168,10 +224,17 @@ export async function signNep413Message(message, recipient = "aegis.okgoogleok.t
   throw new Error("signMessage not supported by wallet");
 }
 
+export const connectWallet = connectNearWallet;
+
 if (typeof window !== "undefined") {
   window.AegisWallet = {
     getSelector,
-    connectWallet,
+    connectWallet: connectNearWallet,
+    connectNearWallet,
+    connectEvmWallet,
+    connectSolanaWallet,
+    connectBitcoinWallet,
+    detectInstalledWallets,
     disconnectWallet,
     signAndSendNearTx,
     deriveVaultAddresses,
@@ -180,6 +243,6 @@ if (typeof window !== "undefined") {
   };
   // Backward-compatibility aliases
   window.AegisMeteor = window.AegisWallet;
-  window.AegisMeteor.connectMeteor = connectWallet;
+  window.AegisMeteor.connectMeteor = connectNearWallet;
   window.AegisMeteor.disconnectMeteor = disconnectWallet;
 }
