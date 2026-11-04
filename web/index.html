@@ -2478,24 +2478,44 @@
     function executePanic() {
       resetHoldState();
       document.getElementById('abortModal').classList.add('hidden');
-      remainingSeconds = 0;
-      updateCountdownDisplay();
 
-      const curr = VAULT_EPOCHS[currentEpochIndex];
-      localStorage.setItem('aegis_vault_burned_' + curr.epoch, 'true');
-      renderBunkerAddresses();
+      dispatchNearTransaction('panic').then(() => {
+        remainingSeconds = 0;
+        updateCountdownDisplay();
 
-      dispatchNearTransaction('panic');
-      showToast('PANIC EXECUTED: State set to Evacuated. Rotate epoch to generate new addresses.', true);
-      openEvacMonitor();
+        const curr = VAULT_EPOCHS[currentEpochIndex];
+        localStorage.setItem('aegis_vault_burned_' + curr.epoch, 'true');
+        renderBunkerAddresses();
+
+        showToast('PANIC CONFIRMED ON-CHAIN: Vault evacuated.', true);
+        openEvacMonitor();
+      }).catch(err => {
+        console.error('Panic execution aborted or failed:', err);
+      });
     }
 
     function openEvacMonitor() {
-      const saved = JSON.parse(localStorage.getItem('aegis_addresses') || '{}');
-      document.getElementById('monitorBtcTarget').innerText = saved.panicBtcAddr || 'tb1q...backup';
-      document.getElementById('monitorEvmTarget').innerText = saved.panicEvmAddr || '0x...backup';
-      document.getElementById('monitorNearTarget').innerText = saved.panicNearAddr || 'backup.testnet';
-      document.getElementById('evacMonitorModal').classList.remove('hidden');
+      const nearTarget = document.getElementById('panicNearAddr')?.value?.trim() ||
+                         lastFetchedVaultInfo?.backup?.near ||
+                         JSON.parse(localStorage.getItem('aegis_addresses') || '{}').panicNearAddr ||
+                         'okgoogleok.testnet';
+      const btcTarget = document.getElementById('panicBtcAddr')?.value?.trim() ||
+                        lastFetchedVaultInfo?.backup?.btc ||
+                        JSON.parse(localStorage.getItem('aegis_addresses') || '{}').panicBtcAddr ||
+                        'tb1q...backup';
+      const evmTarget = document.getElementById('panicEvmAddr')?.value?.trim() ||
+                        lastFetchedVaultInfo?.backup?.evm ||
+                        JSON.parse(localStorage.getItem('aegis_addresses') || '{}').panicEvmAddr ||
+                        '0x...backup';
+
+      const btcEl = document.getElementById('monitorBtcTarget');
+      const evmEl = document.getElementById('monitorEvmTarget');
+      const nearEl = document.getElementById('monitorNearTarget');
+      if (btcEl) btcEl.innerText = btcTarget;
+      if (evmEl) evmEl.innerText = evmTarget;
+      if (nearEl) nearEl.innerText = nearTarget;
+      const modal = document.getElementById('evacMonitorModal');
+      if (modal) modal.classList.remove('hidden');
     }
 
     function closeEvacMonitor() {
