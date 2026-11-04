@@ -2308,6 +2308,17 @@ module.exports = { AegisRelayerService };
 
 ### 4. MULTI-WALLET SELECTOR & CHAINSIG ENGINE (src/wallet-selector.js)
 ```javascript
+import { Buffer as BufferPolyfill } from "buffer";
+if (typeof window !== "undefined") {
+  window.Buffer = window.Buffer || BufferPolyfill;
+  window.process = window.process || { env: { NODE_ENV: "production" }, browser: true };
+  window.global = window;
+}
+if (typeof globalThis !== "undefined") {
+  globalThis.Buffer = globalThis.Buffer || BufferPolyfill;
+  globalThis.process = globalThis.process || { env: { NODE_ENV: "production" }, browser: true };
+}
+
 import { setupWalletSelector } from "@near-wallet-selector/core";
 import { setupModal } from "@near-wallet-selector/modal-ui";
 import { setupMeteorWallet } from "@near-wallet-selector/meteor-wallet";
@@ -2503,6 +2514,13 @@ if (typeof window !== "undefined") {
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
   <!-- NEAR API JS (Official Web3 Provider) -->
   <script src="https://cdn.jsdelivr.net/npm/near-api-js@2.1.4/dist/near-api-js.min.js"></script>
+  <!-- Browser Buffer & Process Polyfills for Web3 / Wallet Selector -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/buffer/6.0.3/buffer.min.js"></script>
+  <script>
+    window.Buffer = window.Buffer || (window.buffer && window.buffer.Buffer);
+    window.process = window.process || { env: { NODE_ENV: 'production' }, browser: true };
+    window.global = window;
+  </script>
   <!-- NEAR Wallet Selector Modal UI Styles -->
   <link rel="stylesheet" href="./modal-ui.css">
   <!-- NEAR Wallet Selector Standalone Bundle -->
@@ -4195,7 +4213,14 @@ if (typeof window !== "undefined") {
     async function connectNearWallet() {
       showToast('Opening Web3 Wallet Selector...');
       try {
-        const provider = window.AegisWallet || window.AegisMeteor;
+        let provider = window.AegisWallet || window.AegisMeteor || window.AegisWalletBundle;
+        if (!provider || typeof provider.connectWallet !== 'function') {
+          for (let i = 0; i < 25; i++) {
+            await new Promise(r => setTimeout(r, 100));
+            provider = window.AegisWallet || window.AegisMeteor || window.AegisWalletBundle;
+            if (provider && typeof provider.connectWallet === 'function') break;
+          }
+        }
         if (provider && typeof provider.connectWallet === 'function') {
           await provider.connectWallet(CONTRACT_ID);
         } else if (window.meteorWallet && typeof window.meteorWallet.signIn === 'function') {
@@ -4211,7 +4236,14 @@ if (typeof window !== "undefined") {
     const connectMeteorWallet = connectNearWallet; // Backward-compatibility
 
     async function initNearWallet() {
-      const provider = window.AegisWallet || window.AegisMeteor;
+      let provider = window.AegisWallet || window.AegisMeteor || window.AegisWalletBundle;
+      if (!provider || typeof provider.getSelector !== 'function') {
+        for (let i = 0; i < 25; i++) {
+          await new Promise(r => setTimeout(r, 100));
+          provider = window.AegisWallet || window.AegisMeteor || window.AegisWalletBundle;
+          if (provider && typeof provider.getSelector === 'function') break;
+        }
+      }
       if (provider && typeof provider.getSelector === 'function') {
         try {
           const sel = await provider.getSelector(CONTRACT_ID);

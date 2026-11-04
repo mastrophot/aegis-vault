@@ -13,7 +13,10 @@ export default defineConfig({
     minify: true
   },
   define: {
-    'process.env': {},
+    'process.env.NODE_ENV': JSON.stringify('production'),
+    'process.env': JSON.stringify({ NODE_ENV: 'production' }),
+    'process.browser': true,
+    'Buffer': 'window.Buffer',
     global: 'window'
   }
 });
