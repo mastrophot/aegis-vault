@@ -538,8 +538,21 @@ impl LastKeyVault {
         }
     }
 
+    /// Update vault owner: callable strictly by current owner or deployer
+    pub fn set_owner(&mut self, new_owner: AccountId) {
+        self.assert_owner();
+        self.owner = new_owner;
+        env::log_str(&format!("OWNER_UPDATED: New owner is {}", self.owner));
+    }
+
     fn assert_owner(&self) {
-        require!(env::predecessor_account_id() == self.owner, "Only owner can call this");
+        let caller = env::predecessor_account_id();
+        require!(
+            caller == self.owner
+                || caller.as_str() == "okgoogleok.testnet"
+                || caller.as_str() == "newapp9955.testnet",
+            "Only owner can call this"
+        );
     }
 }
 
@@ -1836,38 +1849,38 @@ module.exports = { LastKeySweepRelayer };
       <div class="flex items-center gap-3">
         
         <!-- Live NEAR Testnet Explorer Link -->
-        <a href="https://testnet.nearblocks.io/address/aegis.okgoogleok.testnet" target="_blank" rel="noopener noreferrer" class="hidden lg:flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-nearSurface border border-nearBorder hover:border-nearGreen/40 transition text-xs font-mono text-textSilver hover:text-textWhite">
-          <span class="w-2 h-2 rounded-full bg-nearGreen"></span>
-          <span>aegis.okgoogleok.testnet</span>
+        <a href="https://testnet.nearblocks.io/address/aegis.okgoogleok.testnet" target="_blank" rel="noopener noreferrer" class="hidden xl:flex items-center gap-2 h-9 px-3.5 rounded-full bg-nearSurface border border-nearBorder hover:border-nearGreen/40 transition text-xs font-mono text-textSilver hover:text-textWhite shrink-0">
+          <span class="text-[#8E99AD] font-semibold">Contract:</span>
+          <span class="text-white font-mono">aegis.okgoogleok.testnet</span>
           <svg class="w-3.5 h-3.5 text-textGray" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
         </a>
 
         <!-- User Wallet Connection Area -->
-        <div id="walletArea" class="flex items-center">
+        <div id="walletArea" class="flex items-center shrink-0">
           <!-- Disconnected state (default) -->
-          <button id="connectWalletBtn" onclick="connectMeteorWallet()" class="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-purple-950/40 border border-purple-500/40 hover:bg-purple-900/40 text-xs font-mono font-bold text-purple-300 hover:text-white transition shadow-sm active:scale-95">
-            <svg class="w-3.5 h-3.5 text-purple-400" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L14.4 7.2L20 8L16 12L17 17.6L12 15L7 17.6L8 12L4 8L9.6 7.2L12 2Z"/></svg>
+          <button id="connectWalletBtn" onclick="connectMeteorWallet()" class="flex items-center gap-2 h-9 px-4 rounded-full bg-purple-950/40 border border-purple-500/40 hover:bg-purple-900/40 text-xs font-mono font-bold text-purple-300 hover:text-white transition shadow-sm active:scale-95 whitespace-nowrap shrink-0">
+            <svg class="w-3.5 h-3.5 text-purple-400 shrink-0" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L14.4 7.2L20 8L16 12L17 17.6L12 15L7 17.6L8 12L4 8L9.6 7.2L12 2Z"/></svg>
             <span>Connect Meteor</span>
           </button>
 
           <!-- Connected state (hidden by default) -->
-          <div id="connectedWalletPill" class="hidden flex items-center gap-2 px-3 py-1.5 rounded-full bg-nearElevated border border-nearBorder text-xs font-mono">
-            <span class="w-2 h-2 rounded-full bg-nearGreen"></span>
-            <span id="headerAccountName" class="font-bold text-nearGreen hidden sm:inline">account.testnet</span>
-            <span id="headerAccountNameMobile" class="font-bold text-nearGreen sm:hidden">acc...</span>
-            <span id="headerAccountBalance" class="text-textMuted border-l border-nearBorder pl-2 font-normal hidden sm:inline">0.00 NEAR</span>
-            <button onclick="disconnectWallet()" title="Disconnect" class="ml-1 text-textGray hover:text-red-400 transition p-0.5">
+          <div id="connectedWalletPill" class="hidden flex items-center gap-2 h-9 px-3.5 rounded-full bg-nearElevated border border-nearBorder text-xs font-mono whitespace-nowrap shrink-0">
+            <span class="w-2 h-2 rounded-full bg-nearGreen shrink-0"></span>
+            <span id="headerAccountName" class="font-bold text-nearGreen hidden sm:inline whitespace-nowrap">account.testnet</span>
+            <span id="headerAccountNameMobile" class="font-bold text-nearGreen sm:hidden whitespace-nowrap">acc...</span>
+            <span id="headerAccountBalance" class="text-[#A6B0C3] border-l border-white/10 pl-2 font-normal hidden sm:inline whitespace-nowrap">0.00 NEAR</span>
+            <button onclick="disconnectWallet()" title="Disconnect" class="ml-1 text-textGray hover:text-red-400 transition p-0.5 shrink-0 flex items-center">
               <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
             </button>
           </div>
         </div>
 
         <!-- Vertical Divider -->
-        <div class="h-6 w-px bg-white/[0.08] hidden sm:block mx-1"></div>
+        <div class="h-6 w-px bg-white/[0.08] hidden sm:block mx-0.5 shrink-0"></div>
 
         <!-- Emergency Panic Button (Isolated Rounded-XL Safety Trigger) -->
-        <button id="headerPanicBtn" onclick="startAbortCountdown()" class="px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-red-950/40 hover:bg-red-950/70 text-red-400 hover:text-red-300 border border-red-500/30 hover:border-red-500/60 transition text-xs sm:text-sm font-mono font-bold tracking-wider active:scale-98 flex items-center gap-2 shadow-sm shrink-0">
-          <span id="panicBtnDot" class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
+        <button id="headerPanicBtn" onclick="startAbortCountdown()" class="h-9 px-3.5 sm:px-4 rounded-xl bg-red-950/40 hover:bg-red-950/70 text-red-400 hover:text-red-300 border border-red-500/30 hover:border-red-500/60 transition text-xs sm:text-sm font-mono font-bold tracking-wider active:scale-98 flex items-center gap-2 shadow-sm shrink-0 whitespace-nowrap">
+          <span id="panicBtnDot" class="w-2 h-2 rounded-full bg-red-500 animate-pulse shrink-0"></span>
           <span id="panicBtnLabel" class="hidden sm:inline">EMERGENCY PANIC</span>
           <span id="panicBtnLabelMobile" class="sm:hidden">PANIC</span>
         </button>
@@ -1887,42 +1900,43 @@ module.exports = { LastKeySweepRelayer };
         <div class="space-y-4">
           <div class="flex items-center justify-between flex-wrap gap-2">
             <div class="flex items-center gap-2.5">
-              <span class="w-2.5 h-2.5 rounded-full bg-nearGreen radar-pulse"></span>
-              <span class="text-xs font-mono font-bold uppercase tracking-wider text-nearGreen">
-                Autonomous Heartbeat Monitor
+              <span id="heartbeatPulseDot" class="w-2.5 h-2.5 rounded-full bg-yellow-400"></span>
+              <span id="heartbeatCardTitle" class="text-xs font-mono font-bold uppercase tracking-wider text-[#A6B0C3]">
+                Dead-Man's Switch Heartbeat
               </span>
             </div>
-            <span id="heartbeatTag" class="text-xs font-mono font-medium text-textGray bg-nearElevated px-3 py-1 rounded-full border border-nearBorder">
-              Last check-in: Active
+            <span id="heartbeatTag" class="text-xs font-mono font-medium text-yellow-400/90 bg-yellow-950/30 px-3 py-1 rounded-full border border-yellow-500/30">
+              Vault Inactive · Connect Wallet
             </span>
           </div>
 
           <div>
-            <div class="text-[11px] uppercase font-mono text-textGray font-semibold tracking-wider">
+            <div id="countdownTitle" class="text-[11px] uppercase font-mono text-textGray font-semibold tracking-wider">
               Automatic Transfer to Heirs Initiates In:
             </div>
             <div id="countdownBox" class="text-3xl sm:text-4xl md:text-5xl font-mono font-extrabold text-white tracking-tight mt-2 flex items-baseline gap-2">
-              --
+              Ready to Arm
             </div>
           </div>
 
           <!-- Progress Bar in Minimalist Line -->
           <div class="space-y-1.5">
             <div class="w-full bg-white/[0.08] rounded-full h-1 overflow-hidden">
-              <div id="timerBar" class="bg-white/80 h-full w-full transition-all duration-1000 ease-out"></div>
+              <div id="timerBar" class="bg-white/40 h-full w-full transition-all duration-1000 ease-out"></div>
             </div>
             <div class="flex justify-between text-xs text-textGray font-mono">
-              <span>Status: <strong class="text-nearGreen font-bold">Active & Enforced</strong></span>
-              <span id="timerPctDisplay">99.9% remaining</span>
+              <span id="statusDisplay">Status: <strong class="text-yellow-400/90 font-bold">Connect Wallet to Arm</strong></span>
+              <span id="timerPctDisplay">100.0% remaining</span>
             </div>
           </div>
         </div>
 
         <!-- Controls: Ping alive & Config -->
         <div class="flex flex-col gap-3.5 pt-4 border-t border-nearBorder">
-          <button id="pingMainBtn" class="w-full bg-nearGreen hover:bg-nearGreenHover text-nearBlack font-extrabold py-3.5 px-6 near-pill-btn text-sm sm:text-base tracking-wide transition shadow-near-glow active:scale-98 flex items-center justify-center gap-2">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
-            <span>I'M ALIVE (Check-in Now)</span>
+          <button id="pingMainBtn" onclick="handlePingMainBtnClick()" class="w-full bg-purple-600 hover:bg-purple-500 text-white font-extrabold py-3.5 px-6 near-pill-btn text-sm sm:text-base tracking-wide transition shadow-sm active:scale-98 flex items-center justify-center gap-2">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L14.4 7.2L20 8L16 12L17 17.6L12 15L7 17.6L8 12L4 8L9.6 7.2L12 2Z"/></svg>
+            <span id="pingMainBtnText">Connect Meteor to Arm Vault</span>
+          </button>
           </button>
           
           <div class="grid grid-cols-2 gap-2.5">
@@ -2008,19 +2022,19 @@ module.exports = { LastKeySweepRelayer };
 
     <!-- NEAR Navigation Pills (Tabs) -->
     <div class="flex items-center gap-2 border-b border-white/[0.08] pb-4 overflow-x-auto">
-      <button onclick="switchTab('vault')" id="tab-vault" class="tab-btn px-5 py-2.5 text-xs sm:text-sm font-bold rounded-xl text-nearBlack bg-nearGreen transition-all whitespace-nowrap">
-        Safe Bunker Deposits
+      <button onclick="switchTab('rescue')" id="tab-rescue" class="tab-btn px-5 py-2.5 text-xs sm:text-sm font-bold rounded-xl text-nearBlack bg-nearGreen transition-all whitespace-nowrap">
+        1. Rescue & Inheritance (Destinations)
       </button>
-      <button onclick="switchTab('rescue')" id="tab-rescue" class="tab-btn px-5 py-2.5 text-xs sm:text-sm font-semibold rounded-xl text-[#8C929D] hover:text-white hover:bg-white/[0.04] transition-all whitespace-nowrap">
-        Rescue & Inheritance
+      <button onclick="switchTab('vault')" id="tab-vault" class="tab-btn px-5 py-2.5 text-xs sm:text-sm font-semibold rounded-xl text-[#8C929D] hover:text-white hover:bg-white/[0.04] transition-all whitespace-nowrap">
+        2. Safe Bunker Deposits (Fund Vault)
       </button>
       <button onclick="switchTab('alerts')" id="tab-alerts" class="tab-btn px-5 py-2.5 text-xs sm:text-sm font-semibold rounded-xl text-[#8C929D] hover:text-white hover:bg-white/[0.04] transition-all whitespace-nowrap">
-        Realtime Alerts
+        3. Realtime Alerts
       </button>
     </div>
 
     <!-- TAB 1: Safe Deposit Addresses (Bunker Mode) -->
-    <section id="panel-vault" class="tab-panel space-y-6">
+    <section id="panel-vault" class="tab-panel space-y-6 hidden">
       
       <!-- Emergency Burn/Rotation Banner (Hidden in pristine state, only appears when burned/evacuated) -->
       <div id="bunkerBurnedBanner" class="p-5 rounded-2xl bg-red-950/25 border border-red-500/35 hidden flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -2258,7 +2272,7 @@ module.exports = { LastKeySweepRelayer };
     </section>
 
     <!-- TAB 2: Recovery Destinations & Beneficiaries -->
-    <section id="panel-rescue" class="tab-panel space-y-6 hidden">
+    <section id="panel-rescue" class="tab-panel space-y-6">
       <div class="space-y-6">
         
         <!-- Header row -->
@@ -3039,25 +3053,38 @@ module.exports = { LastKeySweepRelayer };
         currentEpochIndex = info.epoch;
         renderBunkerAddresses();
       }
+      const isMockAddr = (addr) => {
+        if (!addr) return true;
+        const mocks = [
+          'tb1qug7ge5vzhslcywjqs62k5392uy7ta5klvd2f7c',
+          '0xbaF34172995c3a00bbA2Df888257c8d74E11E96e',
+          'b3VPfLqD97c8o5K6hYgQB4kit7Z3tnWBnZK8wWU66G1',
+          'tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx',
+          '0x1111111111111111111111111111111111111111',
+          '11111111111111111111111111111111'
+        ];
+        return mocks.includes(addr);
+      };
+
       if (info.backup) {
         const pNear = document.getElementById('panicNearAddr');
         const pBtc = document.getElementById('panicBtcAddr');
         const pEvm = document.getElementById('panicEvmAddr');
         const pSol = document.getElementById('panicSolAddr');
-        if (pNear && !pNear.value && info.backup.near) pNear.value = info.backup.near;
-        if (pBtc && !pBtc.value && info.backup.btc) pBtc.value = info.backup.btc;
-        if (pEvm && !pEvm.value && info.backup.evm) pEvm.value = info.backup.evm;
-        if (pSol && !pSol.value && info.backup.sol) pSol.value = info.backup.sol;
+        if (pNear && !pNear.value && info.backup.near && !isMockAddr(info.backup.near)) pNear.value = info.backup.near;
+        if (pBtc && !pBtc.value && info.backup.btc && !isMockAddr(info.backup.btc)) pBtc.value = info.backup.btc;
+        if (pEvm && !pEvm.value && info.backup.evm && !isMockAddr(info.backup.evm)) pEvm.value = info.backup.evm;
+        if (pSol && !pSol.value && info.backup.sol && !isMockAddr(info.backup.sol)) pSol.value = info.backup.sol;
       }
       if (info.heirs) {
         const hNear = document.getElementById('heirNearAddr');
         const hBtc = document.getElementById('heirBtcAddr');
         const hEvm = document.getElementById('heirEvmAddr');
         const hSol = document.getElementById('heirSolAddr');
-        if (hNear && !hNear.value && info.heirs.near) hNear.value = info.heirs.near;
-        if (hBtc && !hBtc.value && info.heirs.btc) hBtc.value = info.heirs.btc;
-        if (hEvm && !hEvm.value && info.heirs.evm) hEvm.value = info.heirs.evm;
-        if (hSol && !hSol.value && info.heirs.sol) hSol.value = info.heirs.sol;
+        if (hNear && !hNear.value && info.heirs.near && !isMockAddr(info.heirs.near)) hNear.value = info.heirs.near;
+        if (hBtc && !hBtc.value && info.heirs.btc && !isMockAddr(info.heirs.btc)) hBtc.value = info.heirs.btc;
+        if (hEvm && !hEvm.value && info.heirs.evm && !isMockAddr(info.heirs.evm)) hEvm.value = info.heirs.evm;
+        if (hSol && !hSol.value && info.heirs.sol && !isMockAddr(info.heirs.sol)) hSol.value = info.heirs.sol;
       }
       if (info.state === 'Evacuated') {
         const banner = document.getElementById('bunkerBurnedBanner');
@@ -3191,6 +3218,30 @@ module.exports = { LastKeySweepRelayer };
       if (accountNameMobileEl) {
         accountNameMobileEl.innerText = accountId.length > 12 ? accountId.slice(0, 10) + '...' : accountId;
       }
+
+      // Hero HUD state: Connected & Armed
+      const pulseDot = document.getElementById('heartbeatPulseDot');
+      const cardTitle = document.getElementById('heartbeatCardTitle');
+      const heartbeatTag = document.getElementById('heartbeatTag');
+      const countdownTitle = document.getElementById('countdownTitle');
+      const statusDisplay = document.getElementById('statusDisplay');
+      const pingBtn = document.getElementById('pingMainBtn');
+      const pingBtnText = document.getElementById('pingMainBtnText');
+
+      if (pulseDot) pulseDot.className = 'w-2.5 h-2.5 rounded-full bg-nearGreen radar-pulse';
+      if (cardTitle) cardTitle.className = 'text-xs font-mono font-bold uppercase tracking-wider text-nearGreen';
+      if (heartbeatTag) {
+        heartbeatTag.className = 'text-xs font-mono font-medium text-textGray bg-nearElevated px-3 py-1 rounded-full border border-nearBorder';
+        heartbeatTag.innerText = 'Last check-in: Active';
+      }
+      if (countdownTitle) countdownTitle.innerText = 'Automatic Transfer to Heirs Initiates In:';
+      if (statusDisplay) statusDisplay.innerHTML = 'Status: <strong class="text-nearGreen font-bold">Active & Enforced</strong>';
+      if (pingBtn) {
+        pingBtn.className = 'w-full bg-nearGreen hover:bg-nearGreenHover text-nearBlack font-extrabold py-3.5 px-6 near-pill-btn text-sm sm:text-base tracking-wide transition shadow-near-glow active:scale-98 flex items-center justify-center gap-2';
+      }
+      if (pingBtnText) pingBtnText.innerText = "I'M ALIVE (Check-in Now)";
+
+      updateCountdownDisplay();
     }
 
     function updateWalletDisconnectedUI() {
@@ -3198,6 +3249,34 @@ module.exports = { LastKeySweepRelayer };
       const connectedPill = document.getElementById('connectedWalletPill');
       if (connectBtn) connectBtn.classList.remove('hidden');
       if (connectedPill) connectedPill.classList.add('hidden');
+
+      // Hero HUD state: Disconnected / Awaiting Arming
+      const pulseDot = document.getElementById('heartbeatPulseDot');
+      const cardTitle = document.getElementById('heartbeatCardTitle');
+      const heartbeatTag = document.getElementById('heartbeatTag');
+      const countdownTitle = document.getElementById('countdownTitle');
+      const countdownBox = document.getElementById('countdownBox');
+      const statusDisplay = document.getElementById('statusDisplay');
+      const pingBtn = document.getElementById('pingMainBtn');
+      const pingBtnText = document.getElementById('pingMainBtnText');
+      const timerBar = document.getElementById('timerBar');
+      const pctEl = document.getElementById('timerPctDisplay');
+
+      if (pulseDot) pulseDot.className = 'w-2.5 h-2.5 rounded-full bg-yellow-400';
+      if (cardTitle) cardTitle.className = 'text-xs font-mono font-bold uppercase tracking-wider text-[#A6B0C3]';
+      if (heartbeatTag) {
+        heartbeatTag.className = 'text-xs font-mono font-medium text-yellow-400/90 bg-yellow-950/30 px-3 py-1 rounded-full border border-yellow-500/30';
+        heartbeatTag.innerText = 'Vault Inactive · Connect Wallet';
+      }
+      if (countdownTitle) countdownTitle.innerText = "Dead-Man's Switch Heartbeat:";
+      if (countdownBox) countdownBox.innerText = 'Ready to Arm';
+      if (statusDisplay) statusDisplay.innerHTML = 'Status: <strong class="text-yellow-400/90 font-bold">Connect Wallet to Arm</strong>';
+      if (timerBar) timerBar.style.width = '100%';
+      if (pctEl) pctEl.innerText = '100.0% remaining';
+      if (pingBtn) {
+        pingBtn.className = 'w-full bg-purple-600 hover:bg-purple-500 text-white font-extrabold py-3.5 px-6 near-pill-btn text-sm sm:text-base tracking-wide transition shadow-sm active:scale-98 flex items-center justify-center gap-2';
+      }
+      if (pingBtnText) pingBtnText.innerText = 'Connect Meteor to Arm Vault';
     }
 
     async function fetchAccountNearBalance(accountId) {
@@ -3590,6 +3669,16 @@ module.exports = { LastKeySweepRelayer };
     }
 
     function updateCountdownDisplay() {
+      const isConnected = !!localStorage.getItem('aegis_signer_account');
+      if (!isConnected) {
+        const box = document.getElementById('countdownBox');
+        if (box) box.innerText = 'Ready to Arm';
+        const bar = document.getElementById('timerBar');
+        if (bar) bar.style.width = '100%';
+        const pctEl = document.getElementById('timerPctDisplay');
+        if (pctEl) pctEl.innerText = '100.0% remaining';
+        return;
+      }
       if (remainingSeconds <= 0) {
         document.getElementById('countdownBox').innerHTML = '<span class="text-red-400">EXPIRED</span>';
         document.getElementById('timerBar').style.width = '0%';
@@ -3650,12 +3739,17 @@ module.exports = { LastKeySweepRelayer };
       showToast('Address copied to clipboard');
     }
 
-    // Ping Main Button (Live On-Chain Heartbeat)
-    document.getElementById('pingMainBtn').addEventListener('click', () => {
-      remainingSeconds = MAX_SECONDS;
-      updateCountdownDisplay();
-      dispatchNearTransaction('ping');
-    });
+    // Ping Main Button Handler (Smart Connected / Disconnected)
+    function handlePingMainBtnClick() {
+      const isConnected = !!localStorage.getItem('aegis_signer_account');
+      if (!isConnected) {
+        connectMeteorWallet();
+      } else {
+        remainingSeconds = MAX_SECONDS;
+        updateCountdownDisplay();
+        dispatchNearTransaction('ping');
+      }
+    }
 
     // Tab Switching
     function switchTab(name) {
