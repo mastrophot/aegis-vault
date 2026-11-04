@@ -16,7 +16,7 @@ class LastKeySweepRelayer {
   constructor(config = {}) {
     this.networkId = config.networkId || 'testnet';
     this.mpcContractId = config.mpcContractId || (this.networkId === 'testnet' ? 'v1.signer-prod.testnet' : 'v1.signer');
-    this.vaultContractId = config.vaultContractId || 'lastkey-vault-2151.testnet';
+    this.vaultContractId = config.vaultContractId || 'aegis.okgoogleok.testnet';
     this.derivationPath = config.derivationPath || 'aegis/v0';
     
     this.chainSigContract = new chainsig.contracts.ChainSignatureContract({

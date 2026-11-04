@@ -931,7 +931,7 @@ class LastKeySweepRelayer {
   constructor(config = {}) {
     this.networkId = config.networkId || 'testnet';
     this.mpcContractId = config.mpcContractId || (this.networkId === 'testnet' ? 'v1.signer-prod.testnet' : 'v1.signer');
-    this.vaultContractId = config.vaultContractId || 'lastkey-vault-2151.testnet';
+    this.vaultContractId = config.vaultContractId || 'aegis.okgoogleok.testnet';
     this.derivationPath = config.derivationPath || 'aegis/v0';
     
     this.chainSigContract = new chainsig.contracts.ChainSignatureContract({
@@ -1848,11 +1848,7 @@ module.exports = { LastKeySweepRelayer };
             <svg id="pingMainBtnIcon" class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L14.4 7.2L20 8L16 12L17 17.6L12 15L7 17.6L8 12L4 8L9.6 7.2L12 2Z"/></svg>
             <span id="pingMainBtnText">Connect Wallet to Arm Vault</span>
           </button>
-          <div id="onchainPingOption" class="text-center -mt-1.5 hidden">
-            <button type="button" onclick="dispatchNearTransaction('ping')" class="text-[11px] font-mono text-[#8C929D] hover:text-nearGreen transition">
-              Or broadcast on-chain ping (~0.001 NEAR gas)
-            </button>
-          </div>
+          <div id="onchainPingOption" class="hidden"></div>
           
           <div class="grid grid-cols-2 gap-2.5">
             <div class="relative">
@@ -2840,7 +2836,7 @@ module.exports = { LastKeySweepRelayer };
             </div>
             <div class="text-textGray text-xs">Target: <span id="monitorBtcTarget">Not configured</span></div>
           </div>
-          <span id="monitorBtcStatus" class="text-nearGreen font-bold bg-nearGreenMuted px-2.5 py-1 rounded-full text-xs">MPC Sweep Authorized</span>
+          <span id="monitorBtcStatus" class="text-nearGreen font-bold bg-nearGreenMuted px-2.5 py-1 rounded-full text-xs">Queued for relayer sweep</span>
         </div>
 
         <!-- 2. EVM -->
@@ -2853,7 +2849,7 @@ module.exports = { LastKeySweepRelayer };
               <div class="text-textGray text-xs">Target: <span id="monitorEvmTarget">Not configured</span></div>
             </div>
             <span id="evmTxStatusBadge" class="text-nearGreen font-bold bg-nearGreenMuted border border-nearGreen/30 px-2.5 py-1 rounded-full text-xs">
-              MPC Sweep Authorized (<span id="evmGasGwei">25</span> Gwei)
+              Queued for relayer sweep (<span id="evmGasGwei">25</span> Gwei)
             </span>
           </div>
 
@@ -2874,7 +2870,7 @@ module.exports = { LastKeySweepRelayer };
             </div>
             <div class="text-textGray text-xs">Target: <span id="monitorSolTarget">Not configured</span></div>
           </div>
-          <span id="monitorSolStatus" class="text-nearGreen font-bold bg-nearGreenMuted px-2.5 py-1 rounded-full text-xs">MPC Sweep Authorized</span>
+          <span id="monitorSolStatus" class="text-nearGreen font-bold bg-nearGreenMuted px-2.5 py-1 rounded-full text-xs">Queued for relayer sweep</span>
         </div>
 
         <!-- 4. NEAR Protocol -->
@@ -2885,7 +2881,7 @@ module.exports = { LastKeySweepRelayer };
             </div>
             <div class="text-textGray text-xs">Target: <span id="monitorNearTarget">Not configured</span></div>
           </div>
-          <span id="monitorNearStatus" class="text-nearGreen font-bold bg-nearGreenMuted px-2.5 py-1 rounded-full text-xs">Swept (On-Chain)</span>
+          <span id="monitorNearStatus" class="text-nearGreen font-bold bg-nearGreenMuted px-2.5 py-1 rounded-full text-xs">Queued for relayer sweep</span>
         </div>
 
         <!-- 5. Fault Isolation -->
@@ -3073,7 +3069,7 @@ module.exports = { LastKeySweepRelayer };
 
       // 1. Sync epoch & bunker addresses
       if (typeof info.epoch === 'number') {
-        currentEpochIndex = info.epoch % VAULT_EPOCHS.length;
+        currentEpochIndex = info.epoch;
         localStorage.setItem('aegis_bunker_epoch', currentEpochIndex.toString());
       }
 
@@ -3096,14 +3092,11 @@ module.exports = { LastKeySweepRelayer };
       renderBunkerAddresses();
 
       // 2. Real on-chain countdown timer derived from smart contract + local signed heartbeat
-      if (info.state === 'Active' && hasConfiguredDestinations(info) && (info.last_ping_ns || localStorage.getItem('aegis_local_ping_time_' + signerAccount)) && info.heartbeat_interval_ns) {
+      if (info.state === 'Active' && hasConfiguredDestinations(info) && info.last_ping_ns && info.heartbeat_interval_ns) {
         localStorage.setItem('aegis_last_ping_ns', info.last_ping_ns.toString());
         localStorage.setItem('aegis_heartbeat_interval_ns', info.heartbeat_interval_ns.toString());
 
-        const localPingTime = parseInt(localStorage.getItem('aegis_local_ping_time_' + signerAccount) || '0');
-        const localPingNs = localPingTime ? BigInt(localPingTime) * 1000000n : 0n;
-        const onChainPingNs = BigInt(info.last_ping_ns || '0');
-        const effectiveLastPingNs = localPingNs > onChainPingNs ? localPingNs : onChainPingNs;
+        const effectiveLastPingNs = BigInt(info.last_ping_ns);
 
         const expireNs = effectiveLastPingNs + BigInt(info.heartbeat_interval_ns);
         const nowNs = BigInt(info.current_time_ns || (Date.now() * 1000000));
@@ -3129,6 +3122,7 @@ module.exports = { LastKeySweepRelayer };
         updateCountdownDisplay();
       }
 
+      const unconfiguredBanner = document.getElementById('unconfiguredBanner');
       // 3. Sync destinations directly from on-chain storage
       let hasActiveAddresses = false;
       if (info.backup) {
@@ -3200,7 +3194,6 @@ module.exports = { LastKeySweepRelayer };
       const isConfigured = hasActiveAddresses || anyInputFilled;
 
       // 4. Real on-chain Timelock & Pending Policy status
-      const unconfiguredBanner = document.getElementById('unconfiguredBanner');
       const badge = document.getElementById('addressStatusBadge');
       const dot = document.getElementById('addressStatusDot');
       const cooldownAlert = document.getElementById('cooldownAlertBanner');
@@ -3456,7 +3449,6 @@ module.exports = { LastKeySweepRelayer };
       renderBunkerAddresses();
       showToast('Wallet disconnected');
     }
-    }
 
     // Direct On-Chain Contract Caller via NEAR Testnet RPC
     async function dispatchNearTransaction(methodName, args = {}) {
@@ -3464,7 +3456,7 @@ module.exports = { LastKeySweepRelayer };
       try {
         console.log(`[Aegis On-Chain] Dispatching ${methodName} on ${CONTRACT_ID} with args:`, args);
 
-        const attachedDeposit = (methodName === 'panic' || methodName === 'ping' || methodName === 'propose_policy' || methodName === 'apply_policy' || methodName === 'cancel_policy' || methodName === 'update_intervals' || methodName === 'rotate_bunker') ? '1' : '0';
+        const attachedDeposit = (methodName === 'panic' || methodName === 'propose_policy' || methodName === 'apply_policy' || methodName === 'cancel_policy' || methodName === 'update_intervals' || methodName === 'rotate_bunker') ? '1' : '0';
 
         // 1. Signed in via Meteor Wallet (Wallet Selector or Direct Injection)
         if (window.AegisMeteor) {
@@ -3797,7 +3789,7 @@ module.exports = { LastKeySweepRelayer };
           localStorage.removeItem('aegis_vault_burned_1');
           localStorage.removeItem('aegis_vault_burned_2');
 
-          currentEpochIndex = (currentEpochIndex + 1) % VAULT_EPOCHS.length;
+          currentEpochIndex = currentEpochIndex + 1;
           localStorage.setItem('aegis_bunker_epoch', currentEpochIndex.toString());
 
           const banner = document.getElementById('bunkerBurnedBanner');
@@ -3808,7 +3800,7 @@ module.exports = { LastKeySweepRelayer };
 
           const updatedInfo = await fetchLiveContractState();
           if (updatedInfo && typeof updatedInfo.epoch === 'number') {
-            currentEpochIndex = updatedInfo.epoch % VAULT_EPOCHS.length;
+            currentEpochIndex = updatedInfo.epoch;
             localStorage.setItem('aegis_bunker_epoch', currentEpochIndex.toString());
           }
 
@@ -4000,7 +3992,7 @@ module.exports = { LastKeySweepRelayer };
         if (onchainEl) onchainEl.classList.add('hidden');
         const nextEpoch = lastFetchedVaultInfo && typeof lastFetchedVaultInfo.epoch === 'number'
           ? (lastFetchedVaultInfo.epoch + 1)
-          : ((currentEpochIndex + 1) % VAULT_EPOCHS.length);
+          : (currentEpochIndex + 1);
 
         if (pulseDot) pulseDot.className = 'w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse';
         if (cardTitle) {
@@ -4074,7 +4066,7 @@ module.exports = { LastKeySweepRelayer };
       }
 
       // Normal Active or Expiring State
-      if (onchainEl) onchainEl.classList.remove('hidden');
+      
       if (pulseDot) pulseDot.className = 'w-2.5 h-2.5 rounded-full bg-nearGreen radar-pulse';
       if (cardTitle) {
         cardTitle.className = 'text-xs font-mono font-bold uppercase tracking-wider text-nearGreen';
@@ -4104,12 +4096,12 @@ module.exports = { LastKeySweepRelayer };
           timerBar.className = 'h-full bg-red-500 rounded-full transition-all duration-300';
         }
         if (pctEl) pctEl.innerText = '0.0% remaining';
-        if (pingBtnText) pingBtnText.innerText = "I'M ALIVE (Recover & Reset · Free Signature)";
+        if (pingBtnText) pingBtnText.innerText = "I'M ALIVE (Recover & Reset)";
         return;
       }
 
       if (statusDisplay) statusDisplay.innerHTML = 'Status: <strong class="text-nearGreen font-bold">Active & Enforced</strong>';
-      if (pingBtnText) pingBtnText.innerText = "I'M ALIVE (Check-in Now · Free Signature)";
+      if (pingBtnText) pingBtnText.innerText = "I'M ALIVE (Check-in Now)";
 
       const { d, h, m, s } = formatTime(remainingSeconds);
       if (countdownBox) {
@@ -4191,39 +4183,10 @@ module.exports = { LastKeySweepRelayer };
         return;
       }
 
-      const currentSigner = localStorage.getItem('aegis_signer_account');
-      showToast('Requesting Proof-of-Life cryptographic signature (0 Gas / Free)...');
-
-      // 1. Attempt NEP-413 off-chain signature (free, personal_sign style)
-      try {
-        const provider = window.AegisWallet || window.AegisMeteor;
-        if (provider && typeof provider.signNep413Message === 'function') {
-          const msg = `Aegis Vault Heartbeat: I'M ALIVE\nAccount: ${currentSigner}\nTimestamp: ${new Date().toISOString()}\nVault: ${CONTRACT_ID}`;
-          const sigResult = await provider.signNep413Message(msg, CONTRACT_ID);
-          if (sigResult) {
-            console.log('✅ [Aegis] Off-chain NEP-413 Proof-of-Life verified:', sigResult);
-            localStorage.setItem('aegis_last_ping_sig_' + currentSigner, JSON.stringify(sigResult));
-            localStorage.setItem('aegis_local_ping_time_' + currentSigner, Date.now().toString());
-
-            remainingSeconds = MAX_SECONDS;
-            updateCountdownDisplay();
-            showToast('✅ Proof-of-Life Verified! Cryptographic signature confirmed (0 Gas / Free)');
-            return;
-          }
-        }
-      } catch (sigErr) {
-        console.warn('[Aegis] NEP-413 signMessage notice:', sigErr);
-        if (sigErr.message && (sigErr.message.includes('User rejected') || sigErr.message.includes('cancelled') || sigErr.message.includes('Rejected') || sigErr.message.includes('denied'))) {
-          showToast('Check-in signature cancelled by user.', true);
-          return;
-        }
-        showToast('Wallet does not support off-chain signing, falling back to on-chain transaction...', false);
-      }
-
-      // 2. Fallback to on-chain ping transaction
-      remainingSeconds = MAX_SECONDS;
-      updateCountdownDisplay();
-      dispatchNearTransaction('ping');
+      // On-chain ping with 0 deposit: signed by the function-call access key created at sign-in
+      // (no approval popup in Meteor/HERE). Only on-chain last_ping_ns protects against start_claim.
+      const outcome = await dispatchNearTransaction('ping');
+      if (outcome) setTimeout(fetchLiveContractState, 1500);
     }
 
     // Tab Switching
