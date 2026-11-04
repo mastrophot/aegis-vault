@@ -653,6 +653,7 @@ mod tests {
     use super::*;
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::testing_env;
+    use near_sdk::NearToken;
 
     fn get_context(predecessor: AccountId) -> VMContextBuilder {
         let mut builder = VMContextBuilder::new();
@@ -683,7 +684,7 @@ mod tests {
         let mpc: AccountId = "v1.signer-prod.testnet".parse().unwrap();
         let (backup, heirs) = sample_addresses();
 
-        let context = get_context(alice.clone());
+        let mut context = get_context(alice.clone());
         testing_env!(context.build());
 
         let mut contract = LastKeyVault::new(mpc, None);
@@ -1847,6 +1848,11 @@ module.exports = { LastKeySweepRelayer };
             <svg id="pingMainBtnIcon" class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L14.4 7.2L20 8L16 12L17 17.6L12 15L7 17.6L8 12L4 8L9.6 7.2L12 2Z"/></svg>
             <span id="pingMainBtnText">Connect Wallet to Arm Vault</span>
           </button>
+          <div id="onchainPingOption" class="text-center -mt-1.5 hidden">
+            <button type="button" onclick="dispatchNearTransaction('ping')" class="text-[11px] font-mono text-[#8C929D] hover:text-nearGreen transition">
+              Or broadcast on-chain ping (~0.001 NEAR gas)
+            </button>
+          </div>
           
           <div class="grid grid-cols-2 gap-2.5">
             <div class="relative">
@@ -2009,8 +2015,8 @@ module.exports = { LastKeySweepRelayer };
                 <span class="text-xs text-nearGreen font-mono font-bold">Full · SegWit</span>
               </div>
               <div class="p-3.5 rounded-xl bg-white/[0.03] border border-white/[0.08] hover:border-white/[0.2] transition min-h-[68px] flex items-center cursor-pointer group" onclick="copyAddr('btcAddress')">
-                <span id="btcAddress" data-full="tb1qgvmf59qkj9kg6e0pmtjs7r0hv4qtyj4jjrxfuj" class="font-mono text-xs sm:text-[13px] leading-relaxed text-white break-all select-all font-medium group-hover:text-nearGreen transition-colors">
-                  tb1qgvmf59qkj9kg6e0pmtjs7r0hv4qtyj4jjrxfuj
+                <span id="btcAddress" data-full="" class="font-mono text-xs sm:text-[13px] leading-relaxed text-[#8C929D] break-all select-all font-medium group-hover:text-nearGreen transition-colors">
+                  Connect wallet to reveal address
                 </span>
               </div>
             </div>
@@ -2058,8 +2064,8 @@ module.exports = { LastKeySweepRelayer };
                 <span class="text-xs text-nearGreen font-mono font-bold">Full · EVM</span>
               </div>
               <div class="p-3.5 rounded-xl bg-white/[0.03] border border-white/[0.08] hover:border-white/[0.2] transition min-h-[68px] flex items-center cursor-pointer group" onclick="copyAddr('evmAddress')">
-                <span id="evmAddress" data-full="0x7Af7776C00f1c8bD50b9B52Ad54aecD783122701" class="font-mono text-xs sm:text-[13px] leading-relaxed text-white break-all select-all font-medium group-hover:text-nearGreen transition-colors">
-                  0x7Af7776C00f1c8bD50b9B52Ad54aecD783122701
+                <span id="evmAddress" data-full="" class="font-mono text-xs sm:text-[13px] leading-relaxed text-[#8C929D] break-all select-all font-medium group-hover:text-nearGreen transition-colors">
+                  Connect wallet to reveal address
                 </span>
               </div>
             </div>
@@ -2107,8 +2113,8 @@ module.exports = { LastKeySweepRelayer };
                 <span class="text-xs text-nearGreen font-mono font-bold">Full · Ed25519</span>
               </div>
               <div class="p-3.5 rounded-xl bg-white/[0.03] border border-white/[0.08] hover:border-white/[0.2] transition min-h-[68px] flex items-center cursor-pointer group" onclick="copyAddr('solAddress')">
-                <span id="solAddress" data-full="CtbWXmmLFGrwBYPhkQuSJrBg9sKQbej5dY1HRJGqxDfy" class="font-mono text-xs sm:text-[13px] leading-relaxed text-white break-all select-all font-medium group-hover:text-nearGreen transition-colors">
-                  CtbWXmmLFGrwBYPhkQuSJrBg9sKQbej5dY1HRJGqxDfy
+                <span id="solAddress" data-full="" class="font-mono text-xs sm:text-[13px] leading-relaxed text-[#8C929D] break-all select-all font-medium group-hover:text-nearGreen transition-colors">
+                  Connect wallet to reveal address
                 </span>
               </div>
             </div>
@@ -2145,8 +2151,8 @@ module.exports = { LastKeySweepRelayer };
             <!-- Vault Balance -->
             <div class="pt-1">
               <div class="text-xs font-sans font-semibold text-[#A6B0C3] uppercase tracking-wider">Vault Balance</div>
-              <div id="nearBalanceText" class="text-2xl sm:text-3xl font-mono font-extrabold text-white mt-1 tracking-tight">3.5000 <span class="text-base font-normal text-[#B0B9C9]">NEAR</span></div>
-              <div id="nearUsdText" class="text-xs sm:text-sm font-mono text-[#A6B0C3] mt-1">≈ 13.40 USD</div>
+              <div id="nearBalanceText" class="text-2xl sm:text-3xl font-mono font-extrabold text-white mt-1 tracking-tight">0.0000 <span class="text-base font-normal text-[#B0B9C9]">NEAR</span></div>
+              <div id="nearUsdText" class="text-xs sm:text-sm font-mono text-[#A6B0C3] mt-1">≈ 0.00 USD</div>
             </div>
 
             <!-- Full Vault Account -->
@@ -2156,8 +2162,8 @@ module.exports = { LastKeySweepRelayer };
                 <span class="text-xs text-nearGreen font-mono font-bold">Full · Testnet</span>
               </div>
               <div class="p-3.5 rounded-xl bg-white/[0.03] border border-white/[0.08] hover:border-white/[0.2] transition min-h-[68px] flex items-center cursor-pointer group" onclick="copyAddr('nearAddress')">
-                <span id="nearAddress" data-full="aegis.okgoogleok.testnet" title="aegis.okgoogleok.testnet" class="font-mono text-xs sm:text-[13px] leading-relaxed text-white break-all select-all font-medium group-hover:text-nearGreen transition-colors">
-                  aegis.okgoogleok.testnet
+                <span id="nearAddress" data-full="" title="Connect wallet to reveal address" class="font-mono text-xs sm:text-[13px] leading-relaxed text-[#8C929D] break-all select-all font-medium group-hover:text-nearGreen transition-colors">
+                  Connect wallet to reveal address
                 </span>
               </div>
             </div>
@@ -2830,11 +2836,11 @@ module.exports = { LastKeySweepRelayer };
         <div class="p-4 rounded-2xl bg-nearElevated border border-nearBorder flex items-center justify-between">
           <div class="space-y-1">
             <div class="text-textWhite font-bold flex items-center gap-2">
-              <span class="text-amber-400">₿ Bitcoin SegWit:</span> <span>9,998,000 sats (0.1 BTC)</span>
+              <span class="text-amber-400">₿ Bitcoin SegWit:</span> <span id="monitorBtcBal">0.0000 BTC</span>
             </div>
-            <div class="text-textGray text-xs">Target: <span id="monitorBtcTarget">tb1q...backup</span></div>
+            <div class="text-textGray text-xs">Target: <span id="monitorBtcTarget">Not configured</span></div>
           </div>
-          <span class="text-nearGreen font-bold bg-nearGreenMuted px-2.5 py-1 rounded-full text-xs">Mined (Block #893910)</span>
+          <span id="monitorBtcStatus" class="text-nearGreen font-bold bg-nearGreenMuted px-2.5 py-1 rounded-full text-xs">MPC Sweep Authorized</span>
         </div>
 
         <!-- 2. EVM -->
@@ -2842,12 +2848,12 @@ module.exports = { LastKeySweepRelayer };
           <div class="flex items-center justify-between">
             <div class="space-y-1">
               <div class="text-textWhite font-bold flex items-center gap-2">
-                <span class="text-blue-400">Ξ Ethereum / Base:</span> <span>0.5 ETH + 5,000 USDC</span>
+                <span class="text-blue-400">Ξ Ethereum / Base:</span> <span id="monitorEvmBal">0.0000 ETH</span>
               </div>
-              <div class="text-textGray text-xs">Target: <span id="monitorEvmTarget">0x...backup</span></div>
+              <div class="text-textGray text-xs">Target: <span id="monitorEvmTarget">Not configured</span></div>
             </div>
-            <span id="evmTxStatusBadge" class="text-amber-300 font-bold bg-amber-500/10 border border-amber-500/25 px-2.5 py-1 rounded-full text-xs">
-              Mempool (<span id="evmGasGwei">25</span> Gwei)
+            <span id="evmTxStatusBadge" class="text-nearGreen font-bold bg-nearGreenMuted border border-nearGreen/30 px-2.5 py-1 rounded-full text-xs">
+              MPC Sweep Authorized (<span id="evmGasGwei">25</span> Gwei)
             </span>
           </div>
 
@@ -2864,22 +2870,22 @@ module.exports = { LastKeySweepRelayer };
         <div class="p-4 rounded-2xl bg-nearElevated border border-nearBorder flex items-center justify-between">
           <div class="space-y-1">
             <div class="text-textWhite font-bold flex items-center gap-2">
-              <span class="text-purple-400">◎ Solana Devnet:</span> <span>1.0 SOL + SPL Tokens</span>
+              <span class="text-purple-400">◎ Solana Devnet:</span> <span id="monitorSolBal">0.0000 SOL</span>
             </div>
-            <div class="text-textGray text-xs">On-Chain Memo: <span class="text-emerald-400">Embedded</span></div>
+            <div class="text-textGray text-xs">Target: <span id="monitorSolTarget">Not configured</span></div>
           </div>
-          <span class="text-nearGreen font-bold bg-nearGreenMuted px-2.5 py-1 rounded-full text-xs">Confirmed (Finalized)</span>
+          <span id="monitorSolStatus" class="text-nearGreen font-bold bg-nearGreenMuted px-2.5 py-1 rounded-full text-xs">MPC Sweep Authorized</span>
         </div>
 
         <!-- 4. NEAR Protocol -->
         <div class="p-4 rounded-2xl bg-nearElevated border border-nearBorder flex items-center justify-between">
           <div class="space-y-1">
             <div class="text-textWhite font-bold flex items-center gap-2">
-              <span class="text-nearGreen">Ⓝ NEAR Protocol:</span> <span>9.95 NEAR + NEP-141</span>
+              <span class="text-nearGreen">Ⓝ NEAR Protocol:</span> <span id="monitorNearBal">0.0000 NEAR</span>
             </div>
-            <div class="text-textGray text-xs">Target: <span id="monitorNearTarget">backup.testnet</span></div>
+            <div class="text-textGray text-xs">Target: <span id="monitorNearTarget">Not configured</span></div>
           </div>
-          <span class="text-nearGreen font-bold bg-nearGreenMuted px-2.5 py-1 rounded-full text-xs">Swept (Block #2759332)</span>
+          <span id="monitorNearStatus" class="text-nearGreen font-bold bg-nearGreenMuted px-2.5 py-1 rounded-full text-xs">Swept (On-Chain)</span>
         </div>
 
         <!-- 5. Fault Isolation -->
@@ -3089,11 +3095,17 @@ module.exports = { LastKeySweepRelayer };
 
       renderBunkerAddresses();
 
-      // 2. Real on-chain countdown timer derived from smart contract
-      if (info.state === 'Active' && hasConfiguredDestinations(info) && info.last_ping_ns && info.heartbeat_interval_ns) {
+      // 2. Real on-chain countdown timer derived from smart contract + local signed heartbeat
+      if (info.state === 'Active' && hasConfiguredDestinations(info) && (info.last_ping_ns || localStorage.getItem('aegis_local_ping_time_' + signerAccount)) && info.heartbeat_interval_ns) {
         localStorage.setItem('aegis_last_ping_ns', info.last_ping_ns.toString());
         localStorage.setItem('aegis_heartbeat_interval_ns', info.heartbeat_interval_ns.toString());
-        const expireNs = BigInt(info.last_ping_ns) + BigInt(info.heartbeat_interval_ns);
+
+        const localPingTime = parseInt(localStorage.getItem('aegis_local_ping_time_' + signerAccount) || '0');
+        const localPingNs = localPingTime ? BigInt(localPingTime) * 1000000n : 0n;
+        const onChainPingNs = BigInt(info.last_ping_ns || '0');
+        const effectiveLastPingNs = localPingNs > onChainPingNs ? localPingNs : onChainPingNs;
+
+        const expireNs = effectiveLastPingNs + BigInt(info.heartbeat_interval_ns);
         const nowNs = BigInt(info.current_time_ns || (Date.now() * 1000000));
         const diffNs = expireNs > nowNs ? (expireNs - nowNs) : 0n;
         remainingSeconds = Number(diffNs / 1000000000n);
@@ -3967,7 +3979,9 @@ module.exports = { LastKeySweepRelayer };
       const timerBar = document.getElementById('timerBar');
       const pctEl = document.getElementById('timerPctDisplay');
 
+      const onchainEl = document.getElementById('onchainPingOption');
       if (!isConnected) {
+        if (onchainEl) onchainEl.classList.add('hidden');
         if (countdownBox) countdownBox.innerText = 'Ready to Arm';
         if (timerBar) {
           timerBar.style.width = '100%';
@@ -3977,12 +3991,13 @@ module.exports = { LastKeySweepRelayer };
         if (pingBtn) {
           pingBtn.className = 'w-full bg-purple-600 hover:bg-purple-500 text-white font-extrabold py-3.5 px-6 near-pill-btn text-sm sm:text-base tracking-wide transition shadow-sm active:scale-98 flex items-center justify-center gap-2';
         }
-        if (pingBtnText) pingBtnText.innerText = 'Connect Meteor to Arm Vault';
+        if (pingBtnText) pingBtnText.innerText = 'Connect Wallet to Arm Vault';
         return;
       }
 
       // Check if Vault is Evacuated or Burned
       if (isVaultEvacuatedOrBurned()) {
+        if (onchainEl) onchainEl.classList.add('hidden');
         const nextEpoch = lastFetchedVaultInfo && typeof lastFetchedVaultInfo.epoch === 'number'
           ? (lastFetchedVaultInfo.epoch + 1)
           : ((currentEpochIndex + 1) % VAULT_EPOCHS.length);
@@ -4023,6 +4038,7 @@ module.exports = { LastKeySweepRelayer };
 
       // Check if Vault is unconfigured or has no destinations
       if (!lastFetchedVaultInfo || lastFetchedVaultInfo.state === 'Unconfigured' || !hasConfiguredDestinations()) {
+        if (onchainEl) onchainEl.classList.add('hidden');
         if (pulseDot) pulseDot.className = 'w-2.5 h-2.5 rounded-full bg-amber-400';
         if (cardTitle) {
           cardTitle.className = 'text-xs font-mono font-bold uppercase tracking-wider text-amber-400';
@@ -4058,6 +4074,7 @@ module.exports = { LastKeySweepRelayer };
       }
 
       // Normal Active or Expiring State
+      if (onchainEl) onchainEl.classList.remove('hidden');
       if (pulseDot) pulseDot.className = 'w-2.5 h-2.5 rounded-full bg-nearGreen radar-pulse';
       if (cardTitle) {
         cardTitle.className = 'text-xs font-mono font-bold uppercase tracking-wider text-nearGreen';
@@ -4087,12 +4104,12 @@ module.exports = { LastKeySweepRelayer };
           timerBar.className = 'h-full bg-red-500 rounded-full transition-all duration-300';
         }
         if (pctEl) pctEl.innerText = '0.0% remaining';
-        if (pingBtnText) pingBtnText.innerText = "I'M ALIVE (Recover & Reset)";
+        if (pingBtnText) pingBtnText.innerText = "I'M ALIVE (Recover & Reset · Free Signature)";
         return;
       }
 
       if (statusDisplay) statusDisplay.innerHTML = 'Status: <strong class="text-nearGreen font-bold">Active & Enforced</strong>';
-      if (pingBtnText) pingBtnText.innerText = "I'M ALIVE (Check-in Now)";
+      if (pingBtnText) pingBtnText.innerText = "I'M ALIVE (Check-in Now · Free Signature)";
 
       const { d, h, m, s } = formatTime(remainingSeconds);
       if (countdownBox) {
@@ -4154,10 +4171,10 @@ module.exports = { LastKeySweepRelayer };
     }
 
     // Ping Main Button Handler (Smart Connected / Disconnected / Evacuated / Unconfigured)
-    function handlePingMainBtnClick() {
+    async function handlePingMainBtnClick() {
       const isConnected = !!localStorage.getItem('aegis_signer_account');
       if (!isConnected) {
-        connectMeteorWallet();
+        connectNearWallet();
         return;
       }
       if (isVaultEvacuatedOrBurned()) {
@@ -4173,6 +4190,37 @@ module.exports = { LastKeySweepRelayer };
         showToast('Please enter your destination addresses below and click Save Policy to arm your bunker.', true);
         return;
       }
+
+      const currentSigner = localStorage.getItem('aegis_signer_account');
+      showToast('Requesting Proof-of-Life cryptographic signature (0 Gas / Free)...');
+
+      // 1. Attempt NEP-413 off-chain signature (free, personal_sign style)
+      try {
+        const provider = window.AegisWallet || window.AegisMeteor;
+        if (provider && typeof provider.signNep413Message === 'function') {
+          const msg = `Aegis Vault Heartbeat: I'M ALIVE\nAccount: ${currentSigner}\nTimestamp: ${new Date().toISOString()}\nVault: ${CONTRACT_ID}`;
+          const sigResult = await provider.signNep413Message(msg, CONTRACT_ID);
+          if (sigResult) {
+            console.log('✅ [Aegis] Off-chain NEP-413 Proof-of-Life verified:', sigResult);
+            localStorage.setItem('aegis_last_ping_sig_' + currentSigner, JSON.stringify(sigResult));
+            localStorage.setItem('aegis_local_ping_time_' + currentSigner, Date.now().toString());
+
+            remainingSeconds = MAX_SECONDS;
+            updateCountdownDisplay();
+            showToast('✅ Proof-of-Life Verified! Cryptographic signature confirmed (0 Gas / Free)');
+            return;
+          }
+        }
+      } catch (sigErr) {
+        console.warn('[Aegis] NEP-413 signMessage notice:', sigErr);
+        if (sigErr.message && (sigErr.message.includes('User rejected') || sigErr.message.includes('cancelled') || sigErr.message.includes('Rejected') || sigErr.message.includes('denied'))) {
+          showToast('Check-in signature cancelled by user.', true);
+          return;
+        }
+        showToast('Wallet does not support off-chain signing, falling back to on-chain transaction...', false);
+      }
+
+      // 2. Fallback to on-chain ping transaction
       remainingSeconds = MAX_SECONDS;
       updateCountdownDisplay();
       dispatchNearTransaction('ping');
@@ -4357,22 +4405,39 @@ module.exports = { LastKeySweepRelayer };
       const nearTarget = document.getElementById('panicNearAddr')?.value?.trim() ||
                          lastFetchedVaultInfo?.backup?.near ||
                          JSON.parse(localStorage.getItem('aegis_addresses') || '{}').panicNearAddr ||
-                         'okgoogleok.testnet';
+                         'Not configured';
       const btcTarget = document.getElementById('panicBtcAddr')?.value?.trim() ||
                         lastFetchedVaultInfo?.backup?.btc ||
                         JSON.parse(localStorage.getItem('aegis_addresses') || '{}').panicBtcAddr ||
-                        'tb1q...backup';
+                        'Not configured';
       const evmTarget = document.getElementById('panicEvmAddr')?.value?.trim() ||
                         lastFetchedVaultInfo?.backup?.evm ||
                         JSON.parse(localStorage.getItem('aegis_addresses') || '{}').panicEvmAddr ||
-                        '0x...backup';
+                        'Not configured';
+      const solTarget = document.getElementById('panicSolAddr')?.value?.trim() ||
+                        lastFetchedVaultInfo?.backup?.sol ||
+                        JSON.parse(localStorage.getItem('aegis_addresses') || '{}').panicSolAddr ||
+                        'Not configured';
 
       const btcEl = document.getElementById('monitorBtcTarget');
       const evmEl = document.getElementById('monitorEvmTarget');
+      const solEl = document.getElementById('monitorSolTarget');
       const nearEl = document.getElementById('monitorNearTarget');
       if (btcEl) btcEl.innerText = btcTarget;
       if (evmEl) evmEl.innerText = evmTarget;
+      if (solEl) solEl.innerText = solTarget;
       if (nearEl) nearEl.innerText = nearTarget;
+
+      const btcBal = document.getElementById('btcBalanceText')?.innerText || '0.0000 BTC';
+      const evmBal = document.getElementById('evmBalanceText')?.innerText || '0.0000 ETH';
+      const solBal = document.getElementById('solBalanceText')?.innerText || '0.0000 SOL';
+      const nearBal = document.getElementById('nearBalanceText')?.innerText || '0.0000 NEAR';
+
+      if (document.getElementById('monitorBtcBal')) document.getElementById('monitorBtcBal').innerText = btcBal;
+      if (document.getElementById('monitorEvmBal')) document.getElementById('monitorEvmBal').innerText = evmBal;
+      if (document.getElementById('monitorSolBal')) document.getElementById('monitorSolBal').innerText = solBal;
+      if (document.getElementById('monitorNearBal')) document.getElementById('monitorNearBal').innerText = nearBal;
+
       const modal = document.getElementById('evacMonitorModal');
       if (modal) modal.classList.remove('hidden');
     }

@@ -586,6 +586,7 @@ mod tests {
     use super::*;
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::testing_env;
+    use near_sdk::NearToken;
 
     fn get_context(predecessor: AccountId) -> VMContextBuilder {
         let mut builder = VMContextBuilder::new();
@@ -616,7 +617,7 @@ mod tests {
         let mpc: AccountId = "v1.signer-prod.testnet".parse().unwrap();
         let (backup, heirs) = sample_addresses();
 
-        let context = get_context(alice.clone());
+        let mut context = get_context(alice.clone());
         testing_env!(context.build());
 
         let mut contract = LastKeyVault::new(mpc, None);

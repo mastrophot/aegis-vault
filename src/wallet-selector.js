@@ -128,19 +128,27 @@ export async function signNep413Message(message, recipient = "aegis.okgoogleok.t
   crypto.getRandomValues(nonce);
 
   if (typeof window !== "undefined" && window.meteorWallet && typeof window.meteorWallet.signMessage === "function") {
-    const res = await window.meteorWallet.signMessage({
-      message,
-      nonce: Array.from(nonce),
-      recipient
-    });
-    return res;
+    try {
+      const res = await window.meteorWallet.signMessage({
+        message,
+        nonce: Array.from(nonce),
+        recipient
+      });
+      if (res) return res;
+    } catch (e) {
+      if (e.message && (e.message.includes("User rejected") || e.message.includes("cancelled") || e.message.includes("Rejected"))) {
+        throw e;
+      }
+      console.warn("[AegisWallet] Direct meteorWallet.signMessage error, trying selector:", e);
+    }
   }
-  const sel = await getSelector();
-  const wallet = await sel.wallet("meteor-wallet");
+
+  const sel = await getSelector(recipient);
+  const wallet = await sel.wallet();
   if (wallet && typeof wallet.signMessage === "function") {
     return await wallet.signMessage({
       message,
-      nonce,
+      nonce: typeof Buffer !== "undefined" ? Buffer.from(nonce) : nonce,
       recipient
     });
   }
