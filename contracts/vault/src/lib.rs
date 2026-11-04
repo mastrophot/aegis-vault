@@ -193,6 +193,26 @@ impl LastKeyVault {
         }
     }
 
+    /// Relayer heartbeat sponsorship: callable by authorized relayer on behalf of vault owner
+    pub fn ping_by_relayer(&mut self, vault_owner: AccountId) {
+        let caller = env::predecessor_account_id();
+        let vault = self.vaults.get_mut(&vault_owner).expect("Target vault not found");
+        let is_authorized = vault.authorized_relayer.as_ref().map_or(false, |r| r == &caller)
+            || self.default_relayer.as_ref().map_or(false, |r| r == &caller);
+        require!(is_authorized, "Unauthorized relayer");
+        require!(
+            vault.state == VaultState::Active || matches!(vault.state, VaultState::Claiming { .. }),
+            "Cannot ping: vault is not Active or Claiming"
+        );
+        vault.last_ping_ns = env::block_timestamp();
+        if let VaultState::Claiming { .. } = vault.state {
+            vault.state = VaultState::Active;
+            env::log_str(&format!("CLAIM_CANCELLED: Relayer {} pinged alive for {}", caller, vault_owner));
+        } else {
+            env::log_str(&format!("PING_RECEIVED: Relayer heartbeat reset for {}", vault_owner));
+        }
+    }
+
     /// Emergency Panic button: instantly shifts caller's vault into Evacuated state.
     /// Drops any pending policy changes to prevent race attacks.
     #[payable]
@@ -839,5 +859,37 @@ mod tests {
         valid_native_msg.extend_from_slice(&recipient_bytes);
         valid_native_msg.extend_from_slice(&[0x00; 32]);
         assert!(verify_solana_sweep_payload(&valid_native_msg, recipient_sol));
+    }
+
+    #[test]
+    fn test_ping_by_relayer() {
+        let alice: AccountId = "alice.testnet".parse().unwrap();
+        let relayer: AccountId = "relayer.testnet".parse().unwrap();
+        let unauthorized: AccountId = "eve.testnet".parse().unwrap();
+        let mpc: AccountId = "v1.signer-prod.testnet".parse().unwrap();
+        let (backup, heirs) = sample_addresses();
+
+        let mut context = get_context(alice.clone());
+        testing_env!(context.build());
+
+        let mut contract = LastKeyVault::new(mpc, Some(relayer.clone()));
+        contract.propose_policy(backup, heirs);
+
+        let initial_info = contract.get_vault_info(Some(alice.clone())).unwrap();
+        assert_eq!(initial_info.state, VaultState::Active);
+
+        // Relayer pings on behalf of Alice
+        testing_env!(context.predecessor_account_id(relayer).block_timestamp(1_000_000_000).build());
+        contract.ping_by_relayer(alice.clone());
+
+        let updated_info = contract.get_vault_info(Some(alice.clone())).unwrap();
+        assert_eq!(updated_info.last_ping_ns, 1_000_000_000);
+
+        // Unauthorized caller pings on behalf of Alice fails
+        testing_env!(context.predecessor_account_id(unauthorized).build());
+        let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            contract.ping_by_relayer(alice.clone());
+        }));
+        assert!(res.is_err());
     }
 }

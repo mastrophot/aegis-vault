@@ -260,6 +260,26 @@ impl LastKeyVault {
         }
     }
 
+    /// Relayer heartbeat sponsorship: callable by authorized relayer on behalf of vault owner
+    pub fn ping_by_relayer(&mut self, vault_owner: AccountId) {
+        let caller = env::predecessor_account_id();
+        let vault = self.vaults.get_mut(&vault_owner).expect("Target vault not found");
+        let is_authorized = vault.authorized_relayer.as_ref().map_or(false, |r| r == &caller)
+            || self.default_relayer.as_ref().map_or(false, |r| r == &caller);
+        require!(is_authorized, "Unauthorized relayer");
+        require!(
+            vault.state == VaultState::Active || matches!(vault.state, VaultState::Claiming { .. }),
+            "Cannot ping: vault is not Active or Claiming"
+        );
+        vault.last_ping_ns = env::block_timestamp();
+        if let VaultState::Claiming { .. } = vault.state {
+            vault.state = VaultState::Active;
+            env::log_str(&format!("CLAIM_CANCELLED: Relayer {} pinged alive for {}", caller, vault_owner));
+        } else {
+            env::log_str(&format!("PING_RECEIVED: Relayer heartbeat reset for {}", vault_owner));
+        }
+    }
+
     /// Emergency Panic button: instantly shifts caller's vault into Evacuated state.
     /// Drops any pending policy changes to prevent race attacks.
     #[payable]
@@ -906,6 +926,38 @@ mod tests {
         valid_native_msg.extend_from_slice(&recipient_bytes);
         valid_native_msg.extend_from_slice(&[0x00; 32]);
         assert!(verify_solana_sweep_payload(&valid_native_msg, recipient_sol));
+    }
+
+    #[test]
+    fn test_ping_by_relayer() {
+        let alice: AccountId = "alice.testnet".parse().unwrap();
+        let relayer: AccountId = "relayer.testnet".parse().unwrap();
+        let unauthorized: AccountId = "eve.testnet".parse().unwrap();
+        let mpc: AccountId = "v1.signer-prod.testnet".parse().unwrap();
+        let (backup, heirs) = sample_addresses();
+
+        let mut context = get_context(alice.clone());
+        testing_env!(context.build());
+
+        let mut contract = LastKeyVault::new(mpc, Some(relayer.clone()));
+        contract.propose_policy(backup, heirs);
+
+        let initial_info = contract.get_vault_info(Some(alice.clone())).unwrap();
+        assert_eq!(initial_info.state, VaultState::Active);
+
+        // Relayer pings on behalf of Alice
+        testing_env!(context.predecessor_account_id(relayer).block_timestamp(1_000_000_000).build());
+        contract.ping_by_relayer(alice.clone());
+
+        let updated_info = contract.get_vault_info(Some(alice.clone())).unwrap();
+        assert_eq!(updated_info.last_ping_ns, 1_000_000_000);
+
+        // Unauthorized caller pings on behalf of Alice fails
+        testing_env!(context.predecessor_account_id(unauthorized).build());
+        let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            contract.ping_by_relayer(alice.clone());
+        }));
+        assert!(res.is_err());
     }
 }
 
@@ -2835,6 +2887,7 @@ module.exports = { LastKeySweepRelayer };
               <span class="text-amber-400">₿ Bitcoin SegWit:</span> <span id="monitorBtcBal">0.0000 BTC</span>
             </div>
             <div class="text-textGray text-xs">Target: <span id="monitorBtcTarget">Not configured</span></div>
+            <div id="monitorBtcLink" class="text-[11px] pt-0.5"></div>
           </div>
           <span id="monitorBtcStatus" class="text-nearGreen font-bold bg-nearGreenMuted px-2.5 py-1 rounded-full text-xs">Queued for relayer sweep</span>
         </div>
@@ -2847,6 +2900,7 @@ module.exports = { LastKeySweepRelayer };
                 <span class="text-blue-400">Ξ Ethereum / Base:</span> <span id="monitorEvmBal">0.0000 ETH</span>
               </div>
               <div class="text-textGray text-xs">Target: <span id="monitorEvmTarget">Not configured</span></div>
+              <div id="monitorEvmLink" class="text-[11px] pt-0.5"></div>
             </div>
             <span id="evmTxStatusBadge" class="text-nearGreen font-bold bg-nearGreenMuted border border-nearGreen/30 px-2.5 py-1 rounded-full text-xs">
               Queued for relayer sweep (<span id="evmGasGwei">25</span> Gwei)
@@ -2869,6 +2923,7 @@ module.exports = { LastKeySweepRelayer };
               <span class="text-purple-400">◎ Solana Devnet:</span> <span id="monitorSolBal">0.0000 SOL</span>
             </div>
             <div class="text-textGray text-xs">Target: <span id="monitorSolTarget">Not configured</span></div>
+            <div id="monitorSolLink" class="text-[11px] pt-0.5"></div>
           </div>
           <span id="monitorSolStatus" class="text-nearGreen font-bold bg-nearGreenMuted px-2.5 py-1 rounded-full text-xs">Queued for relayer sweep</span>
         </div>
@@ -2880,6 +2935,7 @@ module.exports = { LastKeySweepRelayer };
               <span class="text-nearGreen">Ⓝ NEAR Protocol:</span> <span id="monitorNearBal">0.0000 NEAR</span>
             </div>
             <div class="text-textGray text-xs">Target: <span id="monitorNearTarget">Not configured</span></div>
+            <div id="monitorNearLink" class="text-[11px] pt-0.5"></div>
           </div>
           <span id="monitorNearStatus" class="text-nearGreen font-bold bg-nearGreenMuted px-2.5 py-1 rounded-full text-xs">Queued for relayer sweep</span>
         </div>
@@ -4403,6 +4459,52 @@ module.exports = { LastKeySweepRelayer };
 
       const modal = document.getElementById('evacMonitorModal');
       if (modal) modal.classList.remove('hidden');
+
+      // Fetch Live Relayer Telemetry if available
+      fetch('telemetry.json?t=' + Date.now()).then(r => r.json()).then(t => {
+        if (!t || !t.sweeps) return;
+        const currentSigner = localStorage.getItem('aegis_signer_account');
+        if (t.vault_owner && t.vault_owner !== currentSigner) return;
+
+        if (t.sweeps.btc) {
+          const s = t.sweeps.btc;
+          const statusEl = document.getElementById('monitorBtcStatus');
+          const linkEl = document.getElementById('monitorBtcLink');
+          if (statusEl && s.status) statusEl.innerText = s.status;
+          if (linkEl && s.explorer) {
+            linkEl.innerHTML = `<a href="${s.explorer}" target="_blank" rel="noopener noreferrer" class="text-amber-400 hover:underline flex items-center gap-1 font-mono">View on Mempool.space ↗</a>`;
+          }
+        }
+        if (t.sweeps.evm) {
+          const s = t.sweeps.evm;
+          const statusBadge = document.getElementById('evmTxStatusBadge');
+          const linkEl = document.getElementById('monitorEvmLink');
+          if (statusBadge && s.status) statusBadge.innerText = s.status;
+          if (linkEl && s.explorer) {
+            linkEl.innerHTML = `<a href="${s.explorer}" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:underline flex items-center gap-1 font-mono">View on Etherscan ↗</a>`;
+          }
+        }
+        if (t.sweeps.sol) {
+          const s = t.sweeps.sol;
+          const statusEl = document.getElementById('monitorSolStatus');
+          const linkEl = document.getElementById('monitorSolLink');
+          if (statusEl && s.status) statusEl.innerText = s.status;
+          if (linkEl && s.explorer) {
+            linkEl.innerHTML = `<a href="${s.explorer}" target="_blank" rel="noopener noreferrer" class="text-purple-400 hover:underline flex items-center gap-1 font-mono">View on Solscan ↗</a>`;
+          }
+        }
+        if (t.sweeps.near) {
+          const s = t.sweeps.near;
+          const statusEl = document.getElementById('monitorNearStatus');
+          const linkEl = document.getElementById('monitorNearLink');
+          if (statusEl && s.status) statusEl.innerText = s.status;
+          if (linkEl && s.explorer) {
+            linkEl.innerHTML = `<a href="${s.explorer}" target="_blank" rel="noopener noreferrer" class="text-nearGreen hover:underline flex items-center gap-1 font-mono">View on NearBlocks ↗</a>`;
+          }
+        }
+      }).catch(e => {
+        // Telemetry file not created yet or running offline
+      });
     }
 
     function closeEvacMonitor() {

@@ -1,0 +1,32 @@
+{
+  "vault_owner": "newapp9955.testnet",
+  "epoch": 0,
+  "state": "Active",
+  "updated_at": "2026-11-05T01:00:00.000Z",
+  "sweeps": {
+    "btc": {
+      "status": "Queued for relayer sweep",
+      "chain": "Bitcoin Native SegWit",
+      "target": "Not configured",
+      "amount": "0.0000 BTC"
+    },
+    "evm": {
+      "status": "Queued for relayer sweep (25 Gwei)",
+      "chain": "Ethereum / Base (Sepolia)",
+      "target": "Not configured",
+      "amount": "0.0000 ETH"
+    },
+    "sol": {
+      "status": "Queued for relayer sweep",
+      "chain": "Solana Devnet (Ed25519)",
+      "target": "Not configured",
+      "amount": "0.0000 SOL"
+    },
+    "near": {
+      "status": "Active (Aegis Contract)",
+      "chain": "NEAR Protocol Testnet",
+      "target": "aegis.okgoogleok.testnet",
+      "amount": "0.0000 NEAR"
+    }
+  }
+}

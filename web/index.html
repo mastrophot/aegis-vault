@@ -1263,6 +1263,7 @@
               <span class="text-amber-400">₿ Bitcoin SegWit:</span> <span id="monitorBtcBal">0.0000 BTC</span>
             </div>
             <div class="text-textGray text-xs">Target: <span id="monitorBtcTarget">Not configured</span></div>
+            <div id="monitorBtcLink" class="text-[11px] pt-0.5"></div>
           </div>
           <span id="monitorBtcStatus" class="text-nearGreen font-bold bg-nearGreenMuted px-2.5 py-1 rounded-full text-xs">Queued for relayer sweep</span>
         </div>
@@ -1275,6 +1276,7 @@
                 <span class="text-blue-400">Ξ Ethereum / Base:</span> <span id="monitorEvmBal">0.0000 ETH</span>
               </div>
               <div class="text-textGray text-xs">Target: <span id="monitorEvmTarget">Not configured</span></div>
+              <div id="monitorEvmLink" class="text-[11px] pt-0.5"></div>
             </div>
             <span id="evmTxStatusBadge" class="text-nearGreen font-bold bg-nearGreenMuted border border-nearGreen/30 px-2.5 py-1 rounded-full text-xs">
               Queued for relayer sweep (<span id="evmGasGwei">25</span> Gwei)
@@ -1297,6 +1299,7 @@
               <span class="text-purple-400">◎ Solana Devnet:</span> <span id="monitorSolBal">0.0000 SOL</span>
             </div>
             <div class="text-textGray text-xs">Target: <span id="monitorSolTarget">Not configured</span></div>
+            <div id="monitorSolLink" class="text-[11px] pt-0.5"></div>
           </div>
           <span id="monitorSolStatus" class="text-nearGreen font-bold bg-nearGreenMuted px-2.5 py-1 rounded-full text-xs">Queued for relayer sweep</span>
         </div>
@@ -1308,6 +1311,7 @@
               <span class="text-nearGreen">Ⓝ NEAR Protocol:</span> <span id="monitorNearBal">0.0000 NEAR</span>
             </div>
             <div class="text-textGray text-xs">Target: <span id="monitorNearTarget">Not configured</span></div>
+            <div id="monitorNearLink" class="text-[11px] pt-0.5"></div>
           </div>
           <span id="monitorNearStatus" class="text-nearGreen font-bold bg-nearGreenMuted px-2.5 py-1 rounded-full text-xs">Queued for relayer sweep</span>
         </div>
@@ -2831,6 +2835,52 @@
 
       const modal = document.getElementById('evacMonitorModal');
       if (modal) modal.classList.remove('hidden');
+
+      // Fetch Live Relayer Telemetry if available
+      fetch('telemetry.json?t=' + Date.now()).then(r => r.json()).then(t => {
+        if (!t || !t.sweeps) return;
+        const currentSigner = localStorage.getItem('aegis_signer_account');
+        if (t.vault_owner && t.vault_owner !== currentSigner) return;
+
+        if (t.sweeps.btc) {
+          const s = t.sweeps.btc;
+          const statusEl = document.getElementById('monitorBtcStatus');
+          const linkEl = document.getElementById('monitorBtcLink');
+          if (statusEl && s.status) statusEl.innerText = s.status;
+          if (linkEl && s.explorer) {
+            linkEl.innerHTML = `<a href="${s.explorer}" target="_blank" rel="noopener noreferrer" class="text-amber-400 hover:underline flex items-center gap-1 font-mono">View on Mempool.space ↗</a>`;
+          }
+        }
+        if (t.sweeps.evm) {
+          const s = t.sweeps.evm;
+          const statusBadge = document.getElementById('evmTxStatusBadge');
+          const linkEl = document.getElementById('monitorEvmLink');
+          if (statusBadge && s.status) statusBadge.innerText = s.status;
+          if (linkEl && s.explorer) {
+            linkEl.innerHTML = `<a href="${s.explorer}" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:underline flex items-center gap-1 font-mono">View on Etherscan ↗</a>`;
+          }
+        }
+        if (t.sweeps.sol) {
+          const s = t.sweeps.sol;
+          const statusEl = document.getElementById('monitorSolStatus');
+          const linkEl = document.getElementById('monitorSolLink');
+          if (statusEl && s.status) statusEl.innerText = s.status;
+          if (linkEl && s.explorer) {
+            linkEl.innerHTML = `<a href="${s.explorer}" target="_blank" rel="noopener noreferrer" class="text-purple-400 hover:underline flex items-center gap-1 font-mono">View on Solscan ↗</a>`;
+          }
+        }
+        if (t.sweeps.near) {
+          const s = t.sweeps.near;
+          const statusEl = document.getElementById('monitorNearStatus');
+          const linkEl = document.getElementById('monitorNearLink');
+          if (statusEl && s.status) statusEl.innerText = s.status;
+          if (linkEl && s.explorer) {
+            linkEl.innerHTML = `<a href="${s.explorer}" target="_blank" rel="noopener noreferrer" class="text-nearGreen hover:underline flex items-center gap-1 font-mono">View on NearBlocks ↗</a>`;
+          }
+        }
+      }).catch(e => {
+        // Telemetry file not created yet or running offline
+      });
     }
 
     function closeEvacMonitor() {

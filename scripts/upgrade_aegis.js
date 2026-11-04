@@ -19,7 +19,7 @@ async function upgrade() {
   const near = await nearAPI.connect({
     networkId: 'testnet',
     keyStore,
-    nodeUrl: 'https://archival-rpc.testnet.near.org'
+    nodeUrl: 'https://test.rpc.fastnear.com'
   });
 
   const parentAccount = await near.account(parentCred.accountId || parentCred.account_id);
@@ -38,15 +38,6 @@ async function upgrade() {
   console.log(`📦 Deploying updated WASM (${wasmBytes.length} bytes) to ${cred.accountId}...`);
   const outcome = await account.deployContract(wasmBytes);
   console.log(`✅ Deployed! Tx: ${outcome.transaction.hash}`);
-
-  console.log(`🔄 Calling migrate() on ${cred.accountId}...`);
-  const migrateOutcome = await account.functionCall({
-    contractId: cred.accountId,
-    methodName: 'migrate',
-    args: {},
-    gas: '30000000000000'
-  });
-  console.log(`✅ Migrated! Tx: ${migrateOutcome.transaction.hash}`);
 }
 
 upgrade().catch(console.error);
