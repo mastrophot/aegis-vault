@@ -1,5 +1,7 @@
 import { setupWalletSelector } from "@near-wallet-selector/core";
 import { setupMeteorWallet } from "@near-wallet-selector/meteor-wallet";
+import { contracts, chainAdapters } from "chainsig.js";
+import { Connection } from "@solana/web3.js";
 
 let selector = null;
 
@@ -104,11 +106,67 @@ export async function signAndSendNearTx(contractId, methodName, args = {}, depos
   }
 }
 
+export async function deriveVaultAddresses(accountId, path = "aegis/0", networkId = "testnet") {
+  const contract = new contracts.ChainSignatureContract({ networkId });
+
+  // 1. EVM
+  const evmAdapter = new chainAdapters.evm.EVM({ contract });
+  const evm = await evmAdapter.deriveAddressAndPublicKey(accountId, path);
+
+  // 2. Bitcoin (Native SegWit)
+  const btcAdapter = new chainAdapters.btc.Bitcoin({
+    network: networkId === "mainnet" ? "mainnet" : "testnet",
+    contract,
+    btcRpcAdapter: new chainAdapters.btc.BTCRpcAdapter({ network: networkId === "mainnet" ? "mainnet" : "testnet" })
+  });
+  const btc = await btcAdapter.deriveAddressAndPublicKey(accountId, path);
+
+  // 3. Solana
+  const solAdapter = new chainAdapters.solana.Solana({
+    contract,
+    solanaConnection: new Connection(networkId === "mainnet" ? "https://api.mainnet-beta.solana.com" : "https://api.devnet.solana.com")
+  });
+  const sol = await solAdapter.deriveAddressAndPublicKey(accountId, path);
+
+  return {
+    btc: btc.address,
+    evm: evm.address,
+    sol: sol.address,
+    near: accountId
+  };
+}
+
+export async function signNep413Message(message, recipient = "aegis.okgoogleok.testnet") {
+  const nonce = new Uint8Array(32);
+  crypto.getRandomValues(nonce);
+
+  if (typeof window !== "undefined" && window.meteorWallet && typeof window.meteorWallet.signMessage === "function") {
+    const res = await window.meteorWallet.signMessage({
+      message,
+      nonce: Array.from(nonce),
+      recipient
+    });
+    return res;
+  }
+  const sel = await getSelector();
+  const wallet = await sel.wallet("meteor-wallet");
+  if (wallet && typeof wallet.signMessage === "function") {
+    return await wallet.signMessage({
+      message,
+      nonce,
+      recipient
+    });
+  }
+  throw new Error("signMessage not supported by wallet");
+}
+
 if (typeof window !== "undefined") {
   window.AegisMeteor = {
     getSelector,
     connectMeteor,
     disconnectMeteor,
-    signAndSendNearTx
+    signAndSendNearTx,
+    deriveVaultAddresses,
+    signNep413Message
   };
 }

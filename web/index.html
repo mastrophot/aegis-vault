@@ -1357,33 +1357,50 @@
   <!-- Application Logic -->
   <script>
     // Bunker Epochs (BIP-32 style MPC Derivations for Post-Quantum ECDSA Bunker Mode)
-    const VAULT_EPOCHS = [
-      {
-        epoch: '0',
-        btc: 'tb1qgvmf59qkj9kg6e0pmtjs7r0hv4qtyj4jjrxfuj',
-        evm: '0x7Af7776C00f1c8bD50b9B52Ad54aecD783122701',
-        sol: 'CtbWXmmLFGrwBYPhkQuSJrBg9sKQbej5dY1HRJGqxDfy',
-        near: 'aegis.okgoogleok.testnet'
+    const PRECOMPUTED_DERIVED_VAULTS = {
+      'newapp9955.testnet': {
+        0: {
+          btc: 'tb1qgqgtsqnxqzexmq99tlqs76cff244ut0eupukmc',
+          evm: '0x6491bB83A2285301925a3c2c827dbcA89E7545F8',
+          sol: '9HJHEBcNJPrvK2CwCuNrp24SQfEZGTjmESL9y5E4cuHy',
+          near: 'aegis.okgoogleok.testnet'
+        },
+        1: {
+          btc: 'tb1q20nt4cs2ytqcdafss3gn7enhtv83f6ml48p7dc',
+          evm: '0xA899e106f808eC97eb1fD34e696F229A73a80959',
+          sol: 'HRXtQKBgmd7yYATKMLSvGHtLdYYenFyT8DGvfaoNcwQn',
+          near: 'aegis.okgoogleok.testnet'
+        },
+        2: {
+          btc: 'tb1qcca93zwj8faec7pgf2kytuz47pygj3pg2zj2v9',
+          evm: '0xe9Fa7D983328f7c8981972bdc782D30B300bDC5c',
+          sol: 'BEyM5qxMA4KaMGJkVJdWjk2gfdZSYi6q6kiMvGa6SYKK',
+          near: 'aegis.okgoogleok.testnet'
+        }
       },
-      {
-        epoch: '1',
-        btc: 'tb1qcqv3j9l0f7hkjz0x2w2mzkv9hlrtrp0a5wrl9j',
-        evm: '0x7e75B10a29C3E5830B8715941Cf3A2eD56DAC7e4',
-        sol: 'GUdfdj7LjwKJWkoezGeyn9WBXt8Emi1M7qbQXBf3Ep6k',
-        near: 'aegis.okgoogleok.testnet'
-      },
-      {
-        epoch: '2',
-        btc: 'tb1qpdg94nc8xkeqy5cn0rvx7zmss4e2vx9l84sw5y',
-        evm: '0x53c34fe0A07f730a8ebd2AA031967e9c37a4fD4e',
-        sol: 'HpCYiY9MnwLAWPDDPYQmyhVfkhwauRudEiwYqYGPd112',
-        near: 'aegis.okgoogleok.testnet'
+      'okgoogleok.testnet': {
+        0: {
+          btc: 'tb1q3fwk3jw7qyayhun46r8gyw2ypy320s0rx9dw85',
+          evm: '0x3DFF025d6A5C68D6Cf11a6a54e3d52e60E5c92bC',
+          sol: 'DMHNvnt58VxCQJmUUUte5dySkCKKPFsSqL6BWa9uPwqB',
+          near: 'aegis.okgoogleok.testnet'
+        }
       }
+    };
+
+    const VAULT_EPOCHS = [
+      { epoch: '0' },
+      { epoch: '1' },
+      { epoch: '2' }
     ];
 
     let currentEpochIndex = parseInt(localStorage.getItem('aegis_bunker_epoch') || '0');
     let lastFetchedVaultInfo = null;
-    const NEAR_RPC_URL = 'https://archival-rpc.testnet.near.org';
+    const NEAR_RPC_URLS = [
+      'https://test.rpc.fastnear.com',
+      'https://rpc.testnet.near.org'
+    ];
+    let currentRpcIndex = 0;
     const CONTRACT_ID = 'aegis.okgoogleok.testnet';
 
     function hasConfiguredDestinations(info = lastFetchedVaultInfo) {
@@ -1399,51 +1416,56 @@
       if (lastFetchedVaultInfo && (lastFetchedVaultInfo.state === 'Evacuated' || lastFetchedVaultInfo.state === 'Inheritance')) {
         return true;
       }
-      const curr = VAULT_EPOCHS[currentEpochIndex];
-      if (curr && localStorage.getItem('aegis_vault_burned_' + curr.epoch) === 'true') {
-        return true;
-      }
       if (localStorage.getItem('aegis_vault_burned_' + currentEpochIndex) === 'true') {
         return true;
       }
       return false;
     }
 
-    // Live On-Chain State Fetcher via NEAR JSON-RPC (Multi-User scoped)
+    // Live On-Chain State Fetcher via NEAR JSON-RPC (FastNEAR with Failover)
     async function fetchLiveContractState() {
       const currentSigner = localStorage.getItem('aegis_signer_account') || 'newapp9955.testnet';
-      try {
-        const response = await fetch(NEAR_RPC_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            jsonrpc: '2.0',
-            id: 'aegis-view-state',
-            method: 'query',
-            params: {
-              request_type: 'call_function',
-              finality: 'final',
-              account_id: CONTRACT_ID,
-              method_name: 'get_vault_info',
-              args_base64: btoa(JSON.stringify({ account_id: currentSigner }))
-            }
-          })
-        });
-        const data = await response.json();
-        if (data.result && data.result.result) {
-          const decoded = new TextDecoder().decode(new Uint8Array(data.result.result));
-          const vaultInfo = JSON.parse(decoded);
-          console.log(`📡 [Aegis] Live NEAR RPC State fetched for ${currentSigner}:`, vaultInfo);
-          syncUIWithOnChainState(vaultInfo, currentSigner);
-          return vaultInfo;
-        } else {
-          // No vault registered for this account yet
-          syncUIWithOnChainState(null, currentSigner);
-          return null;
+      
+      for (let attempt = 0; attempt < NEAR_RPC_URLS.length; attempt++) {
+        const rpcUrl = NEAR_RPC_URLS[(currentRpcIndex + attempt) % NEAR_RPC_URLS.length];
+        try {
+          const response = await fetch(rpcUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              jsonrpc: '2.0',
+              id: 'aegis-view-state',
+              method: 'query',
+              params: {
+                request_type: 'call_function',
+                finality: 'final',
+                account_id: CONTRACT_ID,
+                method_name: 'get_vault_info',
+                args_base64: btoa(JSON.stringify({ account_id: currentSigner }))
+              }
+            })
+          });
+          const data = await response.json();
+          if (data.result && data.result.result) {
+            currentRpcIndex = (currentRpcIndex + attempt) % NEAR_RPC_URLS.length;
+            const decoded = new TextDecoder().decode(new Uint8Array(data.result.result));
+            const vaultInfo = JSON.parse(decoded);
+            console.log(`📡 [Aegis] Live NEAR RPC State fetched from ${rpcUrl} for ${currentSigner}:`, vaultInfo);
+            syncUIWithOnChainState(vaultInfo, currentSigner);
+            return vaultInfo;
+          } else if (data.result && (data.result.error || data.result.result === null)) {
+            // Explicit null response (account has not configured a vault yet)
+            currentRpcIndex = (currentRpcIndex + attempt) % NEAR_RPC_URLS.length;
+            syncUIWithOnChainState(null, currentSigner);
+            return null;
+          } else {
+            console.warn(`[Aegis] RPC notice from ${rpcUrl}:`, data.error || 'Empty response');
+          }
+        } catch (err) {
+          console.warn(`[Aegis] RPC error from ${rpcUrl}:`, err.message);
         }
-      } catch (err) {
-        console.warn('📡 [Aegis] Live RPC sync notice:', err.message);
       }
+      // If network errors occur, preserve existing state to prevent flickering
     }
 
     function syncUIWithOnChainState(info, signerAccount) {
@@ -1936,8 +1958,8 @@
       }
     }
 
-    function renderBunkerAddresses() {
-      const current = VAULT_EPOCHS[currentEpochIndex];
+    async function renderBunkerAddresses() {
+      const currentSigner = localStorage.getItem('aegis_signer_account') || 'newapp9955.testnet';
       const btcEl = document.getElementById('btcAddress');
       const evmEl = document.getElementById('evmAddress');
       const solEl = document.getElementById('solAddress');
@@ -1945,36 +1967,67 @@
       const pill = document.getElementById('bunkerEpochPill');
       const banner = document.getElementById('bunkerBurnedBanner');
 
+      // 1. Check local dynamic cache
+      const cacheKey = `aegis_derived_${currentSigner}_${currentEpochIndex}`;
+      let addresses = null;
+      try {
+        const cached = localStorage.getItem(cacheKey);
+        if (cached) addresses = JSON.parse(cached);
+      } catch (e) {}
+
+      // 2. Check precomputed table
+      if (!addresses && PRECOMPUTED_DERIVED_VAULTS[currentSigner] && PRECOMPUTED_DERIVED_VAULTS[currentSigner][currentEpochIndex]) {
+        addresses = PRECOMPUTED_DERIVED_VAULTS[currentSigner][currentEpochIndex];
+      }
+
+      // 3. Dynamic client derivation via NEAR Chain Signatures
+      if (!addresses) {
+        addresses = {
+          btc: 'Deriving via NEAR MPC...',
+          evm: 'Deriving via NEAR MPC...',
+          sol: 'Deriving via NEAR MPC...',
+          near: CONTRACT_ID
+        };
+        if (window.AegisMeteor && typeof window.AegisMeteor.deriveVaultAddresses === 'function') {
+          window.AegisMeteor.deriveVaultAddresses(CONTRACT_ID, `aegis/${currentSigner}/${currentEpochIndex}`, 'testnet')
+            .then(res => {
+              if (res) {
+                localStorage.setItem(cacheKey, JSON.stringify(res));
+                renderBunkerAddresses();
+              }
+            }).catch(e => console.warn('Dynamic MPC derivation notice:', e.message));
+        }
+      }
+
       if (btcEl) {
-        btcEl.innerText = current.btc;
-        btcEl.dataset.full = current.btc;
+        btcEl.innerText = addresses.btc;
+        btcEl.dataset.full = addresses.btc;
       }
       if (evmEl) {
-        evmEl.innerText = current.evm;
-        evmEl.dataset.full = current.evm;
+        evmEl.innerText = addresses.evm;
+        evmEl.dataset.full = addresses.evm;
       }
       if (solEl) {
-        solEl.innerText = current.sol;
-        solEl.dataset.full = current.sol;
+        solEl.innerText = addresses.sol;
+        solEl.dataset.full = addresses.sol;
       }
       if (nearEl) {
-        nearEl.innerText = current.near;
-        nearEl.dataset.full = current.near;
+        nearEl.innerText = addresses.near || CONTRACT_ID;
+        nearEl.dataset.full = addresses.near || CONTRACT_ID;
       }
 
       const isBurned = isVaultEvacuatedOrBurned();
-      const currentSigner = localStorage.getItem('aegis_signer_account') || 'newapp9955.testnet';
       if (pill) {
         if (isBurned) {
-          pill.innerText = `Epoch ${current.epoch} · Burned`;
+          pill.innerText = `Epoch ${currentEpochIndex} · Burned`;
           pill.className = 'text-[11px] font-mono font-bold text-red-400 bg-red-950/40 border border-red-500/30 px-2.5 py-0.5 rounded-full whitespace-nowrap';
           if (banner) banner.classList.remove('hidden');
         } else if (!hasConfiguredDestinations()) {
-          pill.innerText = `Derivation Path: aegis/${currentSigner}/${current.epoch} (Unarmed)`;
+          pill.innerText = `Derivation Path: aegis/${currentSigner}/${currentEpochIndex} (Unarmed)`;
           pill.className = 'text-[11px] font-mono font-bold text-amber-400 bg-amber-950/40 border border-amber-500/30 px-2.5 py-0.5 rounded-full whitespace-nowrap';
           if (banner) banner.classList.add('hidden');
         } else {
-          pill.innerText = `Derivation Path: aegis/${currentSigner}/${current.epoch} (Active)`;
+          pill.innerText = `Derivation Path: aegis/${currentSigner}/${currentEpochIndex} (Active)`;
           pill.className = 'text-[11px] font-mono font-bold text-nearGreen bg-nearGreenMuted border border-nearGreen/30 px-2.5 py-0.5 rounded-full whitespace-nowrap';
           if (banner) banner.classList.add('hidden');
         }
