@@ -1587,6 +1587,8 @@ module.exports = { LastKeySweepRelayer };
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
   <!-- NEAR API JS (Official Web3 Provider) -->
   <script src="https://cdn.jsdelivr.net/npm/near-api-js@2.1.4/dist/near-api-js.min.js"></script>
+  <!-- NEAR Wallet Selector Modal UI Styles -->
+  <link rel="stylesheet" href="./modal-ui.css">
   <!-- NEAR Wallet Selector Standalone Bundle -->
   <script src="./wallet-bundle.js"></script>
   
@@ -1766,9 +1768,9 @@ module.exports = { LastKeySweepRelayer };
         <!-- User Wallet Connection Area -->
         <div id="walletArea" class="flex items-center shrink-0">
           <!-- Disconnected state (default) -->
-          <button id="connectWalletBtn" onclick="connectMeteorWallet()" class="flex items-center gap-2 h-9 px-4 rounded-full bg-purple-950/40 border border-purple-500/40 hover:bg-purple-900/40 text-xs font-mono font-bold text-purple-300 hover:text-white transition shadow-sm active:scale-95 whitespace-nowrap shrink-0">
+          <button id="connectWalletBtn" onclick="connectNearWallet()" class="flex items-center gap-2 h-9 px-4 rounded-full bg-purple-950/40 border border-purple-500/40 hover:bg-purple-900/40 text-xs font-mono font-bold text-purple-300 hover:text-white transition shadow-sm active:scale-95 whitespace-nowrap shrink-0">
             <svg class="w-3.5 h-3.5 text-purple-400 shrink-0" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L14.4 7.2L20 8L16 12L17 17.6L12 15L7 17.6L8 12L4 8L9.6 7.2L12 2Z"/></svg>
-            <span>Connect Meteor</span>
+            <span>Connect Wallet</span>
           </button>
 
           <!-- Connected state (hidden by default) -->
@@ -1843,7 +1845,7 @@ module.exports = { LastKeySweepRelayer };
         <div class="flex flex-col gap-3.5 pt-4 border-t border-nearBorder">
           <button id="pingMainBtn" onclick="handlePingMainBtnClick()" class="w-full bg-purple-600 hover:bg-purple-500 text-white font-extrabold py-3.5 px-6 near-pill-btn text-sm sm:text-base tracking-wide transition shadow-sm active:scale-98 flex items-center justify-center gap-2">
             <svg id="pingMainBtnIcon" class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L14.4 7.2L20 8L16 12L17 17.6L12 15L7 17.6L8 12L4 8L9.6 7.2L12 2Z"/></svg>
-            <span id="pingMainBtnText">Connect Meteor to Arm Vault</span>
+            <span id="pingMainBtnText">Connect Wallet to Arm Vault</span>
           </button>
           
           <div class="grid grid-cols-2 gap-2.5">
@@ -2995,7 +2997,12 @@ module.exports = { LastKeySweepRelayer };
 
     // Live On-Chain State Fetcher via NEAR JSON-RPC (FastNEAR with Failover)
     async function fetchLiveContractState() {
-      const currentSigner = localStorage.getItem('aegis_signer_account') || 'newapp9955.testnet';
+      const currentSigner = localStorage.getItem('aegis_signer_account');
+      if (!currentSigner) {
+        lastFetchedVaultInfo = null;
+        syncUIWithOnChainState(null, null);
+        return null;
+      }
       
       for (let attempt = 0; attempt < NEAR_RPC_URLS.length; attempt++) {
         const rpcUrl = NEAR_RPC_URLS[(currentRpcIndex + attempt) % NEAR_RPC_URLS.length];
@@ -3264,101 +3271,78 @@ module.exports = { LastKeySweepRelayer };
       }
     }
 
-    // Direct Meteor Wallet Connection Handler
-    async function connectMeteorWallet() {
-      showToast('Connecting Meteor Wallet...');
+    // Official NEAR Multi-Wallet Selector Modal Handler
+    async function connectNearWallet() {
+      showToast('Opening Web3 Wallet Selector...');
       try {
-        if (window.AegisMeteor) {
-          await window.AegisMeteor.connectMeteor(CONTRACT_ID);
-          const sel = await window.AegisMeteor.getSelector();
-          const state = sel.store.getState();
-          const activeAcc = state.accounts.find((acc) => acc.active)?.accountId || state.accounts[0]?.accountId;
-          if (activeAcc) {
-            localStorage.setItem('aegis_signer_account', activeAcc);
-            localStorage.setItem('aegis_wallet_type', 'meteor');
-            updateWalletConnectedUI(activeAcc);
-            fetchAccountNearBalance(activeAcc);
-            showToast(`Connected: ${activeAcc}`);
-            return;
-          }
+        const provider = window.AegisWallet || window.AegisMeteor;
+        if (provider && typeof provider.connectWallet === 'function') {
+          await provider.connectWallet(CONTRACT_ID);
+        } else if (window.meteorWallet && typeof window.meteorWallet.signIn === 'function') {
+          await window.meteorWallet.signIn({ contractId: CONTRACT_ID });
+        } else {
+          showToast('Wallet selector initializing, please try again in a moment...');
         }
-
-        if (window.meteorWallet) {
-          if (typeof window.meteorWallet.signIn === 'function') {
-            await window.meteorWallet.signIn({ contractId: CONTRACT_ID });
-          } else if (typeof window.meteorWallet.requestSignIn === 'function') {
-            await window.meteorWallet.requestSignIn({ contract_id: CONTRACT_ID });
-          }
-          const acc = window.meteorWallet.getAccountId ? window.meteorWallet.getAccountId() : null;
-          if (acc) {
-            localStorage.setItem('aegis_signer_account', acc);
-            localStorage.setItem('aegis_wallet_type', 'meteor');
-            updateWalletConnectedUI(acc);
-            fetchAccountNearBalance(acc);
-            showToast(`Connected: ${acc}`);
-            return;
-          }
-        }
-
-        showToast('Opening Meteor Testnet Web Wallet...');
-        window.open('https://testnet.meteorwallet.app', '_blank');
       } catch (err) {
-        console.error('[Aegis] Meteor connection error:', err);
-        showToast(`Meteor error: ${err.message}`, true);
+        console.error('[Aegis] Wallet connection error:', err);
+        showToast(`Wallet error: ${err.message}`, true);
       }
     }
+    const connectMeteorWallet = connectNearWallet; // Backward-compatibility
 
     async function initNearWallet() {
-      // 1. Check Meteor Wallet Selector state
-      if (window.AegisMeteor) {
+      const provider = window.AegisWallet || window.AegisMeteor;
+      if (provider && typeof provider.getSelector === 'function') {
         try {
-          const sel = await window.AegisMeteor.getSelector();
+          const sel = await provider.getSelector(CONTRACT_ID);
           const state = sel.store.getState();
           const activeAcc = state.accounts.find((acc) => acc.active)?.accountId || state.accounts[0]?.accountId;
           if (activeAcc) {
             localStorage.setItem('aegis_signer_account', activeAcc);
-            localStorage.setItem('aegis_wallet_type', 'meteor');
             updateWalletConnectedUI(activeAcc);
             fetchAccountNearBalance(activeAcc);
-            return;
+            fetchLiveContractState();
+            renderBunkerAddresses();
+          } else {
+            localStorage.removeItem('aegis_signer_account');
+            updateWalletDisconnectedUI();
+            renderBunkerAddresses();
           }
 
           sel.store.observable.subscribe((nextState) => {
             const acc = nextState.accounts.find((a) => a.active)?.accountId || nextState.accounts[0]?.accountId;
             if (acc) {
+              const prev = localStorage.getItem('aegis_signer_account');
               localStorage.setItem('aegis_signer_account', acc);
-              localStorage.setItem('aegis_wallet_type', 'meteor');
               updateWalletConnectedUI(acc);
               fetchAccountNearBalance(acc);
+              if (prev !== acc) {
+                fetchLiveContractState();
+                renderBunkerAddresses();
+              }
+            } else {
+              localStorage.removeItem('aegis_signer_account');
+              updateWalletDisconnectedUI();
+              renderBunkerAddresses();
             }
           });
-        } catch (err) {
-          console.warn('[Aegis] Meteor selector init notice:', err);
-        }
-      }
-
-      // 2. Direct injection check
-      if (window.meteorWallet && typeof window.meteorWallet.isSignedIn === 'function' && window.meteorWallet.isSignedIn()) {
-        const acc = window.meteorWallet.getAccountId ? window.meteorWallet.getAccountId() : null;
-        if (acc) {
-          localStorage.setItem('aegis_signer_account', acc);
-          localStorage.setItem('aegis_wallet_type', 'meteor');
-          updateWalletConnectedUI(acc);
-          fetchAccountNearBalance(acc);
           return;
+        } catch (err) {
+          console.warn('[Aegis] Wallet selector init notice:', err);
         }
       }
 
-      // 3. Direct developer credentials in localStorage
       const manualAccount = localStorage.getItem('aegis_signer_account');
-      const manualKey = localStorage.getItem('aegis_testnet_signer_key');
-      if (manualAccount && manualKey) {
+      if (manualAccount) {
         updateWalletConnectedUI(manualAccount);
         fetchAccountNearBalance(manualAccount);
+        fetchLiveContractState();
+        renderBunkerAddresses();
         return;
       }
 
       updateWalletDisconnectedUI();
+      renderBunkerAddresses();
     }
 
     function updateWalletConnectedUI(accountId) {
@@ -3412,12 +3396,12 @@ module.exports = { LastKeySweepRelayer };
       if (pingBtn) {
         pingBtn.className = 'w-full bg-purple-600 hover:bg-purple-500 text-white font-extrabold py-3.5 px-6 near-pill-btn text-sm sm:text-base tracking-wide transition shadow-sm active:scale-98 flex items-center justify-center gap-2';
       }
-      if (pingBtnText) pingBtnText.innerText = 'Connect Meteor to Arm Vault';
+      if (pingBtnText) pingBtnText.innerText = 'Connect Wallet to Arm Vault';
     }
 
     async function fetchAccountNearBalance(accountId) {
       try {
-        const response = await fetch(NEAR_RPC_URL, {
+        const response = await fetch(NEAR_RPC_URLS[0], {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -3446,8 +3430,9 @@ module.exports = { LastKeySweepRelayer };
     }
 
     async function disconnectWallet() {
-      if (window.AegisMeteor) {
-        try { await window.AegisMeteor.disconnectMeteor(); } catch (e) {}
+      const provider = window.AegisWallet || window.AegisMeteor;
+      if (provider && typeof provider.disconnectWallet === 'function') {
+        try { await provider.disconnectWallet(); } catch (e) {}
       }
       if (window.meteorWallet && typeof window.meteorWallet.signOut === 'function') {
         try { window.meteorWallet.signOut(); } catch (e) {}
@@ -3456,7 +3441,9 @@ module.exports = { LastKeySweepRelayer };
       localStorage.removeItem('aegis_wallet_type');
       localStorage.removeItem('aegis_testnet_signer_key');
       updateWalletDisconnectedUI();
+      renderBunkerAddresses();
       showToast('Wallet disconnected');
+    }
     }
 
     // Direct On-Chain Contract Caller via NEAR Testnet RPC
@@ -3520,9 +3507,9 @@ module.exports = { LastKeySweepRelayer };
           return outcome;
         }
 
-        // 3. Not signed in: Trigger Meteor Connect
-        showToast('Please connect your Meteor Wallet first!', true);
-        connectMeteorWallet();
+        // 3. Not signed in: Trigger Wallet Connect
+        showToast('Please connect your Web3 wallet first!', true);
+        connectNearWallet();
       } catch (err) {
         console.error(`❌ [Aegis] Failed to dispatch ${methodName}:`, err);
         showToast(`Error dispatching ${methodName}: ${err.message}`, true);
@@ -3530,13 +3517,26 @@ module.exports = { LastKeySweepRelayer };
     }
 
     async function renderBunkerAddresses() {
-      const currentSigner = localStorage.getItem('aegis_signer_account') || 'newapp9955.testnet';
+      const currentSigner = localStorage.getItem('aegis_signer_account');
       const btcEl = document.getElementById('btcAddress');
       const evmEl = document.getElementById('evmAddress');
       const solEl = document.getElementById('solAddress');
       const nearEl = document.getElementById('nearAddress');
       const pill = document.getElementById('bunkerEpochPill');
       const banner = document.getElementById('bunkerBurnedBanner');
+
+      if (!currentSigner) {
+        if (btcEl) { btcEl.innerText = 'Connect wallet to reveal address'; btcEl.dataset.full = ''; }
+        if (evmEl) { evmEl.innerText = 'Connect wallet to reveal address'; evmEl.dataset.full = ''; }
+        if (solEl) { solEl.innerText = 'Connect wallet to reveal address'; solEl.dataset.full = ''; }
+        if (nearEl) { nearEl.innerText = 'Connect wallet to reveal address'; nearEl.dataset.full = ''; }
+        if (pill) {
+          pill.innerText = 'Derivation Path: Connect Wallet to View';
+          pill.className = 'text-[11px] font-mono font-bold text-[#8E99AD] bg-white/[0.04] border border-white/[0.08] px-2.5 py-0.5 rounded-full whitespace-nowrap';
+          if (banner) banner.classList.add('hidden');
+        }
+        return;
+      }
 
       // 1. Check local dynamic cache
       const cacheKey = `aegis_derived_${currentSigner}_${currentEpochIndex}`;

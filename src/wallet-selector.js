@@ -1,49 +1,52 @@
 import { setupWalletSelector } from "@near-wallet-selector/core";
+import { setupModal } from "@near-wallet-selector/modal-ui";
 import { setupMeteorWallet } from "@near-wallet-selector/meteor-wallet";
+import { setupHereWallet } from "@near-wallet-selector/here-wallet";
+import { setupNightly } from "@near-wallet-selector/nightly";
+import { setupSender } from "@near-wallet-selector/sender";
+import { setupBitteWallet } from "@near-wallet-selector/bitte-wallet";
 import { contracts, chainAdapters } from "chainsig.js";
 import { Connection } from "@solana/web3.js";
 
 let selector = null;
+let modal = null;
 
-export async function getSelector() {
+export async function getSelector(contractId = "aegis.okgoogleok.testnet") {
   if (!selector) {
     selector = await setupWalletSelector({
       network: "testnet",
-      modules: [setupMeteorWallet()],
+      modules: [
+        setupMeteorWallet(),
+        setupHereWallet(),
+        setupNightly(),
+        setupSender(),
+        setupBitteWallet()
+      ],
+    });
+    modal = setupModal(selector, {
+      contractId: contractId,
+      description: "Connect your Web3 wallet to authorize Aegis multichain vault actions."
     });
   }
   return selector;
 }
 
-export async function connectMeteor(contractId) {
-  try {
-    const sel = await getSelector();
-    const wallet = await sel.wallet("meteor-wallet");
-    return await wallet.signIn({
-      contractId: contractId,
-    });
-  } catch (e) {
-    if (typeof window !== "undefined" && window.meteorWallet) {
-      if (typeof window.meteorWallet.signIn === "function") {
-        return await window.meteorWallet.signIn({ contractId: contractId });
-      }
-      if (typeof window.meteorWallet.requestSignIn === "function") {
-        return await window.meteorWallet.requestSignIn({ contract_id: contractId });
-      }
-    }
-    throw e;
+export async function connectWallet(contractId = "aegis.okgoogleok.testnet") {
+  await getSelector(contractId);
+  if (modal) {
+    modal.show();
   }
 }
 
-export async function disconnectMeteor() {
+export async function disconnectWallet() {
   if (selector) {
     try {
-      const wallet = await selector.wallet("meteor-wallet");
+      const wallet = await selector.wallet();
       if (wallet) await wallet.signOut();
     } catch (e) {}
   }
-  if (typeof window !== "undefined" && window.meteorWallet && typeof window.meteorWallet.signOut === "function") {
-    try { window.meteorWallet.signOut(); } catch (e) {}
+  if (typeof window !== "undefined") {
+    localStorage.removeItem("aegis_signer_account");
   }
 }
 
@@ -52,9 +55,6 @@ export async function signAndSendNearTx(contractId, methodName, args = {}, depos
     ? Buffer.from(JSON.stringify(args))
     : new TextEncoder().encode(JSON.stringify(args));
 
-  // Meteor Wallet adapter calls najActionToInternal on every action.
-  // NAJ action requires .functionCall, while standard core requires .type and .params.
-  // This hybridAction satisfies both!
   const hybridAction = {
     functionCall: {
       methodName: methodName,
@@ -72,10 +72,15 @@ export async function signAndSendNearTx(contractId, methodName, args = {}, depos
   };
 
   try {
-    const sel = await getSelector();
-    const wallet = await sel.wallet("meteor-wallet");
+    const sel = await getSelector(contractId);
+    const wallet = await sel.wallet();
     const state = sel.store.getState();
     const signerId = state.accounts.find((acc) => acc.active)?.accountId || state.accounts[0]?.accountId;
+
+    if (!wallet || !signerId) {
+      if (modal) modal.show();
+      throw new Error("No wallet connected. Please connect wallet first.");
+    }
 
     return await wallet.signAndSendTransaction({
       signerId: signerId,
@@ -83,25 +88,7 @@ export async function signAndSendNearTx(contractId, methodName, args = {}, depos
       actions: [hybridAction]
     });
   } catch (err) {
-    console.warn("[AegisMeteor] Selector signAndSendTransaction error, trying direct fallback:", err);
-    if (typeof window !== "undefined" && window.meteorWallet) {
-      if (typeof window.meteorWallet.signAndSendTransaction === "function") {
-        return await window.meteorWallet.signAndSendTransaction({
-          receiverId: contractId,
-          actions: [hybridAction]
-        });
-      }
-      if (typeof window.meteorWallet.account === "function") {
-        const account = window.meteorWallet.account();
-        return await account.functionCall({
-          contractId: contractId,
-          methodName: methodName,
-          args: args,
-          gas: gas,
-          attachedDeposit: deposit
-        });
-      }
-    }
+    console.warn("[AegisWallet] Selector signAndSendTransaction notice:", err);
     throw err;
   }
 }
@@ -161,12 +148,17 @@ export async function signNep413Message(message, recipient = "aegis.okgoogleok.t
 }
 
 if (typeof window !== "undefined") {
-  window.AegisMeteor = {
+  window.AegisWallet = {
     getSelector,
-    connectMeteor,
-    disconnectMeteor,
+    connectWallet,
+    disconnectWallet,
     signAndSendNearTx,
     deriveVaultAddresses,
-    signNep413Message
+    signNep413Message,
+    getModal: () => modal
   };
+  // Backward-compatibility aliases
+  window.AegisMeteor = window.AegisWallet;
+  window.AegisMeteor.connectMeteor = connectWallet;
+  window.AegisMeteor.disconnectMeteor = disconnectWallet;
 }
