@@ -1510,13 +1510,9 @@
         remainingSeconds = 0;
         localStorage.setItem('aegis_vault_burned_' + info.epoch, 'true');
         localStorage.setItem('aegis_vault_burned_' + currentEpochIndex, 'true');
-        const curr = VAULT_EPOCHS[currentEpochIndex];
-        if (curr) localStorage.setItem('aegis_vault_burned_' + curr.epoch, 'true');
       } else if (info.state === 'Unconfigured' || !hasConfiguredDestinations(info)) {
         remainingSeconds = 0;
       } else if (info.state === 'Active') {
-        const curr = VAULT_EPOCHS[currentEpochIndex];
-        if (curr) localStorage.removeItem('aegis_vault_burned_' + curr.epoch);
         localStorage.removeItem('aegis_vault_burned_' + currentEpochIndex);
         localStorage.removeItem('aegis_vault_burned_' + info.epoch);
       }
@@ -1888,7 +1884,7 @@
       try {
         console.log(`[Aegis On-Chain] Dispatching ${methodName} on ${CONTRACT_ID} with args:`, args);
 
-        const attachedDeposit = (methodName === 'panic' || methodName === 'propose_policy' || methodName === 'apply_policy' || methodName === 'cancel_policy' || methodName === 'update_intervals' || methodName === 'rotate_bunker') ? '1' : '0';
+        const attachedDeposit = '0';
 
         // 1. Signed in via Meteor Wallet (Wallet Selector or Direct Injection)
         if (window.AegisMeteor) {
@@ -1921,7 +1917,7 @@
           const near = await connect({
             networkId: 'testnet',
             keyStore,
-            nodeUrl: NEAR_RPC_URL,
+            nodeUrl: NEAR_RPC_URLS[currentRpcIndex],
             headers: {}
           });
 
@@ -2094,7 +2090,13 @@
         console.warn('Fallback to baseline prices', e);
       }
 
-      const curr = VAULT_EPOCHS[currentEpochIndex];
+      const curr = {
+        btc: document.getElementById('btcAddress')?.dataset?.full || '',
+        evm: document.getElementById('evmAddress')?.dataset?.full || '',
+        sol: document.getElementById('solAddress')?.dataset?.full || '',
+        near: document.getElementById('nearAddress')?.dataset?.full || CONTRACT_ID
+      };
+      if (!curr.btc || curr.btc.includes('Deriving') || curr.btc.includes('Connect')) return;
 
       // 1. NEAR Testnet RPC View Account
       try {
@@ -2780,8 +2782,6 @@
 
       dispatchNearTransaction('panic').then(() => {
         remainingSeconds = 0;
-        const curr = VAULT_EPOCHS[currentEpochIndex];
-        if (curr) localStorage.setItem('aegis_vault_burned_' + curr.epoch, 'true');
         localStorage.setItem('aegis_vault_burned_' + currentEpochIndex, 'true');
         if (lastFetchedVaultInfo) {
           lastFetchedVaultInfo.state = 'Evacuated';

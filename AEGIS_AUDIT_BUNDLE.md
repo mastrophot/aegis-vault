@@ -57,7 +57,7 @@ use near_sdk::borsh::{BorshDeserialize, BorshSerialize};
 use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::store::LookupMap;
 use near_sdk::{
-    env, near, require, AccountId, Gas, PanicOnDefault, Promise, PromiseError,
+    env, near, require, AccountId, Gas, NearToken, PanicOnDefault, Promise, PromiseError,
 };
 
 const DEFAULT_HEARTBEAT_INTERVAL_NS: u64 = 90 * 24 * 60 * 60 * 1_000_000_000; // 90 days
@@ -199,7 +199,9 @@ impl LastKeyVault {
         }
     }
 
-    /// Upgrade / Migration entrypoint: safely transitions storage schema to multi-tenant LookupMap
+    /// Upgrade / Migration entrypoint: safely transitions storage schema to multi-tenant LookupMap.
+    /// Strictly restricted to self-call by the contract account.
+    #[private]
     #[init(ignore_state)]
     pub fn migrate() -> Self {
         #[allow(dead_code)]
@@ -283,8 +285,8 @@ impl LastKeyVault {
         env::log_str(&format!("PANIC_TRIGGERED: Vault for {} evacuated. Sweeping routed exclusively to backup addresses.", caller));
     }
 
-    /// Resets the caller's vault after an evacuation or finalized inheritance, advancing the bunker epoch
-    /// Generates clean unexposed MPC addresses and restores Active state
+    /// Resets the caller's vault after an evacuation or finalized inheritance, advancing the bunker epoch.
+    /// Preserves existing backup and heir destinations so delayed sweeps for prior epochs remain valid.
     #[payable]
     pub fn rotate_bunker(&mut self) {
         let caller = env::predecessor_account_id();
@@ -294,15 +296,57 @@ impl LastKeyVault {
             "Can only rotate bunker when vault is Evacuated or Inheritance"
         );
         vault.epoch += 1;
-        vault.backup = ChainAddresses::empty();
-        vault.heirs = ChainAddresses::empty();
         vault.pending_policy = None;
-        vault.state = VaultState::Unconfigured;
-        vault.last_ping_ns = 0;
+        // Keep existing backup and heir destinations so late sweeps for previous epochs can still execute
+        vault.state = VaultState::Active;
+        vault.last_ping_ns = env::block_timestamp();
         env::log_str(&format!(
-            "BUNKER_ROTATED: Epoch for {} advanced to v{}, vault reset to Unconfigured (ready to arm)",
+            "BUNKER_ROTATED: Epoch for {} advanced to v{}, destinations preserved, vault armed and active",
             caller, vault.epoch
         ));
+    }
+
+    /// Sweeps native NEAR tokens from the contract to the configured backup or heir destination account.
+    /// Retains a safety reserve (0.5 NEAR) to maintain contract storage staking.
+    pub fn sweep_near(&mut self, vault_owner: AccountId, destination: Option<AccountId>) -> Promise {
+        let caller = env::predecessor_account_id();
+        let vault = self.vaults.get(&vault_owner).expect("Target vault not found");
+        let is_authorized = caller == vault_owner
+            || vault.authorized_relayer.as_ref().map_or(false, |r| r == &caller)
+            || self.default_relayer.as_ref().map_or(false, |r| r == &caller);
+        require!(is_authorized, "Unauthorized caller for sweep_near");
+        require!(
+            vault.state == VaultState::Evacuated || vault.state == VaultState::Inheritance,
+            "Vault must be in Evacuated or Inheritance state to sweep"
+        );
+
+        let target_dest = match vault.state {
+            VaultState::Evacuated => &vault.backup.near,
+            VaultState::Inheritance => &vault.heirs.near,
+            _ => env::panic_str("Invalid state for sweep"),
+        };
+
+        let target_account_id: AccountId = if let Some(override_dest) = destination {
+            require!(caller == vault_owner, "Only owner can override destination");
+            override_dest
+        } else {
+            target_dest.clone().expect("No destination NEAR account configured in vault policy")
+        };
+
+        let contract_balance = env::account_balance();
+        let storage_reserve = NearToken::from_millinear(500); // 0.5 NEAR
+        require!(
+            contract_balance > storage_reserve,
+            "Insufficient contract balance above 0.5 NEAR storage reserve"
+        );
+        let sweep_amount = contract_balance.saturating_sub(storage_reserve);
+
+        env::log_str(&format!(
+            "NEAR_SWEPT: Sweeping {} yoctoNEAR to {}",
+            sweep_amount, target_account_id
+        ));
+
+        Promise::new(target_account_id).transfer(sweep_amount)
     }
 
     /// Propose updating backup or heir addresses for caller's bunker.
@@ -507,8 +551,12 @@ impl LastKeyVault {
                 let clean_evm_addr = target_destination.evm.trim().trim_start_matches("0x").trim_start_matches("0X");
                 let target_evm_bytes = hex::decode(clean_evm_addr).unwrap_or_else(|_| env::panic_str("Invalid target EVM hex"));
                 require!(target_evm_bytes.len() == 20, "Target EVM address must be 20 bytes");
-                let contains_evm_dest = raw_tx_bytes.windows(20).any(|w| w == target_evm_bytes.as_slice());
-                require!(contains_evm_dest, "EVM transaction payload does not direct funds to designated target address");
+                let parsed_to = extract_evm_to_address(&raw_tx_bytes)
+                    .unwrap_or_else(|| env::panic_str("Failed to parse EVM recipient address from transaction payload"));
+                require!(
+                    parsed_to.as_slice() == target_evm_bytes.as_slice(),
+                    "EVM transaction recipient does not match designated target address"
+                );
                 let hash_bytes = env::keccak256(&raw_tx_bytes);
                 hex::encode(hash_bytes)
             } else if clean_hex.len() == 64 {
@@ -604,6 +652,81 @@ impl LastKeyVault {
     }
 }
 
+/// Extracts the 20-byte `to` recipient address from an EIP-1559 or Legacy RLP-encoded transaction.
+fn extract_evm_to_address(raw_tx: &[u8]) -> Option<[u8; 20]> {
+    let (payload, items_before_to) = if raw_tx.first() == Some(&0x02) {
+        // EIP-1559 envelope: 0x02 || rlp([chain_id, nonce, max_priority_fee, max_fee, gas_limit, to, value, data, access_list])
+        (&raw_tx[1..], 5)
+    } else {
+        // Legacy: rlp([nonce, gas_price, gas_limit, to, value, data, v, r, s])
+        (raw_tx, 3)
+    };
+
+    if payload.is_empty() {
+        return None;
+    }
+
+    let (list_header_len, _) = decode_rlp_header(payload)?;
+    let mut offset = list_header_len;
+
+    for _ in 0..items_before_to {
+        let (item_header_len, item_len) = decode_rlp_item(payload.get(offset..)?)?;
+        offset += item_header_len + item_len;
+    }
+
+    let (to_header_len, to_len) = decode_rlp_item(payload.get(offset..)?)?;
+    if to_len == 20 {
+        let to_bytes = payload.get(offset + to_header_len..offset + to_header_len + 20)?;
+        let mut addr = [0u8; 20];
+        addr.copy_from_slice(to_bytes);
+        Some(addr)
+    } else {
+        None
+    }
+}
+
+fn decode_rlp_header(data: &[u8]) -> Option<(usize, usize)> {
+    let first = *data.first()?;
+    if first >= 0xc0 && first <= 0xf7 {
+        Some((1, (first - 0xc0) as usize))
+    } else if first >= 0xf8 {
+        let len_of_len = (first - 0xf7) as usize;
+        if data.len() < 1 + len_of_len {
+            return None;
+        }
+        let mut len = 0usize;
+        for &b in &data[1..1 + len_of_len] {
+            len = (len << 8) | (b as usize);
+        }
+        Some((1 + len_of_len, len))
+    } else {
+        None
+    }
+}
+
+fn decode_rlp_item(data: &[u8]) -> Option<(usize, usize)> {
+    let first = *data.first()?;
+    if first < 0x80 {
+        Some((0, 1))
+    } else if first <= 0xb7 {
+        let len = (first - 0x80) as usize;
+        Some((1, len))
+    } else if first <= 0xbf {
+        let len_of_len = (first - 0xb7) as usize;
+        if data.len() < 1 + len_of_len {
+            return None;
+        }
+        let mut len = 0usize;
+        for &b in &data[1..1 + len_of_len] {
+            len = (len << 8) | (b as usize);
+        }
+        Some((1 + len_of_len, len))
+    } else {
+        let (h_len, l_len) = decode_rlp_header(data)?;
+        Some((h_len, l_len))
+    }
+}
+
 /// Strict structural validation of Solana serialized message headers
 /// Protects against substring injection and unauthorized recipient accounts.
 fn verify_solana_sweep_payload(raw_msg_bytes: &[u8], expected_recipient_sol: &str) -> bool {
@@ -611,7 +734,12 @@ fn verify_solana_sweep_payload(raw_msg_bytes: &[u8], expected_recipient_sol: &st
         return false;
     }
     let num_required_signatures = raw_msg_bytes[0];
+    let num_readonly_signed = raw_msg_bytes[1];
     let num_readonly_unsigned = raw_msg_bytes[2];
+
+    if num_required_signatures != 1 || num_readonly_signed != 0 {
+        return false;
+    }
 
     let (account_count, offset) = match raw_msg_bytes[3] {
         len if len < 0x80 => (len as usize, 4usize),
@@ -726,11 +854,11 @@ mod tests {
         assert_eq!(contract.get_vault_info(Some(alice.clone())).unwrap().state, VaultState::Evacuated);
         assert_eq!(contract.get_vault_info(Some(bob.clone())).unwrap().state, VaultState::Active);
 
-        // Alice rotates bunker -> resets to Unconfigured with epoch 1 and empty destinations
+        // Alice rotates bunker -> epoch advances to 1, addresses are preserved, vault remains Active
         contract.rotate_bunker();
         let alice_rot = contract.get_vault_info(Some(alice.clone())).unwrap();
-        assert_eq!(alice_rot.state, VaultState::Unconfigured);
-        assert!(alice_rot.backup.is_empty());
+        assert_eq!(alice_rot.state, VaultState::Active);
+        assert!(!alice_rot.backup.is_empty());
         assert_eq!(alice_rot.epoch, 1);
         assert_eq!(contract.get_vault_info(Some(bob.clone())).unwrap().epoch, 0);
     }
@@ -946,6 +1074,77 @@ mod tests {
             contract.ping_by_relayer(alice.clone());
         }));
         assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_extract_evm_to_address_and_spoof_rejection() {
+        // Construct a genuine EIP-1559 tx
+        let to_addr = [0x7au8; 20];
+        let mut rlp_list = Vec::new();
+        // chain_id = 11155111 (0xaa36a7) -> len 3 -> 0x83, 0xaa, 0x36, 0xa7
+        rlp_list.extend_from_slice(&[0x83, 0xaa, 0x36, 0xa7]);
+        // nonce = 0 -> 0x80
+        rlp_list.push(0x80);
+        // max_priority_fee = 1 Gwei -> 0x84, 0x3b, 0x9a, 0xca, 0x00
+        rlp_list.extend_from_slice(&[0x84, 0x3b, 0x9a, 0xca, 0x00]);
+        // max_fee = 20 Gwei -> 0x85, 0x04, 0xa8, 0x17, 0xc8, 0x00
+        rlp_list.extend_from_slice(&[0x85, 0x04, 0xa8, 0x17, 0xc8, 0x00]);
+        // gas_limit = 21000 -> 0x82, 0x52, 0x08
+        rlp_list.extend_from_slice(&[0x82, 0x52, 0x08]);
+        // to = 20 bytes -> 0x94 followed by to_addr
+        rlp_list.push(0x94);
+        rlp_list.extend_from_slice(&to_addr);
+        // value = 0 -> 0x80
+        rlp_list.push(0x80);
+        // data = empty -> 0x80
+        rlp_list.push(0x80);
+        // access_list = empty -> 0xc0
+        rlp_list.push(0xc0);
+
+        let mut tx_bytes = vec![0x02]; // EIP-1559 type
+        // RLP list header
+        let list_len = rlp_list.len();
+        if list_len <= 55 {
+            tx_bytes.push(0xc0 + list_len as u8);
+        } else {
+            tx_bytes.push(0xf8);
+            tx_bytes.push(list_len as u8);
+        }
+        tx_bytes.extend_from_slice(&rlp_list);
+
+        let extracted = extract_evm_to_address(&tx_bytes);
+        assert_eq!(extracted, Some(to_addr));
+
+        // Attempting to spoof by putting the target address inside data and changing `to`
+        let attacker_addr = [0x66u8; 20];
+        let mut spoofed_list = Vec::new();
+        spoofed_list.extend_from_slice(&[0x83, 0xaa, 0x36, 0xa7]); // chain_id
+        spoofed_list.push(0x80); // nonce
+        spoofed_list.extend_from_slice(&[0x84, 0x3b, 0x9a, 0xca, 0x00]); // priority fee
+        spoofed_list.extend_from_slice(&[0x85, 0x04, 0xa8, 0x17, 0xc8, 0x00]); // max fee
+        spoofed_list.extend_from_slice(&[0x82, 0x52, 0x08]); // gas limit
+        spoofed_list.push(0x94);
+        spoofed_list.extend_from_slice(&attacker_addr); // ATTACKER in `to`!
+        spoofed_list.push(0x80); // value
+        // Data contains victim's address
+        spoofed_list.push(0x94);
+        spoofed_list.extend_from_slice(&to_addr);
+        spoofed_list.push(0xc0); // access list
+
+        let mut spoofed_tx = vec![0x02];
+        let spoofed_len = spoofed_list.len();
+        if spoofed_len <= 55 {
+            spoofed_tx.push(0xc0 + spoofed_len as u8);
+        } else {
+            spoofed_tx.push(0xf8);
+            spoofed_tx.push(spoofed_len as u8);
+        }
+        spoofed_tx.extend_from_slice(&spoofed_list);
+
+        let extracted_spoofed = extract_evm_to_address(&spoofed_tx);
+        assert_eq!(extracted_spoofed, Some(attacker_addr));
+        // Ensures the extractor didn't mistake the data payload for the `to` recipient!
+        assert_ne!(extracted_spoofed, Some(to_addr));
     }
 }
 
@@ -1315,9 +1514,17 @@ class LastKeySweepRelayer {
       });
     }
 
+    const txForHash = psbt.__CACHE.__TX;
+    const prevOutScript = bitcoin.address.toOutputScript(fromAddress, network);
+    const sighashes = effectiveUtxos.map((u, idx) => {
+      const hash = txForHash.hashForWitnessV0(idx, prevOutScript, u.value, bitcoin.Transaction.SIGHASH_ALL);
+      return { inputIndex: idx, sighashHex: Buffer.from(hash).toString('hex') };
+    });
+
     return {
       chain: 'BTC',
       psbtHex: psbt.toHex(),
+      sighashes,
       sendAmount,
       totalIn,
       feeSats,
@@ -1336,13 +1543,17 @@ class LastKeySweepRelayer {
    * Uses feePayer: from (Vault) so recipient signature is never needed (Push Inheritance).
    * Passes raw serialized message bytes for Ed25519 (no double sha256).
    */
-  prepareSolanaSweep({ fromPubkey, toPubkey, lamports, memo, recentBlockhash }) {
+  prepareSolanaSweep({ fromPubkey, toPubkey, lamports, amountLamports, memo, recentBlockhash }) {
     const from = new web3.PublicKey(fromPubkey);
     const to = new web3.PublicKey(toPubkey);
+    const effectiveLamports = lamports !== undefined ? lamports : amountLamports;
+    if (effectiveLamports === undefined) {
+      throw new Error("Missing required lamports/amountLamports parameter for Solana sweep");
+    }
     const TX_FEE_LAMPORTS = 5000n;
-    const sweepLamports = BigInt(lamports) - TX_FEE_LAMPORTS;
+    const sweepLamports = BigInt(effectiveLamports) - TX_FEE_LAMPORTS;
     if (sweepLamports <= 0n) {
-      throw new Error(`Insufficient SOL balance for fee: balance ${lamports} <= fee ${TX_FEE_LAMPORTS}`);
+      throw new Error(`Insufficient SOL balance for fee: balance ${effectiveLamports} <= fee ${TX_FEE_LAMPORTS}`);
     }
 
     const transaction = new web3.Transaction({
@@ -1525,9 +1736,20 @@ class LastKeySweepRelayer {
   }
 
   /**
-   * Encode (r, s) to DER (BIP-66) format
+   * Encode (r, s) to DER (BIP-66) format with BIP-62 Low-S canonical enforcement
    */
   encodeDerSignature(rBuffer, sBuffer) {
+    const SECP256K1_N = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141n;
+    const SECP256K1_HALF_N = SECP256K1_N / 2n;
+
+    let sBig = BigInt('0x' + Buffer.from(sBuffer).toString('hex'));
+    if (sBig > SECP256K1_HALF_N) {
+      sBig = SECP256K1_N - sBig;
+      let hex = sBig.toString(16);
+      if (hex.length % 2 !== 0) hex = '0' + hex;
+      sBuffer = Buffer.from(hex, 'hex');
+    }
+
     let r = Buffer.from(rBuffer);
     let s = Buffer.from(sBuffer);
     if (r[0] & 0x80) r = Buffer.concat([Buffer.from([0x00]), r]);
@@ -1815,6 +2037,13 @@ class AegisRelayerService {
           signedEvmTx = this.engine.assembleSignedEvmTx(evmSweep.rawTx, mpcSignature);
           evmHash = ethers.keccak256(signedEvmTx.signedTx);
           console.log(`   ✅ EVM Transaction Assembled! TxHash: ${evmHash}`);
+          try {
+            const provider = new ethers.JsonRpcProvider('https://ethereum-sepolia-rpc.publicnode.com');
+            await provider.broadcastTransaction(signedEvmTx.signedTx);
+            console.log(`   🚀 EVM Transaction Broadcasted to Sepolia!`);
+          } catch (broadcastErr) {
+            console.warn(`   ⚠️ EVM Broadcast Notice: ${broadcastErr.message.slice(0, 80)}`);
+          }
         } else {
           evmHash = evmSweep.txHash;
         }
@@ -1847,7 +2076,7 @@ class AegisRelayerService {
           utxos: mockUtxo,
           fromAddress: vaultAddrs.btc.address,
           toAddress: destination.btc.trim(),
-          feeSats: 2500,
+          feeSatsOverride: 2500,
           network: bitcoin.networks.testnet
         });
 
@@ -1888,6 +2117,17 @@ class AegisRelayerService {
           }]);
           btcTxId = finalized.txId;
           console.log(`   ✅ Bitcoin PSBT Finalized! TxId: ${btcTxId}`);
+          try {
+            const mempoolRes = await fetch('https://mempool.space/testnet/api/tx', {
+              method: 'POST',
+              body: finalized.txHex
+            });
+            if (mempoolRes.ok) {
+              console.log(`   🚀 Bitcoin Tx broadcasted to Mempool Testnet: ${btcTxId}`);
+            }
+          } catch (bErr) {
+            console.warn(`   ⚠️ Bitcoin Broadcast Notice: ${bErr.message.slice(0, 80)}`);
+          }
         }
 
         telemetryRecord.sweeps.btc = {
@@ -1916,7 +2156,7 @@ class AegisRelayerService {
         const solSweep = this.engine.prepareSolanaSweep({
           fromPubkey: vaultAddrs.sol.address,
           toPubkey: destination.sol.trim(),
-          amountLamports: 1000000000n, // 1 SOL
+          lamports: 1000000000n, // 1 SOL
           memo: `Aegis Evacuation: ${vaultOwner} Epoch ${epoch}`
         });
 
@@ -1952,6 +2192,13 @@ class AegisRelayerService {
           const signedSol = this.engine.assembleSignedSolanaTx(solSweep.serializedMessage, vaultAddrs.sol.address, sigBytes);
           solSig = signedSol.signatureHex.slice(0, 32);
           console.log(`   ✅ Solana Transaction Assembled! Sig: ${solSig}`);
+          try {
+            const conn = new web3.Connection('https://api.devnet.solana.com');
+            await conn.sendRawTransaction(Buffer.from(signedSol.txHex, 'hex'), { skipPreflight: true });
+            console.log(`   🚀 Solana Tx broadcasted to Devnet: ${solSig}`);
+          } catch (sErr) {
+            console.warn(`   ⚠️ Solana Broadcast Notice: ${sErr.message.slice(0, 80)}`);
+          }
         }
 
         telemetryRecord.sweeps.sol = {
@@ -3750,13 +3997,9 @@ if (typeof window !== "undefined") {
         remainingSeconds = 0;
         localStorage.setItem('aegis_vault_burned_' + info.epoch, 'true');
         localStorage.setItem('aegis_vault_burned_' + currentEpochIndex, 'true');
-        const curr = VAULT_EPOCHS[currentEpochIndex];
-        if (curr) localStorage.setItem('aegis_vault_burned_' + curr.epoch, 'true');
       } else if (info.state === 'Unconfigured' || !hasConfiguredDestinations(info)) {
         remainingSeconds = 0;
       } else if (info.state === 'Active') {
-        const curr = VAULT_EPOCHS[currentEpochIndex];
-        if (curr) localStorage.removeItem('aegis_vault_burned_' + curr.epoch);
         localStorage.removeItem('aegis_vault_burned_' + currentEpochIndex);
         localStorage.removeItem('aegis_vault_burned_' + info.epoch);
       }
@@ -4128,7 +4371,7 @@ if (typeof window !== "undefined") {
       try {
         console.log(`[Aegis On-Chain] Dispatching ${methodName} on ${CONTRACT_ID} with args:`, args);
 
-        const attachedDeposit = (methodName === 'panic' || methodName === 'propose_policy' || methodName === 'apply_policy' || methodName === 'cancel_policy' || methodName === 'update_intervals' || methodName === 'rotate_bunker') ? '1' : '0';
+        const attachedDeposit = '0';
 
         // 1. Signed in via Meteor Wallet (Wallet Selector or Direct Injection)
         if (window.AegisMeteor) {
@@ -4161,7 +4404,7 @@ if (typeof window !== "undefined") {
           const near = await connect({
             networkId: 'testnet',
             keyStore,
-            nodeUrl: NEAR_RPC_URL,
+            nodeUrl: NEAR_RPC_URLS[currentRpcIndex],
             headers: {}
           });
 
@@ -4334,7 +4577,13 @@ if (typeof window !== "undefined") {
         console.warn('Fallback to baseline prices', e);
       }
 
-      const curr = VAULT_EPOCHS[currentEpochIndex];
+      const curr = {
+        btc: document.getElementById('btcAddress')?.dataset?.full || '',
+        evm: document.getElementById('evmAddress')?.dataset?.full || '',
+        sol: document.getElementById('solAddress')?.dataset?.full || '',
+        near: document.getElementById('nearAddress')?.dataset?.full || CONTRACT_ID
+      };
+      if (!curr.btc || curr.btc.includes('Deriving') || curr.btc.includes('Connect')) return;
 
       // 1. NEAR Testnet RPC View Account
       try {
@@ -5020,8 +5269,6 @@ if (typeof window !== "undefined") {
 
       dispatchNearTransaction('panic').then(() => {
         remainingSeconds = 0;
-        const curr = VAULT_EPOCHS[currentEpochIndex];
-        if (curr) localStorage.setItem('aegis_vault_burned_' + curr.epoch, 'true');
         localStorage.setItem('aegis_vault_burned_' + currentEpochIndex, 'true');
         if (lastFetchedVaultInfo) {
           lastFetchedVaultInfo.state = 'Evacuated';

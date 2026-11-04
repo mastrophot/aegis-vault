@@ -360,9 +360,17 @@ class LastKeySweepRelayer {
       });
     }
 
+    const txForHash = psbt.__CACHE.__TX;
+    const prevOutScript = bitcoin.address.toOutputScript(fromAddress, network);
+    const sighashes = effectiveUtxos.map((u, idx) => {
+      const hash = txForHash.hashForWitnessV0(idx, prevOutScript, u.value, bitcoin.Transaction.SIGHASH_ALL);
+      return { inputIndex: idx, sighashHex: Buffer.from(hash).toString('hex') };
+    });
+
     return {
       chain: 'BTC',
       psbtHex: psbt.toHex(),
+      sighashes,
       sendAmount,
       totalIn,
       feeSats,
@@ -381,13 +389,17 @@ class LastKeySweepRelayer {
    * Uses feePayer: from (Vault) so recipient signature is never needed (Push Inheritance).
    * Passes raw serialized message bytes for Ed25519 (no double sha256).
    */
-  prepareSolanaSweep({ fromPubkey, toPubkey, lamports, memo, recentBlockhash }) {
+  prepareSolanaSweep({ fromPubkey, toPubkey, lamports, amountLamports, memo, recentBlockhash }) {
     const from = new web3.PublicKey(fromPubkey);
     const to = new web3.PublicKey(toPubkey);
+    const effectiveLamports = lamports !== undefined ? lamports : amountLamports;
+    if (effectiveLamports === undefined) {
+      throw new Error("Missing required lamports/amountLamports parameter for Solana sweep");
+    }
     const TX_FEE_LAMPORTS = 5000n;
-    const sweepLamports = BigInt(lamports) - TX_FEE_LAMPORTS;
+    const sweepLamports = BigInt(effectiveLamports) - TX_FEE_LAMPORTS;
     if (sweepLamports <= 0n) {
-      throw new Error(`Insufficient SOL balance for fee: balance ${lamports} <= fee ${TX_FEE_LAMPORTS}`);
+      throw new Error(`Insufficient SOL balance for fee: balance ${effectiveLamports} <= fee ${TX_FEE_LAMPORTS}`);
     }
 
     const transaction = new web3.Transaction({
@@ -570,9 +582,20 @@ class LastKeySweepRelayer {
   }
 
   /**
-   * Encode (r, s) to DER (BIP-66) format
+   * Encode (r, s) to DER (BIP-66) format with BIP-62 Low-S canonical enforcement
    */
   encodeDerSignature(rBuffer, sBuffer) {
+    const SECP256K1_N = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141n;
+    const SECP256K1_HALF_N = SECP256K1_N / 2n;
+
+    let sBig = BigInt('0x' + Buffer.from(sBuffer).toString('hex'));
+    if (sBig > SECP256K1_HALF_N) {
+      sBig = SECP256K1_N - sBig;
+      let hex = sBig.toString(16);
+      if (hex.length % 2 !== 0) hex = '0' + hex;
+      sBuffer = Buffer.from(hex, 'hex');
+    }
+
     let r = Buffer.from(rBuffer);
     let s = Buffer.from(sBuffer);
     if (r[0] & 0x80) r = Buffer.concat([Buffer.from([0x00]), r]);

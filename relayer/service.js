@@ -203,6 +203,13 @@ class AegisRelayerService {
           signedEvmTx = this.engine.assembleSignedEvmTx(evmSweep.rawTx, mpcSignature);
           evmHash = ethers.keccak256(signedEvmTx.signedTx);
           console.log(`   ✅ EVM Transaction Assembled! TxHash: ${evmHash}`);
+          try {
+            const provider = new ethers.JsonRpcProvider('https://ethereum-sepolia-rpc.publicnode.com');
+            await provider.broadcastTransaction(signedEvmTx.signedTx);
+            console.log(`   🚀 EVM Transaction Broadcasted to Sepolia!`);
+          } catch (broadcastErr) {
+            console.warn(`   ⚠️ EVM Broadcast Notice: ${broadcastErr.message.slice(0, 80)}`);
+          }
         } else {
           evmHash = evmSweep.txHash;
         }
@@ -235,7 +242,7 @@ class AegisRelayerService {
           utxos: mockUtxo,
           fromAddress: vaultAddrs.btc.address,
           toAddress: destination.btc.trim(),
-          feeSats: 2500,
+          feeSatsOverride: 2500,
           network: bitcoin.networks.testnet
         });
 
@@ -276,6 +283,17 @@ class AegisRelayerService {
           }]);
           btcTxId = finalized.txId;
           console.log(`   ✅ Bitcoin PSBT Finalized! TxId: ${btcTxId}`);
+          try {
+            const mempoolRes = await fetch('https://mempool.space/testnet/api/tx', {
+              method: 'POST',
+              body: finalized.txHex
+            });
+            if (mempoolRes.ok) {
+              console.log(`   🚀 Bitcoin Tx broadcasted to Mempool Testnet: ${btcTxId}`);
+            }
+          } catch (bErr) {
+            console.warn(`   ⚠️ Bitcoin Broadcast Notice: ${bErr.message.slice(0, 80)}`);
+          }
         }
 
         telemetryRecord.sweeps.btc = {
@@ -304,7 +322,7 @@ class AegisRelayerService {
         const solSweep = this.engine.prepareSolanaSweep({
           fromPubkey: vaultAddrs.sol.address,
           toPubkey: destination.sol.trim(),
-          amountLamports: 1000000000n, // 1 SOL
+          lamports: 1000000000n, // 1 SOL
           memo: `Aegis Evacuation: ${vaultOwner} Epoch ${epoch}`
         });
 
@@ -340,6 +358,13 @@ class AegisRelayerService {
           const signedSol = this.engine.assembleSignedSolanaTx(solSweep.serializedMessage, vaultAddrs.sol.address, sigBytes);
           solSig = signedSol.signatureHex.slice(0, 32);
           console.log(`   ✅ Solana Transaction Assembled! Sig: ${solSig}`);
+          try {
+            const conn = new web3.Connection('https://api.devnet.solana.com');
+            await conn.sendRawTransaction(Buffer.from(signedSol.txHex, 'hex'), { skipPreflight: true });
+            console.log(`   🚀 Solana Tx broadcasted to Devnet: ${solSig}`);
+          } catch (sErr) {
+            console.warn(`   ⚠️ Solana Broadcast Notice: ${sErr.message.slice(0, 80)}`);
+          }
         }
 
         telemetryRecord.sweeps.sol = {
