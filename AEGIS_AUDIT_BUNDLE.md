@@ -1965,9 +1965,8 @@ module.exports = { LastKeySweepRelayer };
         <!-- Controls: Ping alive & Config -->
         <div class="flex flex-col gap-3.5 pt-4 border-t border-nearBorder">
           <button id="pingMainBtn" onclick="handlePingMainBtnClick()" class="w-full bg-purple-600 hover:bg-purple-500 text-white font-extrabold py-3.5 px-6 near-pill-btn text-sm sm:text-base tracking-wide transition shadow-sm active:scale-98 flex items-center justify-center gap-2">
-            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L14.4 7.2L20 8L16 12L17 17.6L12 15L7 17.6L8 12L4 8L9.6 7.2L12 2Z"/></svg>
+            <svg id="pingMainBtnIcon" class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L14.4 7.2L20 8L16 12L17 17.6L12 15L7 17.6L8 12L4 8L9.6 7.2L12 2Z"/></svg>
             <span id="pingMainBtnText">Connect Meteor to Arm Vault</span>
-          </button>
           </button>
           
           <div class="grid grid-cols-2 gap-2.5">
@@ -3077,8 +3076,23 @@ module.exports = { LastKeySweepRelayer };
     ];
 
     let currentEpochIndex = parseInt(localStorage.getItem('aegis_bunker_epoch') || '0');
+    let lastFetchedVaultInfo = null;
     const NEAR_RPC_URL = 'https://archival-rpc.testnet.near.org';
     const CONTRACT_ID = 'aegis.okgoogleok.testnet';
+
+    function isVaultEvacuatedOrBurned() {
+      if (lastFetchedVaultInfo && (lastFetchedVaultInfo.state === 'Evacuated' || lastFetchedVaultInfo.state === 'Inheritance')) {
+        return true;
+      }
+      const curr = VAULT_EPOCHS[currentEpochIndex];
+      if (curr && localStorage.getItem('aegis_vault_burned_' + curr.epoch) === 'true') {
+        return true;
+      }
+      if (localStorage.getItem('aegis_vault_burned_' + currentEpochIndex) === 'true') {
+        return true;
+      }
+      return false;
+    }
 
     // Live On-Chain State Fetcher via NEAR JSON-RPC
     async function fetchLiveContractState() {
@@ -3115,11 +3129,29 @@ module.exports = { LastKeySweepRelayer };
     function syncUIWithOnChainState(info) {
       if (!info) return;
 
+      lastFetchedVaultInfo = info;
+
       // 1. Sync epoch & bunker addresses
       if (typeof info.epoch === 'number') {
-        currentEpochIndex = info.epoch;
-        renderBunkerAddresses();
+        currentEpochIndex = info.epoch % VAULT_EPOCHS.length;
+        localStorage.setItem('aegis_bunker_epoch', currentEpochIndex.toString());
       }
+
+      // Check if Vault is in Evacuated or Inheritance state
+      if (info.state === 'Evacuated' || info.state === 'Inheritance') {
+        remainingSeconds = 0;
+        localStorage.setItem('aegis_vault_burned_' + info.epoch, 'true');
+        localStorage.setItem('aegis_vault_burned_' + currentEpochIndex, 'true');
+        const curr = VAULT_EPOCHS[currentEpochIndex];
+        if (curr) localStorage.setItem('aegis_vault_burned_' + curr.epoch, 'true');
+      } else if (info.state === 'Active') {
+        const curr = VAULT_EPOCHS[currentEpochIndex];
+        if (curr) localStorage.removeItem('aegis_vault_burned_' + curr.epoch);
+        localStorage.removeItem('aegis_vault_burned_' + currentEpochIndex);
+        localStorage.removeItem('aegis_vault_burned_' + info.epoch);
+      }
+
+      renderBunkerAddresses();
 
       // 2. Real on-chain countdown timer derived from smart contract
       if (info.last_ping_ns && info.heartbeat_interval_ns) {
@@ -3128,7 +3160,7 @@ module.exports = { LastKeySweepRelayer };
         const expireNs = BigInt(info.last_ping_ns) + BigInt(info.heartbeat_interval_ns);
         const nowNs = BigInt(info.current_time_ns || (Date.now() * 1000000));
         const diffNs = expireNs > nowNs ? (expireNs - nowNs) : 0n;
-        remainingSeconds = Number(diffNs / 1000000000n);
+        remainingSeconds = (info.state === 'Evacuated' || info.state === 'Inheritance') ? 0 : Number(diffNs / 1000000000n);
         MAX_SECONDS = Number(BigInt(info.heartbeat_interval_ns) / 1000000000n);
         updateCountdownDisplay();
 
@@ -3275,10 +3307,14 @@ module.exports = { LastKeySweepRelayer };
         if (dot) dot.className = isConfigured ? 'w-2.5 h-2.5 rounded-full bg-nearGreen shadow-near-glow' : 'w-2.5 h-2.5 rounded-full bg-amber-400';
       }
 
-      if (info.state === 'Evacuated') {
+      if (isVaultEvacuatedOrBurned()) {
         const banner = document.getElementById('bunkerBurnedBanner');
         if (banner) banner.classList.remove('hidden');
+      } else {
+        const banner = document.getElementById('bunkerBurnedBanner');
+        if (banner) banner.classList.add('hidden');
       }
+      updateCountdownDisplay();
     }
 
     // NEAR Wallet State & Management
@@ -3408,28 +3444,7 @@ module.exports = { LastKeySweepRelayer };
         accountNameMobileEl.innerText = accountId.length > 12 ? accountId.slice(0, 10) + '...' : accountId;
       }
 
-      // Hero HUD state: Connected & Armed
-      const pulseDot = document.getElementById('heartbeatPulseDot');
-      const cardTitle = document.getElementById('heartbeatCardTitle');
-      const heartbeatTag = document.getElementById('heartbeatTag');
-      const countdownTitle = document.getElementById('countdownTitle');
-      const statusDisplay = document.getElementById('statusDisplay');
-      const pingBtn = document.getElementById('pingMainBtn');
-      const pingBtnText = document.getElementById('pingMainBtnText');
-
-      if (pulseDot) pulseDot.className = 'w-2.5 h-2.5 rounded-full bg-nearGreen radar-pulse';
-      if (cardTitle) cardTitle.className = 'text-xs font-mono font-bold uppercase tracking-wider text-nearGreen';
-      if (heartbeatTag) {
-        heartbeatTag.className = 'text-xs font-mono font-medium text-textGray bg-nearElevated px-3 py-1 rounded-full border border-nearBorder';
-        heartbeatTag.innerText = 'Last check-in: Active';
-      }
-      if (countdownTitle) countdownTitle.innerText = 'Automatic Transfer to Heirs Initiates In:';
-      if (statusDisplay) statusDisplay.innerHTML = 'Status: <strong class="text-nearGreen font-bold">Active & Enforced</strong>';
-      if (pingBtn) {
-        pingBtn.className = 'w-full bg-nearGreen hover:bg-nearGreenHover text-nearBlack font-extrabold py-3.5 px-6 near-pill-btn text-sm sm:text-base tracking-wide transition shadow-near-glow active:scale-98 flex items-center justify-center gap-2';
-      }
-      if (pingBtnText) pingBtnText.innerText = "I'M ALIVE (Check-in Now)";
-
+      // Delegate Hero HUD display to smart updateCountdownDisplay (handles Active vs Evacuated/Burned)
       updateCountdownDisplay();
     }
 
@@ -3608,7 +3623,7 @@ module.exports = { LastKeySweepRelayer };
         nearEl.dataset.full = current.near;
       }
 
-      const isBurned = localStorage.getItem('aegis_vault_burned_' + current.epoch);
+      const isBurned = isVaultEvacuatedOrBurned();
       if (pill) {
         if (isBurned) {
           pill.innerText = `Epoch ${current.epoch} · Burned`;
@@ -3782,16 +3797,49 @@ module.exports = { LastKeySweepRelayer };
       if (force) showToast('Balances and rates updated from RPC');
     }
 
-    function rotateBunkerEpoch() {
-      currentEpochIndex = (currentEpochIndex + 1) % VAULT_EPOCHS.length;
-      localStorage.setItem('aegis_bunker_epoch', currentEpochIndex.toString());
-      localStorage.removeItem('aegis_vault_burned_' + VAULT_EPOCHS[currentEpochIndex].epoch);
-      renderBunkerAddresses();
-      fetchLiveBalances(true);
-      remainingSeconds = MAX_SECONDS;
-      updateCountdownDisplay();
-      dispatchNearTransaction('rotate_bunker');
-      showToast(`Bunker Vault rotated to active Epoch ${VAULT_EPOCHS[currentEpochIndex].epoch}`);
+    async function rotateBunkerEpoch() {
+      const isConnected = !!localStorage.getItem('aegis_signer_account');
+      if (!isConnected) {
+        showToast('Please connect your Meteor Wallet first!', true);
+        connectMeteorWallet();
+        return;
+      }
+
+      showToast('Broadcasting rotate_bunker() to NEAR Testnet...');
+      try {
+        const outcome = await dispatchNearTransaction('rotate_bunker');
+        if (outcome) {
+          // Clear all burned flags
+          VAULT_EPOCHS.forEach(e => {
+            localStorage.removeItem('aegis_vault_burned_' + e.epoch);
+          });
+          localStorage.removeItem('aegis_vault_burned_0');
+          localStorage.removeItem('aegis_vault_burned_1');
+          localStorage.removeItem('aegis_vault_burned_2');
+
+          currentEpochIndex = (currentEpochIndex + 1) % VAULT_EPOCHS.length;
+          localStorage.setItem('aegis_bunker_epoch', currentEpochIndex.toString());
+
+          const banner = document.getElementById('bunkerBurnedBanner');
+          if (banner) banner.classList.add('hidden');
+
+          remainingSeconds = MAX_SECONDS;
+
+          const updatedInfo = await fetchLiveContractState();
+          if (updatedInfo && typeof updatedInfo.epoch === 'number') {
+            currentEpochIndex = updatedInfo.epoch % VAULT_EPOCHS.length;
+            localStorage.setItem('aegis_bunker_epoch', currentEpochIndex.toString());
+          }
+
+          renderBunkerAddresses();
+          fetchLiveBalances(true);
+          updateCountdownDisplay();
+          showToast(`✅ Clean Bunker Activated! Active Epoch ${VAULT_EPOCHS[currentEpochIndex].epoch}`);
+        }
+      } catch (err) {
+        console.error('Rotate bunker failed:', err);
+        showToast('Bunker rotation failed: ' + (err.message || err), true);
+      }
     }
 
     // Configurable Inactivity & Grace Periods
@@ -3800,6 +3848,10 @@ module.exports = { LastKeySweepRelayer };
     let MAX_SECONDS = inactivityDays * 24 * 3600;
 
     function calculateInitialRemainingSeconds() {
+      const currentEpoch = localStorage.getItem('aegis_bunker_epoch') || '0';
+      if (localStorage.getItem('aegis_vault_burned_' + currentEpoch) === 'true') {
+        return 0;
+      }
       const cachedPing = localStorage.getItem('aegis_last_ping_ns');
       const cachedHb = localStorage.getItem('aegis_heartbeat_interval_ns');
       if (cachedPing && cachedHb) {
@@ -3817,7 +3869,6 @@ module.exports = { LastKeySweepRelayer };
     let remainingSeconds = calculateInitialRemainingSeconds();
     let currentQrAddr = '';
     let countdownInterval = null;
-    let lastFetchedVaultInfo = null;
 
     function updateSaveButtonState(info = lastFetchedVaultInfo) {
       const saveBtns = document.querySelectorAll('.save-policy-btn');
@@ -3935,32 +3986,123 @@ module.exports = { LastKeySweepRelayer };
 
     function updateCountdownDisplay() {
       const isConnected = !!localStorage.getItem('aegis_signer_account');
+      const pulseDot = document.getElementById('heartbeatPulseDot');
+      const cardTitle = document.getElementById('heartbeatCardTitle');
+      const heartbeatTag = document.getElementById('heartbeatTag');
+      const countdownTitle = document.getElementById('countdownTitle');
+      const countdownBox = document.getElementById('countdownBox');
+      const statusDisplay = document.getElementById('statusDisplay');
+      const pingBtn = document.getElementById('pingMainBtn');
+      const pingBtnText = document.getElementById('pingMainBtnText');
+      const pingBtnIcon = document.getElementById('pingMainBtnIcon');
+      const timerBar = document.getElementById('timerBar');
+      const pctEl = document.getElementById('timerPctDisplay');
+
       if (!isConnected) {
-        const box = document.getElementById('countdownBox');
-        if (box) box.innerText = 'Ready to Arm';
-        const bar = document.getElementById('timerBar');
-        if (bar) bar.style.width = '100%';
-        const pctEl = document.getElementById('timerPctDisplay');
+        if (countdownBox) countdownBox.innerText = 'Ready to Arm';
+        if (timerBar) {
+          timerBar.style.width = '100%';
+          timerBar.className = 'h-full bg-nearGreen rounded-full transition-all duration-300';
+        }
         if (pctEl) pctEl.innerText = '100.0% remaining';
+        if (pingBtn) {
+          pingBtn.className = 'w-full bg-purple-600 hover:bg-purple-500 text-white font-extrabold py-3.5 px-6 near-pill-btn text-sm sm:text-base tracking-wide transition shadow-sm active:scale-98 flex items-center justify-center gap-2';
+        }
+        if (pingBtnText) pingBtnText.innerText = 'Connect Meteor to Arm Vault';
         return;
       }
+
+      // Check if Vault is Evacuated or Burned
+      if (isVaultEvacuatedOrBurned()) {
+        const nextEpoch = lastFetchedVaultInfo && typeof lastFetchedVaultInfo.epoch === 'number'
+          ? (lastFetchedVaultInfo.epoch + 1)
+          : ((currentEpochIndex + 1) % VAULT_EPOCHS.length);
+
+        if (pulseDot) pulseDot.className = 'w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse';
+        if (cardTitle) {
+          cardTitle.className = 'text-xs font-mono font-bold uppercase tracking-wider text-red-400';
+          cardTitle.innerText = 'BUNKER EVACUATED · KEYS BURNED';
+        }
+        if (heartbeatTag) {
+          heartbeatTag.className = 'text-xs font-mono font-medium text-red-400 bg-red-950/40 px-3 py-1 rounded-full border border-red-500/30';
+          heartbeatTag.innerText = 'Vault Evacuated · Inactive';
+        }
+        if (countdownTitle) countdownTitle.innerText = 'Bunker Evacuated · Rotation Required:';
+        if (countdownBox) countdownBox.innerHTML = '<span class="text-red-400 font-extrabold tracking-wider">EVACUATED</span>';
+        if (statusDisplay) statusDisplay.innerHTML = 'Status: <strong class="text-red-400 font-bold">Evacuated (Keys Burned)</strong>';
+        if (timerBar) {
+          timerBar.style.width = '0%';
+          timerBar.className = 'h-full bg-red-500 rounded-full transition-all duration-300';
+        }
+        if (pctEl) pctEl.innerText = '0.0% · Vault Burned';
+
+        if (pingBtn) {
+          pingBtn.className = 'w-full bg-nearGreen hover:bg-nearGreenHover text-nearBlack font-extrabold py-3.5 px-6 near-pill-btn text-sm sm:text-base tracking-wide transition shadow-near-glow active:scale-98 flex items-center justify-center gap-2';
+        }
+        if (pingBtnIcon) {
+          pingBtnIcon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />';
+          pingBtnIcon.setAttribute('viewBox', '0 0 24 24');
+          pingBtnIcon.setAttribute('fill', 'none');
+          pingBtnIcon.setAttribute('stroke', 'currentColor');
+          pingBtnIcon.setAttribute('stroke-width', '2.5');
+        }
+        if (pingBtnText) {
+          pingBtnText.innerText = `Activate Clean Bunker (Epoch ${nextEpoch})`;
+        }
+        return;
+      }
+
+      // Normal Active or Expiring State
+      if (pulseDot) pulseDot.className = 'w-2.5 h-2.5 rounded-full bg-nearGreen radar-pulse';
+      if (cardTitle) {
+        cardTitle.className = 'text-xs font-mono font-bold uppercase tracking-wider text-nearGreen';
+        cardTitle.innerText = 'AUTONOMOUS HEARTBEAT MONITOR';
+      }
+      if (heartbeatTag) {
+        heartbeatTag.className = 'text-xs font-mono font-medium text-textGray bg-nearElevated px-3 py-1 rounded-full border border-nearBorder';
+        heartbeatTag.innerText = 'Last check-in: Active';
+      }
+      if (countdownTitle) countdownTitle.innerText = 'Automatic Transfer to Heirs Initiates In:';
+      if (pingBtn) {
+        pingBtn.className = 'w-full bg-nearGreen hover:bg-nearGreenHover text-nearBlack font-extrabold py-3.5 px-6 near-pill-btn text-sm sm:text-base tracking-wide transition shadow-near-glow active:scale-98 flex items-center justify-center gap-2';
+      }
+      if (pingBtnIcon) {
+        pingBtnIcon.innerHTML = '<path d="M12 2L14.4 7.2L20 8L16 12L17 17.6L12 15L7 17.6L8 12L4 8L9.6 7.2L12 2Z"/>';
+        pingBtnIcon.setAttribute('viewBox', '0 0 24 24');
+        pingBtnIcon.setAttribute('fill', 'currentColor');
+        pingBtnIcon.removeAttribute('stroke');
+        pingBtnIcon.removeAttribute('stroke-width');
+      }
+
       if (remainingSeconds <= 0) {
-        document.getElementById('countdownBox').innerHTML = '<span class="text-red-400">EXPIRED</span>';
-        document.getElementById('timerBar').style.width = '0%';
-        const pctEl = document.getElementById('timerPctDisplay');
+        if (countdownBox) countdownBox.innerHTML = '<span class="text-red-400">EXPIRED</span>';
+        if (statusDisplay) statusDisplay.innerHTML = 'Status: <strong class="text-red-400 font-bold">Heartbeat Expired</strong>';
+        if (timerBar) {
+          timerBar.style.width = '0%';
+          timerBar.className = 'h-full bg-red-500 rounded-full transition-all duration-300';
+        }
         if (pctEl) pctEl.innerText = '0.0% remaining';
+        if (pingBtnText) pingBtnText.innerText = "I'M ALIVE (Recover & Reset)";
         return;
       }
+
+      if (statusDisplay) statusDisplay.innerHTML = 'Status: <strong class="text-nearGreen font-bold">Active & Enforced</strong>';
+      if (pingBtnText) pingBtnText.innerText = "I'M ALIVE (Check-in Now)";
+
       const { d, h, m, s } = formatTime(remainingSeconds);
-      document.getElementById('countdownBox').innerHTML = 
-        `${d}<span class="text-textGray text-2xl font-normal">d</span> ` +
-        `${h}<span class="text-textGray text-2xl font-normal">h</span> ` +
-        `${m}<span class="text-textGray text-2xl font-normal">m</span> ` +
-        `${s}<span class="text-textGray text-2xl font-normal">s</span>`;
+      if (countdownBox) {
+        countdownBox.innerHTML = 
+          `${d}<span class="text-textGray text-2xl font-normal">d</span> ` +
+          `${h}<span class="text-textGray text-2xl font-normal">h</span> ` +
+          `${m}<span class="text-textGray text-2xl font-normal">m</span> ` +
+          `${s}<span class="text-textGray text-2xl font-normal">s</span>`;
+      }
       
       const pct = Math.max(0, Math.min(100, (remainingSeconds / MAX_SECONDS) * 100));
-      document.getElementById('timerBar').style.width = pct + '%';
-      const pctEl = document.getElementById('timerPctDisplay');
+      if (timerBar) {
+        timerBar.style.width = pct + '%';
+        timerBar.className = 'h-full bg-nearGreen rounded-full transition-all duration-300';
+      }
       if (pctEl) pctEl.innerText = `${pct.toFixed(1)}% remaining`;
     }
 
@@ -4004,16 +4146,20 @@ module.exports = { LastKeySweepRelayer };
       showToast('Address copied to clipboard');
     }
 
-    // Ping Main Button Handler (Smart Connected / Disconnected)
+    // Ping Main Button Handler (Smart Connected / Disconnected / Evacuated)
     function handlePingMainBtnClick() {
       const isConnected = !!localStorage.getItem('aegis_signer_account');
       if (!isConnected) {
         connectMeteorWallet();
-      } else {
-        remainingSeconds = MAX_SECONDS;
-        updateCountdownDisplay();
-        dispatchNearTransaction('ping');
+        return;
       }
+      if (isVaultEvacuatedOrBurned()) {
+        rotateBunkerEpoch();
+        return;
+      }
+      remainingSeconds = MAX_SECONDS;
+      updateCountdownDisplay();
+      dispatchNearTransaction('ping');
     }
 
     // Tab Switching
@@ -4175,11 +4321,14 @@ module.exports = { LastKeySweepRelayer };
 
       dispatchNearTransaction('panic').then(() => {
         remainingSeconds = 0;
-        updateCountdownDisplay();
-
         const curr = VAULT_EPOCHS[currentEpochIndex];
-        localStorage.setItem('aegis_vault_burned_' + curr.epoch, 'true');
+        if (curr) localStorage.setItem('aegis_vault_burned_' + curr.epoch, 'true');
+        localStorage.setItem('aegis_vault_burned_' + currentEpochIndex, 'true');
+        if (lastFetchedVaultInfo) {
+          lastFetchedVaultInfo.state = 'Evacuated';
+        }
         renderBunkerAddresses();
+        updateCountdownDisplay();
 
         showToast('PANIC CONFIRMED ON-CHAIN: Vault evacuated.', true);
         openEvacMonitor();
