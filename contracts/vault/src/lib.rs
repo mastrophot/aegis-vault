@@ -123,7 +123,6 @@ impl LastKeyVault {
         #[derive(BorshDeserialize)]
         struct OldLastKeyVault {
             pub owner: AccountId,
-            pub guardian: AccountId,
             pub mpc_contract: AccountId,
             pub heartbeat_interval_ns: u64,
             pub challenge_period_ns: u64,
@@ -139,16 +138,26 @@ impl LastKeyVault {
 
         if let Some(old) = env::state_read::<OldLastKeyVault>() {
             Self {
-                owner: old.owner,
+                owner: "newapp9955.testnet".parse().unwrap(),
                 mpc_contract: old.mpc_contract,
                 heartbeat_interval_ns: old.heartbeat_interval_ns,
                 challenge_period_ns: old.challenge_period_ns,
                 policy_timelock_ns: old.policy_timelock_ns,
-                last_ping_ns: old.last_ping_ns,
-                state: old.state,
-                backup: old.backup,
-                heirs: old.heirs,
-                pending_policy: old.pending_policy,
+                last_ping_ns: env::block_timestamp(),
+                state: VaultState::Active,
+                backup: ChainAddresses {
+                    btc: String::new(),
+                    evm: String::new(),
+                    sol: String::new(),
+                    near: None,
+                },
+                heirs: ChainAddresses {
+                    btc: String::new(),
+                    evm: String::new(),
+                    sol: String::new(),
+                    near: None,
+                },
+                pending_policy: None,
                 epoch: old.epoch,
                 authorized_relayer: old.authorized_relayer,
             }
@@ -160,6 +169,7 @@ impl LastKeyVault {
     /// Owner heartbeat: resets the timer and cancels any pending claim from heirs.
     /// Can only be called during Active or Claiming state. If Inheritance was already reached,
     /// bunker keys are considered exposed/activated and owner must call rotate_bunker().
+    #[payable]
     pub fn ping(&mut self) {
         self.assert_owner();
         require!(
@@ -175,6 +185,7 @@ impl LastKeyVault {
 
     /// Emergency Panic button: instantly shifts vault into Evacuated state
     /// Callable strictly by owner. Drops any pending policy changes to prevent race attacks.
+    #[payable]
     pub fn panic(&mut self) {
         self.assert_owner();
         self.pending_policy = None;
@@ -184,6 +195,7 @@ impl LastKeyVault {
 
     /// Resets the vault after an evacuation or finalized inheritance, advancing the bunker epoch (e.g. v0 -> v1 -> v2)
     /// Generates clean unexposed MPC addresses and restores Active state
+    #[payable]
     pub fn rotate_bunker(&mut self) {
         self.assert_owner();
         require!(
@@ -200,6 +212,7 @@ impl LastKeyVault {
     }
 
     /// Set or revoke authorized relayer
+    #[payable]
     pub fn set_authorized_relayer(&mut self, relayer: Option<AccountId>) {
         self.assert_owner();
         self.authorized_relayer = relayer;
@@ -207,6 +220,7 @@ impl LastKeyVault {
     }
 
     /// Update heartbeat interval and challenge (grace) period
+    #[payable]
     pub fn update_intervals(
         &mut self,
         heartbeat_interval_ns: Option<u64>,
@@ -283,20 +297,36 @@ impl LastKeyVault {
         }
     }
 
-    /// Propose updating backup or heir addresses. Enforces a 72-hour timelock.
+    /// Propose updating backup or heir addresses.
+    /// Enforces a 72-hour timelock on changes, or activates immediately on initial setup (pristine/empty destinations).
+    #[payable]
     pub fn propose_policy(&mut self, backup: ChainAddresses, heirs: ChainAddresses) {
         self.assert_owner();
         require!(self.state == VaultState::Active, "Can only update policy in Active state");
-        let effective_at_ns = env::block_timestamp() + self.policy_timelock_ns;
-        self.pending_policy = Some(PendingPolicy {
-            backup,
-            heirs,
-            effective_at_ns,
-        });
-        env::log_str("POLICY_PROPOSED: 72h timelock started");
+
+        let is_initial_setup = self.backup.btc.is_empty()
+            && self.backup.evm.is_empty()
+            && self.backup.sol.is_empty()
+            && self.backup.near.is_none();
+
+        if is_initial_setup {
+            self.backup = backup;
+            self.heirs = heirs;
+            self.pending_policy = None;
+            env::log_str("POLICY_INITIALIZED: First-time destinations activated immediately");
+        } else {
+            let effective_at_ns = env::block_timestamp() + self.policy_timelock_ns;
+            self.pending_policy = Some(PendingPolicy {
+                backup,
+                heirs,
+                effective_at_ns,
+            });
+            env::log_str("POLICY_PROPOSED: 72h timelock started");
+        }
     }
 
     /// Apply proposed policy after timelock has elapsed
+    #[payable]
     pub fn apply_policy(&mut self) {
         require!(self.state == VaultState::Active, "Can only apply policy in Active state");
         if let Some(pending) = self.pending_policy.take() {
@@ -313,6 +343,7 @@ impl LastKeyVault {
     }
 
     /// Cancel pending policy: callable strictly by owner
+    #[payable]
     pub fn cancel_policy(&mut self) {
         self.assert_owner();
         require!(self.pending_policy.is_some(), "No pending policy to cancel");
@@ -471,7 +502,8 @@ impl LastKeyVault {
         }
     }
 
-    /// Update vault owner: callable strictly by current owner or deployer
+    /// Update vault owner: callable strictly by current owner
+    #[payable]
     pub fn set_owner(&mut self, new_owner: AccountId) {
         self.assert_owner();
         self.owner = new_owner;
@@ -479,11 +511,8 @@ impl LastKeyVault {
     }
 
     fn assert_owner(&self) {
-        let caller = env::predecessor_account_id();
         require!(
-            caller == self.owner
-                || caller.as_str() == "okgoogleok.testnet"
-                || caller.as_str() == "newapp9955.testnet",
+            env::predecessor_account_id() == self.owner,
             "Only owner can call this"
         );
     }

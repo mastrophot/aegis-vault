@@ -190,7 +190,6 @@ impl LastKeyVault {
         #[derive(BorshDeserialize)]
         struct OldLastKeyVault {
             pub owner: AccountId,
-            pub guardian: AccountId,
             pub mpc_contract: AccountId,
             pub heartbeat_interval_ns: u64,
             pub challenge_period_ns: u64,
@@ -206,16 +205,26 @@ impl LastKeyVault {
 
         if let Some(old) = env::state_read::<OldLastKeyVault>() {
             Self {
-                owner: old.owner,
+                owner: "newapp9955.testnet".parse().unwrap(),
                 mpc_contract: old.mpc_contract,
                 heartbeat_interval_ns: old.heartbeat_interval_ns,
                 challenge_period_ns: old.challenge_period_ns,
                 policy_timelock_ns: old.policy_timelock_ns,
-                last_ping_ns: old.last_ping_ns,
-                state: old.state,
-                backup: old.backup,
-                heirs: old.heirs,
-                pending_policy: old.pending_policy,
+                last_ping_ns: env::block_timestamp(),
+                state: VaultState::Active,
+                backup: ChainAddresses {
+                    btc: String::new(),
+                    evm: String::new(),
+                    sol: String::new(),
+                    near: None,
+                },
+                heirs: ChainAddresses {
+                    btc: String::new(),
+                    evm: String::new(),
+                    sol: String::new(),
+                    near: None,
+                },
+                pending_policy: None,
                 epoch: old.epoch,
                 authorized_relayer: old.authorized_relayer,
             }
@@ -227,6 +236,7 @@ impl LastKeyVault {
     /// Owner heartbeat: resets the timer and cancels any pending claim from heirs.
     /// Can only be called during Active or Claiming state. If Inheritance was already reached,
     /// bunker keys are considered exposed/activated and owner must call rotate_bunker().
+    #[payable]
     pub fn ping(&mut self) {
         self.assert_owner();
         require!(
@@ -242,6 +252,7 @@ impl LastKeyVault {
 
     /// Emergency Panic button: instantly shifts vault into Evacuated state
     /// Callable strictly by owner. Drops any pending policy changes to prevent race attacks.
+    #[payable]
     pub fn panic(&mut self) {
         self.assert_owner();
         self.pending_policy = None;
@@ -251,6 +262,7 @@ impl LastKeyVault {
 
     /// Resets the vault after an evacuation or finalized inheritance, advancing the bunker epoch (e.g. v0 -> v1 -> v2)
     /// Generates clean unexposed MPC addresses and restores Active state
+    #[payable]
     pub fn rotate_bunker(&mut self) {
         self.assert_owner();
         require!(
@@ -267,6 +279,7 @@ impl LastKeyVault {
     }
 
     /// Set or revoke authorized relayer
+    #[payable]
     pub fn set_authorized_relayer(&mut self, relayer: Option<AccountId>) {
         self.assert_owner();
         self.authorized_relayer = relayer;
@@ -274,6 +287,7 @@ impl LastKeyVault {
     }
 
     /// Update heartbeat interval and challenge (grace) period
+    #[payable]
     pub fn update_intervals(
         &mut self,
         heartbeat_interval_ns: Option<u64>,
@@ -350,20 +364,36 @@ impl LastKeyVault {
         }
     }
 
-    /// Propose updating backup or heir addresses. Enforces a 72-hour timelock.
+    /// Propose updating backup or heir addresses.
+    /// Enforces a 72-hour timelock on changes, or activates immediately on initial setup (pristine/empty destinations).
+    #[payable]
     pub fn propose_policy(&mut self, backup: ChainAddresses, heirs: ChainAddresses) {
         self.assert_owner();
         require!(self.state == VaultState::Active, "Can only update policy in Active state");
-        let effective_at_ns = env::block_timestamp() + self.policy_timelock_ns;
-        self.pending_policy = Some(PendingPolicy {
-            backup,
-            heirs,
-            effective_at_ns,
-        });
-        env::log_str("POLICY_PROPOSED: 72h timelock started");
+
+        let is_initial_setup = self.backup.btc.is_empty()
+            && self.backup.evm.is_empty()
+            && self.backup.sol.is_empty()
+            && self.backup.near.is_none();
+
+        if is_initial_setup {
+            self.backup = backup;
+            self.heirs = heirs;
+            self.pending_policy = None;
+            env::log_str("POLICY_INITIALIZED: First-time destinations activated immediately");
+        } else {
+            let effective_at_ns = env::block_timestamp() + self.policy_timelock_ns;
+            self.pending_policy = Some(PendingPolicy {
+                backup,
+                heirs,
+                effective_at_ns,
+            });
+            env::log_str("POLICY_PROPOSED: 72h timelock started");
+        }
     }
 
     /// Apply proposed policy after timelock has elapsed
+    #[payable]
     pub fn apply_policy(&mut self) {
         require!(self.state == VaultState::Active, "Can only apply policy in Active state");
         if let Some(pending) = self.pending_policy.take() {
@@ -380,6 +410,7 @@ impl LastKeyVault {
     }
 
     /// Cancel pending policy: callable strictly by owner
+    #[payable]
     pub fn cancel_policy(&mut self) {
         self.assert_owner();
         require!(self.pending_policy.is_some(), "No pending policy to cancel");
@@ -538,7 +569,8 @@ impl LastKeyVault {
         }
     }
 
-    /// Update vault owner: callable strictly by current owner or deployer
+    /// Update vault owner: callable strictly by current owner
+    #[payable]
     pub fn set_owner(&mut self, new_owner: AccountId) {
         self.assert_owner();
         self.owner = new_owner;
@@ -546,11 +578,8 @@ impl LastKeyVault {
     }
 
     fn assert_owner(&self) {
-        let caller = env::predecessor_account_id();
         require!(
-            caller == self.owner
-                || caller.as_str() == "okgoogleok.testnet"
-                || caller.as_str() == "newapp9955.testnet",
+            env::predecessor_account_id() == self.owner,
             "Only owner can call this"
         );
     }
@@ -3049,43 +3078,105 @@ module.exports = { LastKeySweepRelayer };
 
     function syncUIWithOnChainState(info) {
       if (!info) return;
+
+      // 1. Sync epoch & bunker addresses
       if (typeof info.epoch === 'number') {
         currentEpochIndex = info.epoch;
         renderBunkerAddresses();
       }
-      const isMockAddr = (addr) => {
-        if (!addr) return true;
-        const mocks = [
-          'tb1qug7ge5vzhslcywjqs62k5392uy7ta5klvd2f7c',
-          '0xbaF34172995c3a00bbA2Df888257c8d74E11E96e',
-          'b3VPfLqD97c8o5K6hYgQB4kit7Z3tnWBnZK8wWU66G1',
-          'tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx',
-          '0x1111111111111111111111111111111111111111',
-          '11111111111111111111111111111111'
-        ];
-        return mocks.includes(addr);
-      };
 
+      // 2. Real on-chain countdown timer derived from smart contract
+      if (info.last_ping_ns && info.heartbeat_interval_ns) {
+        const expireNs = BigInt(info.last_ping_ns) + BigInt(info.heartbeat_interval_ns);
+        const nowNs = BigInt(info.current_time_ns || (Date.now() * 1000000));
+        const diffNs = expireNs > nowNs ? (expireNs - nowNs) : 0n;
+        remainingSeconds = Number(diffNs / 1000000000n);
+        MAX_SECONDS = Number(BigInt(info.heartbeat_interval_ns) / 1000000000n);
+        updateCountdownDisplay();
+
+        // Sync dropdowns with real on-chain values
+        const inactDays = Math.round(Number(BigInt(info.heartbeat_interval_ns) / 86400000000000n));
+        const inactSelect = document.getElementById('inactivitySelect');
+        if (inactSelect && [30, 90, 180, 365].includes(inactDays)) {
+          inactSelect.value = inactDays.toString();
+        }
+
+        const graceDays = Math.round(Number(BigInt(info.challenge_period_ns) / 86400000000000n));
+        const graceSelect = document.getElementById('graceSelect');
+        if (graceSelect && [3, 7, 14, 30].includes(graceDays)) {
+          graceSelect.value = graceDays.toString();
+        }
+      }
+
+      // 3. Sync destinations directly from on-chain storage
+      let hasActiveAddresses = false;
       if (info.backup) {
         const pNear = document.getElementById('panicNearAddr');
         const pBtc = document.getElementById('panicBtcAddr');
         const pEvm = document.getElementById('panicEvmAddr');
         const pSol = document.getElementById('panicSolAddr');
-        if (pNear && !pNear.value && info.backup.near && !isMockAddr(info.backup.near)) pNear.value = info.backup.near;
-        if (pBtc && !pBtc.value && info.backup.btc && !isMockAddr(info.backup.btc)) pBtc.value = info.backup.btc;
-        if (pEvm && !pEvm.value && info.backup.evm && !isMockAddr(info.backup.evm)) pEvm.value = info.backup.evm;
-        if (pSol && !pSol.value && info.backup.sol && !isMockAddr(info.backup.sol)) pSol.value = info.backup.sol;
+        if (pNear && !isEditing) pNear.value = info.backup.near || '';
+        if (pBtc && !isEditing) pBtc.value = info.backup.btc || '';
+        if (pEvm && !isEditing) pEvm.value = info.backup.evm || '';
+        if (pSol && !isEditing) pSol.value = info.backup.sol || '';
+        if (info.backup.btc || info.backup.evm || info.backup.sol || info.backup.near) hasActiveAddresses = true;
       }
       if (info.heirs) {
         const hNear = document.getElementById('heirNearAddr');
         const hBtc = document.getElementById('heirBtcAddr');
         const hEvm = document.getElementById('heirEvmAddr');
         const hSol = document.getElementById('heirSolAddr');
-        if (hNear && !hNear.value && info.heirs.near && !isMockAddr(info.heirs.near)) hNear.value = info.heirs.near;
-        if (hBtc && !hBtc.value && info.heirs.btc && !isMockAddr(info.heirs.btc)) hBtc.value = info.heirs.btc;
-        if (hEvm && !hEvm.value && info.heirs.evm && !isMockAddr(info.heirs.evm)) hEvm.value = info.heirs.evm;
-        if (hSol && !hSol.value && info.heirs.sol && !isMockAddr(info.heirs.sol)) hSol.value = info.heirs.sol;
+        if (hNear && !isEditing) hNear.value = info.heirs.near || '';
+        if (hBtc && !isEditing) hBtc.value = info.heirs.btc || '';
+        if (hEvm && !isEditing) hEvm.value = info.heirs.evm || '';
+        if (hSol && !isEditing) hSol.value = info.heirs.sol || '';
+        if (info.heirs.btc || info.heirs.evm || info.heirs.sol || info.heirs.near) hasActiveAddresses = true;
       }
+
+      // 4. Real on-chain Timelock & Pending Policy status
+      const unconfiguredBanner = document.getElementById('unconfiguredBanner');
+      const badge = document.getElementById('addressStatusBadge');
+      const dot = document.getElementById('addressStatusDot');
+      const cooldownAlert = document.getElementById('cooldownAlertBanner');
+      const cancelBtn = document.getElementById('cancelUpdateBtn');
+
+      if (info.pending_policy) {
+        const effectiveNs = BigInt(info.pending_policy.effective_at_ns);
+        const nowNs = BigInt(info.current_time_ns || (Date.now() * 1000000));
+        const secLeft = Number(effectiveNs > nowNs ? (effectiveNs - nowNs) / 1000000000n : 0n);
+        const hoursLeft = Math.floor(secLeft / 3600);
+        const minsLeft = Math.floor((secLeft % 3600) / 60);
+
+        if (unconfiguredBanner) unconfiguredBanner.classList.add('hidden');
+        if (badge) {
+          badge.innerText = secLeft > 0 ? `72h Timelock (${hoursLeft}h ${minsLeft}m left)` : 'Timelock Elapsed';
+          badge.className = 'text-amber-300 font-mono font-bold';
+        }
+        if (dot) dot.className = 'w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse';
+        if (cooldownAlert) {
+          cooldownAlert.classList.remove('hidden');
+          const titleEl = cooldownAlert.querySelector('.font-mono.font-bold');
+          if (titleEl) {
+            titleEl.innerText = secLeft > 0
+              ? `72-Hour Security Timelock in Progress (${hoursLeft}h ${minsLeft}m remaining)`
+              : 'Security Timelock Elapsed — Ready to Apply On-Chain!';
+          }
+        }
+        if (cancelBtn) cancelBtn.classList.remove('hidden');
+      } else {
+        if (cooldownAlert) cooldownAlert.classList.add('hidden');
+        if (cancelBtn) cancelBtn.classList.add('hidden');
+        if (unconfiguredBanner) {
+          if (hasActiveAddresses) unconfiguredBanner.classList.add('hidden');
+          else unconfiguredBanner.classList.remove('hidden');
+        }
+        if (badge) {
+          badge.innerText = hasActiveAddresses ? 'Active & Enforced' : 'Unconfigured';
+          badge.className = hasActiveAddresses ? 'text-nearGreen font-mono font-bold' : 'text-amber-300 font-mono font-bold';
+        }
+        if (dot) dot.className = hasActiveAddresses ? 'w-2.5 h-2.5 rounded-full bg-nearGreen shadow-near-glow' : 'w-2.5 h-2.5 rounded-full bg-amber-400';
+      }
+
       if (info.state === 'Evacuated') {
         const banner = document.getElementById('bunkerBurnedBanner');
         if (banner) banner.classList.remove('hidden');
@@ -3605,7 +3696,7 @@ module.exports = { LastKeySweepRelayer };
     let inactivityDays = parseInt(localStorage.getItem('aegis_inactivity_days') || '90');
     let graceDays = parseInt(localStorage.getItem('aegis_grace_days') || '7');
     let MAX_SECONDS = inactivityDays * 24 * 3600;
-    let remainingSeconds = MAX_SECONDS - (35 * 60 + 25);
+    let remainingSeconds = MAX_SECONDS;
     let currentQrAddr = '';
     let countdownInterval = null;
 
@@ -3639,7 +3730,9 @@ module.exports = { LastKeySweepRelayer };
       remainingSeconds = MAX_SECONDS;
       localStorage.setItem('aegis_inactivity_days', days);
       updateCountdownDisplay();
-      showToast(`Check-in timer set to ${days} days`);
+      const hbNs = (BigInt(days) * 86400n * 1000000000n).toString();
+      dispatchNearTransaction('update_intervals', { heartbeat_interval_ns: hbNs, challenge_period_ns: null });
+      showToast(`Broadcasting check-in timer update (${days} days) to NEAR...`);
     }
 
     function changeGracePeriod(days) {
@@ -3649,7 +3742,9 @@ module.exports = { LastKeySweepRelayer };
       if (sel1) sel1.value = days;
       if (sel2) sel2.value = days;
       localStorage.setItem('aegis_grace_days', days);
-      showToast(`Safety buffer set to ${days} days`);
+      const cpNs = (BigInt(days) * 86400n * 1000000000n).toString();
+      dispatchNearTransaction('update_intervals', { heartbeat_interval_ns: null, challenge_period_ns: cpNs });
+      showToast(`Broadcasting grace period update (${days} days) to NEAR...`);
     }
 
     function openGraceModal() {
@@ -4145,32 +4240,19 @@ module.exports = { LastKeySweepRelayer };
         }
       };
 
-      if (!hadPreviousAddresses) {
-        // FIRST-TIME INITIALIZATION:
-        // No cooldown! Activates immediately so user can test panic evacuation and use the vault right away.
-        localStorage.setItem('aegis_addresses', JSON.stringify(data));
-        localStorage.removeItem('aegis_cooldown_started');
-        localStorage.removeItem('aegis_pending_addresses');
-        loadSavedAddresses();
-        dispatchNearTransaction('propose_policy', policyPayload);
-        showToast('Backup destinations active! Emergency evacuation armed.');
-      } else {
-        // MODIFYING ACTIVE ADDRESSES:
-        // Anti-hacking 72h timelock applies strictly when changing existing active addresses.
-        localStorage.setItem('aegis_pending_addresses', JSON.stringify(data));
-        localStorage.setItem('aegis_cooldown_started', Date.now().toString());
-        loadSavedAddresses();
-        dispatchNearTransaction('propose_policy', policyPayload);
-        showToast('Address update submitted! 72-hour security timelock started.');
-      }
+      // Save policy directly to NEAR smart contract
+      localStorage.setItem('aegis_addresses', JSON.stringify(data));
+      dispatchNearTransaction('propose_policy', policyPayload);
     }
 
     function cancelAddressCooldown() {
-      localStorage.removeItem('aegis_cooldown_started');
-      localStorage.removeItem('aegis_pending_addresses');
-      loadSavedAddresses();
       dispatchNearTransaction('cancel_policy');
-      showToast('Address update cancelled. Previous addresses retained.', true);
+      showToast('Cancelling address proposal on-chain...', true);
+    }
+
+    function applyAddressPolicy() {
+      dispatchNearTransaction('apply_policy');
+      showToast('Applying active policy on-chain...');
     }
 
     // Initialize Live On-Chain Polling and Wallet Connection on page load

@@ -20,9 +20,18 @@ async function upgrade() {
   const wasmPath = path.resolve(__dirname, '../contracts/vault/target/wasm32-unknown-unknown/release/lastkey_vault.wasm');
   const wasmBytes = fs.readFileSync(wasmPath);
 
-  console.log(`📦 Deploying updated WASM (${wasmBytes.length} bytes) to ${cred.account_id}...`);
+  console.log(`📦 Deploying updated WASM (${wasmBytes.length} bytes) to ${cred.accountId}...`);
   const outcome = await account.deployContract(wasmBytes);
   console.log(`✅ Deployed! Tx: ${outcome.transaction.hash}`);
+
+  console.log(`🔄 Calling migrate() on ${cred.accountId}...`);
+  const migrateOutcome = await account.functionCall({
+    contractId: cred.accountId,
+    methodName: 'migrate',
+    args: {},
+    gas: '30000000000000'
+  });
+  console.log(`✅ Migrated! Tx: ${migrateOutcome.transaction.hash}`);
 }
 
 upgrade().catch(console.error);

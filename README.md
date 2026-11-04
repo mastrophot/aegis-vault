@@ -4,7 +4,7 @@
 > **Track:** Web3 Infrastructure · Multi-Chain Security · Chain Abstraction  
 > **Core Primitive:** Native NEAR Chain Signatures (`v1.signer` MPC Network) & Pure Rust Smart Contract  
 > **Live Demo:** [https://mastrophot.github.io/aegis-vault/](https://mastrophot.github.io/aegis-vault/)  
-> **NEAR Testnet Contract:** [`lastkey-vault-2151.testnet`](https://testnet.nearblocks.io/address/lastkey-vault-2151.testnet)
+> **NEAR Testnet Contract:** [`aegis.okgoogleok.testnet`](https://testnet.nearblocks.io/address/aegis.okgoogleok.testnet)
 
 ---
 
@@ -20,11 +20,11 @@
 
 **Aegis** is a non-custodial, multichain dead-man's switch and emergency panic evacuation system powered by **NEAR Protocol Chain Signatures**. It turns a single NEAR smart contract into a universal threshold signer for Bitcoin, EVM, and Solana.
 
-* **Zero Custody (100% Non-Custodial)**: No private keys ever touch a server. Multichain deposit addresses (Bitcoin Native SegWit, EVM, and Solana) are mathematically derived from NEAR MPC's root public key via deterministic derivation paths (`aegis/v{epoch}`).
+* **Zero Custody (100% Non-Custodial)**: No private keys ever touch a server. Multichain deposit addresses (Bitcoin Native SegWit, EVM, and Solana) are mathematically derived from NEAR MPC's root public key via deterministic derivation paths (`aegis/{epoch}`).
 * **Proof-of-Life Heartbeat (`ping()`)**: The vault owner maintains active status by sending a periodic lightweight on-chain ping (e.g., every 90 days).
 * **Two-Stage Inheritance Protocol**: If the inactivity timer expires, heirs can open a challenge claim window. If the owner is alive, they cancel the claim with 1 click. If unchallenged within the grace period, the contract transitions to `Inheritance` state and authorizes push fund evacuation to designated heir addresses.
 * **Emergency Panic Button (Instant Evacuation)**: Under immediate threat, the owner triggers `panic()` (with 3-second hold buffer or 1-click armed mode). The vault immediately locks, bumps the derivation epoch to burn old addresses, and authorizes evacuation of 100% of all multichain assets directly to pre-configured cold backup wallets.
-* **Anti-Hacking 72h Policy Timelock**: Altering egress destination addresses (`backup` or `heirs`) enforces a strict 72-hour on-chain cooldown. If the owner's NEAR account is compromised, the rogue proposal can be cancelled during the window before it becomes effective.
+* **Anti-Hacking Policy Timelock**: First-time initialization activates immediately to allow zero-friction onboarding and instant testing. Any subsequent modifications to egress destination addresses (`backup` or `heirs`) enforce a strict 72-hour on-chain cooldown. If the owner's NEAR account is compromised, the rogue proposal can be cancelled during the window before it becomes effective.
 * **Cryptographic Anti-Blind-Signing & Structural Payload Verification**:
   * **EVM**: The smart contract verifies raw transaction bytecode (`> 64` hex characters), verifies that the 20-byte destination strictly matches designated backup/heir addresses, and executes `keccak256` on-chain. Relayers cannot submit blind hashes.
   * **Solana**: The smart contract parses the binary Solana Message header and account indices, enforcing `unsigned_writable_count == 1` and ensuring `account_1` is strictly the designated destination wallet (preventing substring/decoy injection attacks).
