@@ -623,9 +623,18 @@
               Cryptographically locked egress destinations for emergency evacuation and autonomous push inheritance.
             </p>
           </div>
-          <div class="flex items-center gap-3">
-            <button onclick="clearAllAddresses()" class="px-4 py-2.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] text-[#A6B0C3] hover:text-white font-mono text-xs border border-white/[0.08] transition">
+          <div class="flex items-center gap-2 sm:gap-3">
+            <button onclick="clearAllAddresses()" class="px-3.5 py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] text-[#A6B0C3] hover:text-white font-mono text-xs border border-white/[0.08] transition">
               Clear All
+            </button>
+            <button onclick="cancelAddressCooldown()" class="cancel-policy-btn hidden px-3.5 py-2 rounded-xl bg-red-950/40 hover:bg-red-950/60 text-red-400 font-mono font-bold text-xs border border-red-500/30 transition">
+              Cancel Update
+            </button>
+            <button onclick="applyAddressPolicy()" class="apply-policy-btn hidden px-3.5 py-2 rounded-xl bg-nearGreen hover:bg-nearGreenHover text-nearBlack font-mono font-bold text-xs transition shadow-near-glow whitespace-nowrap cursor-pointer">
+              Apply Policy
+            </button>
+            <button onclick="saveAddresses()" class="save-policy-btn bg-nearGreen hover:bg-nearGreenHover text-nearBlack font-extrabold py-2 px-5 rounded-xl text-xs transition shadow-near-glow active:scale-98 whitespace-nowrap cursor-pointer">
+              Save Policy
             </button>
           </div>
         </div>
@@ -894,10 +903,13 @@
             </div>
 
             <div class="flex items-center gap-3">
-              <button id="cancelUpdateBtn" onclick="cancelAddressCooldown()" class="hidden px-4 py-2.5 rounded-xl bg-red-950/40 hover:bg-red-950/60 text-red-400 font-mono font-bold text-xs border border-red-500/30 transition">
+              <button id="cancelUpdateBtn" onclick="cancelAddressCooldown()" class="cancel-policy-btn hidden px-4 py-2.5 rounded-xl bg-red-950/40 hover:bg-red-950/60 text-red-400 font-mono font-bold text-xs border border-red-500/30 transition">
                 Cancel & Revert Update
               </button>
-              <button id="savePolicyBtn" onclick="saveAddresses()" class="bg-nearGreen hover:bg-nearGreenHover text-nearBlack font-extrabold py-2.5 px-6 rounded-xl text-xs transition shadow-near-glow active:scale-98 whitespace-nowrap">
+              <button id="applyPolicyBtn" onclick="applyAddressPolicy()" class="apply-policy-btn hidden px-4 py-2.5 rounded-xl bg-nearGreen hover:bg-nearGreenHover text-nearBlack font-mono font-bold text-xs transition shadow-near-glow whitespace-nowrap cursor-pointer">
+                Apply Policy
+              </button>
+              <button id="savePolicyBtn" onclick="saveAddresses()" class="save-policy-btn bg-nearGreen hover:bg-nearGreenHover text-nearBlack font-extrabold py-2.5 px-6 rounded-xl text-xs sm:text-sm transition shadow-near-glow active:scale-98 whitespace-nowrap cursor-pointer">
                 Save Policy
               </button>
             </div>
@@ -1423,10 +1435,12 @@
         const pBtc = document.getElementById('panicBtcAddr');
         const pEvm = document.getElementById('panicEvmAddr');
         const pSol = document.getElementById('panicSolAddr');
-        if (pNear && !isEditing) pNear.value = info.backup.near || '';
-        if (pBtc && !isEditing) pBtc.value = info.backup.btc || '';
-        if (pEvm && !isEditing) pEvm.value = info.backup.evm || '';
-        if (pSol && !isEditing) pSol.value = info.backup.sol || '';
+        if (!userHasInteractedWithInputs) {
+          if (pNear) pNear.value = info.backup.near || '';
+          if (pBtc) pBtc.value = info.backup.btc || '';
+          if (pEvm) pEvm.value = info.backup.evm || '';
+          if (pSol) pSol.value = info.backup.sol || '';
+        }
         if (info.backup.btc || info.backup.evm || info.backup.sol || info.backup.near) hasActiveAddresses = true;
       }
       if (info.heirs) {
@@ -1434,19 +1448,30 @@
         const hBtc = document.getElementById('heirBtcAddr');
         const hEvm = document.getElementById('heirEvmAddr');
         const hSol = document.getElementById('heirSolAddr');
-        if (hNear && !isEditing) hNear.value = info.heirs.near || '';
-        if (hBtc && !isEditing) hBtc.value = info.heirs.btc || '';
-        if (hEvm && !isEditing) hEvm.value = info.heirs.evm || '';
-        if (hSol && !isEditing) hSol.value = info.heirs.sol || '';
+        if (!userHasInteractedWithInputs) {
+          if (hNear) hNear.value = info.heirs.near || '';
+          if (hBtc) hBtc.value = info.heirs.btc || '';
+          if (hEvm) hEvm.value = info.heirs.evm || '';
+          if (hSol) hSol.value = info.heirs.sol || '';
+        }
         if (info.heirs.btc || info.heirs.evm || info.heirs.sol || info.heirs.near) hasActiveAddresses = true;
       }
+
+      // Check current input values if user has typed
+      const anyInputFilled = inputIds.some(id => {
+        const el = document.getElementById(id);
+        return el && el.value && el.value.trim().length > 0;
+      });
+      const isConfigured = hasActiveAddresses || anyInputFilled;
 
       // 4. Real on-chain Timelock & Pending Policy status
       const unconfiguredBanner = document.getElementById('unconfiguredBanner');
       const badge = document.getElementById('addressStatusBadge');
       const dot = document.getElementById('addressStatusDot');
       const cooldownAlert = document.getElementById('cooldownAlertBanner');
-      const cancelBtn = document.getElementById('cancelUpdateBtn');
+      const saveBtns = document.querySelectorAll('.save-policy-btn');
+      const cancelBtns = document.querySelectorAll('.cancel-policy-btn');
+      const applyBtns = document.querySelectorAll('.apply-policy-btn');
 
       if (info.pending_policy) {
         const effectiveNs = BigInt(info.pending_policy.effective_at_ns);
@@ -1470,19 +1495,32 @@
               : 'Security Timelock Elapsed — Ready to Apply On-Chain!';
           }
         }
-        if (cancelBtn) cancelBtn.classList.remove('hidden');
+        cancelBtns.forEach(b => b.classList.remove('hidden'));
+        saveBtns.forEach(b => b.classList.add('hidden'));
+
+        if (secLeft <= 0) {
+          applyBtns.forEach(b => b.classList.remove('hidden'));
+        } else {
+          applyBtns.forEach(b => b.classList.add('hidden'));
+        }
       } else {
         if (cooldownAlert) cooldownAlert.classList.add('hidden');
-        if (cancelBtn) cancelBtn.classList.add('hidden');
+        cancelBtns.forEach(b => b.classList.add('hidden'));
+        applyBtns.forEach(b => b.classList.add('hidden'));
+        saveBtns.forEach(b => {
+          b.classList.remove('hidden');
+          b.disabled = false;
+        });
+
         if (unconfiguredBanner) {
-          if (hasActiveAddresses) unconfiguredBanner.classList.add('hidden');
+          if (isConfigured) unconfiguredBanner.classList.add('hidden');
           else unconfiguredBanner.classList.remove('hidden');
         }
         if (badge) {
-          badge.innerText = hasActiveAddresses ? 'Active & Enforced' : 'Unconfigured';
-          badge.className = hasActiveAddresses ? 'text-nearGreen font-mono font-bold' : 'text-amber-300 font-mono font-bold';
+          badge.innerText = isConfigured ? 'Active & Enforced' : 'Unconfigured';
+          badge.className = isConfigured ? 'text-nearGreen font-mono font-bold' : 'text-amber-300 font-mono font-bold';
         }
-        if (dot) dot.className = hasActiveAddresses ? 'w-2.5 h-2.5 rounded-full bg-nearGreen shadow-near-glow' : 'w-2.5 h-2.5 rounded-full bg-amber-400';
+        if (dot) dot.className = isConfigured ? 'w-2.5 h-2.5 rounded-full bg-nearGreen shadow-near-glow' : 'w-2.5 h-2.5 rounded-full bg-amber-400';
       }
 
       if (info.state === 'Evacuated') {
@@ -1728,7 +1766,7 @@
       try {
         console.log(`[Aegis On-Chain] Dispatching ${methodName} on ${CONTRACT_ID} with args:`, args);
 
-        const attachedDeposit = (methodName === 'panic' || methodName === 'ping' || methodName === 'propose_policy') ? '1' : '0';
+        const attachedDeposit = (methodName === 'panic' || methodName === 'ping' || methodName === 'propose_policy' || methodName === 'apply_policy' || methodName === 'cancel_policy' || methodName === 'update_intervals' || methodName === 'rotate_bunker') ? '1' : '0';
 
         // 1. Signed in via Meteor Wallet (Wallet Selector or Direct Injection)
         if (window.AegisMeteor) {
@@ -1742,6 +1780,8 @@
           const txHash = outcome?.transaction?.hash || outcome?.transaction_outcome?.id || 'Confirmed';
           console.log(`✅ [Aegis] Meteor transaction confirmed: ${txHash}`, outcome);
           showToast(`✅ ${methodName}() confirmed on-chain! Tx: ${txHash.slice(0, 8)}...`);
+          userHasInteractedWithInputs = false;
+          isEditing = false;
           setTimeout(() => fetchLiveContractState(), 2000);
           return outcome;
         }
@@ -1775,6 +1815,8 @@
           const txHash = outcome?.transaction?.hash || outcome?.transaction_outcome?.id || 'Confirmed';
           console.log(`✅ [Aegis] KeyPair transaction confirmed: ${txHash}`, outcome);
           showToast(`✅ ${methodName}() confirmed on-chain! Tx: ${txHash.slice(0, 8)}...`);
+          userHasInteractedWithInputs = false;
+          isEditing = false;
           setTimeout(() => fetchLiveContractState(), 2000);
           return outcome;
         }
@@ -2379,6 +2421,7 @@
 
     // Destination Policies & 72h Timelock
     let isEditing = false;
+    let userHasInteractedWithInputs = false;
     const inputIds = [
       'panicNearAddr', 'panicBtcAddr', 'panicEvmAddr', 'panicSolAddr',
       'heirNearAddr', 'heirBtcAddr', 'heirEvmAddr', 'heirSolAddr', 'heirFinalMemo'
@@ -2400,6 +2443,10 @@
     }
 
     function loadSavedAddresses() {
+      // Purge any legacy stale local cooldown flags
+      localStorage.removeItem('aegis_cooldown_started');
+      localStorage.removeItem('aegis_pending_addresses');
+
       const saved = JSON.parse(localStorage.getItem('aegis_addresses') || '{}');
       
       // Auto-sanitize: clear legacy/bogus mastrophot.testnet from panicNearAddr if present
@@ -2412,8 +2459,10 @@
       inputIds.forEach(id => {
         const el = document.getElementById(id);
         if (el) {
-          el.value = saved[id] || '';
-          if (saved[id] && saved[id].trim().length > 0) hasAny = true;
+          if (!userHasInteractedWithInputs && saved[id]) {
+            el.value = saved[id];
+          }
+          if (el.value && el.value.trim().length > 0) hasAny = true;
         }
       });
       updateMemoByteCounter(saved.heirFinalMemo || '');
@@ -2423,38 +2472,29 @@
         else banner.classList.remove('hidden');
       }
 
-      const isCooldown = localStorage.getItem('aegis_cooldown_started');
       const badge = document.getElementById('addressStatusBadge');
       const dot = document.getElementById('addressStatusDot');
       const cooldownAlert = document.getElementById('cooldownAlertBanner');
-      const cancelBtn = document.getElementById('cancelUpdateBtn');
-      const saveBtn = document.getElementById('savePolicyBtn');
 
-      if (isCooldown) {
-        if (badge) {
-          badge.innerText = '3-Day Cooldown (71h 59m left)';
-          badge.className = 'text-amber-300 font-mono font-bold';
-        }
-        if (dot) dot.className = 'w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse';
-        if (cooldownAlert) cooldownAlert.classList.remove('hidden');
-        if (cancelBtn) cancelBtn.classList.remove('hidden');
-        if (saveBtn) saveBtn.classList.add('hidden');
-      } else {
-        if (badge) {
-          badge.innerText = hasAny ? 'Active & Enforced' : 'Unconfigured';
-          badge.className = hasAny ? 'text-nearGreen font-mono font-bold' : 'text-amber-300 font-mono font-bold';
-        }
-        if (dot) dot.className = hasAny ? 'w-2.5 h-2.5 rounded-full bg-nearGreen shadow-near-glow' : 'w-2.5 h-2.5 rounded-full bg-amber-400';
-        if (cooldownAlert) cooldownAlert.classList.add('hidden');
-        if (cancelBtn) cancelBtn.classList.add('hidden');
-        if (saveBtn) {
-          saveBtn.classList.remove('hidden');
-          saveBtn.disabled = false;
-        }
+      // Ensure Save Policy buttons are visible and active
+      document.querySelectorAll('.save-policy-btn').forEach(btn => {
+        btn.classList.remove('hidden');
+        btn.disabled = false;
+      });
+      document.querySelectorAll('.cancel-policy-btn').forEach(btn => btn.classList.add('hidden'));
+      document.querySelectorAll('.apply-policy-btn').forEach(btn => btn.classList.add('hidden'));
+
+      if (cooldownAlert) cooldownAlert.classList.add('hidden');
+      if (badge) {
+        badge.innerText = hasAny ? 'Active & Enforced' : 'Unconfigured';
+        badge.className = hasAny ? 'text-nearGreen font-mono font-bold' : 'text-amber-300 font-mono font-bold';
       }
+      if (dot) dot.className = hasAny ? 'w-2.5 h-2.5 rounded-full bg-nearGreen shadow-near-glow' : 'w-2.5 h-2.5 rounded-full bg-amber-400';
     }
 
     function clearAllAddresses() {
+      userHasInteractedWithInputs = false;
+      isEditing = false;
       inputIds.forEach(id => {
         const el = document.getElementById(id);
         if (el) el.value = '';
@@ -2550,7 +2590,12 @@
 
       // Save policy directly to NEAR smart contract
       localStorage.setItem('aegis_addresses', JSON.stringify(data));
-      dispatchNearTransaction('propose_policy', policyPayload);
+      dispatchNearTransaction('propose_policy', policyPayload).then(() => {
+        userHasInteractedWithInputs = false;
+        isEditing = false;
+      }).catch(err => {
+        console.error('Policy proposal dispatch error:', err);
+      });
     }
 
     function cancelAddressCooldown() {
@@ -2568,6 +2613,23 @@
       initNearWallet();
       fetchLiveContractState();
       setInterval(fetchLiveContractState, 15000);
+
+      // Protect user inputs from being overwritten while typing
+      inputIds.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+          el.addEventListener('focus', () => {
+            userHasInteractedWithInputs = true;
+            isEditing = true;
+          });
+          el.addEventListener('input', () => {
+            userHasInteractedWithInputs = true;
+            isEditing = true;
+            const banner = document.getElementById('unconfiguredBanner');
+            if (banner && el.value.trim().length > 0) banner.classList.add('hidden');
+          });
+        }
+      });
     });
   </script>
 </body>
