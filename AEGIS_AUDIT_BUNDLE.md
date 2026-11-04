@@ -380,8 +380,10 @@ impl LastKeyVault {
             self.backup = backup;
             self.heirs = heirs;
             self.pending_policy = None;
+            self.last_ping_ns = env::block_timestamp();
             env::log_str("POLICY_INITIALIZED: First-time destinations activated immediately");
         } else {
+            self.last_ping_ns = env::block_timestamp();
             let effective_at_ns = env::block_timestamp() + self.policy_timelock_ns;
             self.pending_policy = Some(PendingPolicy {
                 backup,
@@ -2337,6 +2339,28 @@ module.exports = { LastKeySweepRelayer };
           <span>No destination addresses entered yet. Enter your backup and family wallets below, then click <strong>Save Policy</strong>. Initial setup activates immediately without timelock.</span>
         </div>
 
+        <!-- Armed & Synchronized Banner (Shown when destinations are saved on-chain) -->
+        <div id="activePolicyBanner" class="hidden p-4 rounded-xl bg-nearGreen/10 border border-nearGreen/35 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-white">
+          <div class="flex items-center gap-3">
+            <div class="w-8 h-8 rounded-lg bg-nearGreen/20 flex items-center justify-center text-nearGreen shrink-0 font-bold">
+              <svg class="w-4 h-4 text-nearGreen" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+            </div>
+            <div>
+              <div class="font-bold text-nearGreen flex items-center gap-2">
+                <span>Bunker Egress Armed & Active On-Chain</span>
+                <span class="text-[10px] font-mono bg-nearGreen/20 text-nearGreen border border-nearGreen/40 px-2 py-0.5 rounded-full font-bold">BLOCKCHAIN ENFORCED</span>
+              </div>
+              <div id="activePolicySummary" class="text-white/80 text-[11px] mt-0.5 font-mono">
+                <!-- Dynamically populated: e.g. Backup: okgoogleok.testnet · Heirs: mastrophot.testnet -->
+              </div>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 text-xs font-mono text-nearGreen self-start sm:self-auto">
+            <span class="w-2 h-2 rounded-full bg-nearGreen radar-pulse"></span>
+            <span class="font-bold">Live Synchronized</span>
+          </div>
+        </div>
+
         <!-- 2-Column Multichain Routing Panel -->
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
@@ -3099,6 +3123,8 @@ module.exports = { LastKeySweepRelayer };
 
       // 2. Real on-chain countdown timer derived from smart contract
       if (info.last_ping_ns && info.heartbeat_interval_ns) {
+        localStorage.setItem('aegis_last_ping_ns', info.last_ping_ns.toString());
+        localStorage.setItem('aegis_heartbeat_interval_ns', info.heartbeat_interval_ns.toString());
         const expireNs = BigInt(info.last_ping_ns) + BigInt(info.heartbeat_interval_ns);
         const nowNs = BigInt(info.current_time_ns || (Date.now() * 1000000));
         const diffNs = expireNs > nowNs ? (expireNs - nowNs) : 0n;
@@ -3148,6 +3174,40 @@ module.exports = { LastKeySweepRelayer };
         }
         if (info.heirs.btc || info.heirs.evm || info.heirs.sol || info.heirs.near) hasActiveAddresses = true;
       }
+
+      // Save latest state & update visual indication
+      lastFetchedVaultInfo = info;
+      const activeBanner = document.getElementById('activePolicyBanner');
+      const activeSummary = document.getElementById('activePolicySummary');
+      const tabRescue = document.getElementById('tab-rescue');
+
+      if (hasActiveAddresses) {
+        if (unconfiguredBanner) unconfiguredBanner.classList.add('hidden');
+        if (activeBanner) {
+          activeBanner.classList.remove('hidden');
+          let parts = [];
+          if (info.backup?.near) parts.push(`Backup NEAR: <strong class="text-white">${info.backup.near}</strong>`);
+          if (info.backup?.btc) parts.push(`Backup BTC: <strong class="text-white">${info.backup.btc.slice(0, 10)}...</strong>`);
+          if (info.backup?.evm) parts.push(`Backup EVM: <strong class="text-white">${info.backup.evm.slice(0, 8)}...</strong>`);
+          if (info.backup?.sol) parts.push(`Backup SOL: <strong class="text-white">${info.backup.sol.slice(0, 8)}...</strong>`);
+          if (info.heirs?.near) parts.push(`Heir NEAR: <strong class="text-white">${info.heirs.near}</strong>`);
+          if (info.heirs?.btc) parts.push(`Heir BTC: <strong class="text-white">${info.heirs.btc.slice(0, 10)}...</strong>`);
+          if (info.heirs?.evm) parts.push(`Heir EVM: <strong class="text-white">${info.heirs.evm.slice(0, 8)}...</strong>`);
+          if (info.heirs?.sol) parts.push(`Heir SOL: <strong class="text-white">${info.heirs.sol.slice(0, 8)}...</strong>`);
+          if (activeSummary) activeSummary.innerHTML = parts.join(' · ') || 'Active on-chain destinations loaded.';
+        }
+        if (tabRescue) {
+          tabRescue.innerHTML = `1. Rescue & Inheritance <span class="ml-1.5 px-2 py-0.5 text-[10px] bg-nearGreen text-nearBlack rounded-full font-bold">ARMED</span>`;
+        }
+      } else {
+        if (activeBanner) activeBanner.classList.add('hidden');
+        if (unconfiguredBanner) unconfiguredBanner.classList.remove('hidden');
+        if (tabRescue) {
+          tabRescue.innerText = `1. Rescue & Inheritance (Destinations)`;
+        }
+      }
+
+      updateSaveButtonState(info);
 
       // Check current input values if user has typed
       const anyInputFilled = inputIds.some(id => {
@@ -3738,9 +3798,77 @@ module.exports = { LastKeySweepRelayer };
     let inactivityDays = parseInt(localStorage.getItem('aegis_inactivity_days') || '90');
     let graceDays = parseInt(localStorage.getItem('aegis_grace_days') || '7');
     let MAX_SECONDS = inactivityDays * 24 * 3600;
-    let remainingSeconds = MAX_SECONDS;
+
+    function calculateInitialRemainingSeconds() {
+      const cachedPing = localStorage.getItem('aegis_last_ping_ns');
+      const cachedHb = localStorage.getItem('aegis_heartbeat_interval_ns');
+      if (cachedPing && cachedHb) {
+        try {
+          const expireNs = BigInt(cachedPing) + BigInt(cachedHb);
+          const nowNs = BigInt(Date.now()) * 1000000n;
+          if (expireNs > nowNs) {
+            return Number((expireNs - nowNs) / 1000000000n);
+          }
+          return 0;
+        } catch (e) {}
+      }
+      return MAX_SECONDS;
+    }
+    let remainingSeconds = calculateInitialRemainingSeconds();
     let currentQrAddr = '';
     let countdownInterval = null;
+    let lastFetchedVaultInfo = null;
+
+    function updateSaveButtonState(info = lastFetchedVaultInfo) {
+      const saveBtns = document.querySelectorAll('.save-policy-btn');
+      if (!saveBtns.length) return;
+
+      const pNear = document.getElementById('panicNearAddr')?.value?.trim() || '';
+      const pBtc = document.getElementById('panicBtcAddr')?.value?.trim() || '';
+      const pEvm = document.getElementById('panicEvmAddr')?.value?.trim() || '';
+      const pSol = document.getElementById('panicSolAddr')?.value?.trim() || '';
+      const hNear = document.getElementById('heirNearAddr')?.value?.trim() || '';
+      const hBtc = document.getElementById('heirBtcAddr')?.value?.trim() || '';
+      const hEvm = document.getElementById('heirEvmAddr')?.value?.trim() || '';
+      const hSol = document.getElementById('heirSolAddr')?.value?.trim() || '';
+
+      const onChainBackupNear = info?.backup?.near || '';
+      const onChainBackupBtc = info?.backup?.btc || '';
+      const onChainBackupEvm = info?.backup?.evm || '';
+      const onChainBackupSol = info?.backup?.sol || '';
+      const onChainHeirNear = info?.heirs?.near || '';
+      const onChainHeirBtc = info?.heirs?.btc || '';
+      const onChainHeirEvm = info?.heirs?.evm || '';
+      const onChainHeirSol = info?.heirs?.sol || '';
+
+      const hasOnChain = !!(onChainBackupNear || onChainBackupBtc || onChainBackupEvm || onChainBackupSol ||
+                            onChainHeirNear || onChainHeirBtc || onChainHeirEvm || onChainHeirSol);
+
+      const isMatching = hasOnChain &&
+                         (pNear === onChainBackupNear) &&
+                         (pBtc === onChainBackupBtc) &&
+                         (pEvm === onChainBackupEvm) &&
+                         (pSol === onChainBackupSol) &&
+                         (hNear === onChainHeirNear) &&
+                         (hBtc === onChainHeirBtc) &&
+                         (hEvm === onChainHeirEvm) &&
+                         (hSol === onChainHeirSol);
+
+      saveBtns.forEach(btn => {
+        if (isMatching) {
+          btn.innerHTML = `
+            <span class="flex items-center gap-1.5 text-nearGreen">
+              <svg class="w-3.5 h-3.5 text-nearGreen shrink-0" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+              <span>Policy Saved & Armed</span>
+            </span>
+          `;
+          btn.className = 'save-policy-btn bg-nearGreen/15 hover:bg-nearGreen/25 text-nearGreen border border-nearGreen/40 font-bold py-2 px-5 rounded-xl text-xs transition active:scale-98 whitespace-nowrap cursor-pointer';
+        } else {
+          btn.innerHTML = `Save Policy`;
+          btn.className = 'save-policy-btn bg-nearGreen hover:bg-nearGreenHover text-nearBlack font-extrabold py-2 px-5 rounded-xl text-xs transition shadow-near-glow active:scale-98 whitespace-nowrap cursor-pointer';
+        }
+      });
+    }
 
     // Initialize UI Selectors
     document.addEventListener('DOMContentLoaded', () => {
@@ -4319,6 +4447,7 @@ module.exports = { LastKeySweepRelayer };
             isEditing = true;
             const banner = document.getElementById('unconfiguredBanner');
             if (banner && el.value.trim().length > 0) banner.classList.add('hidden');
+            updateSaveButtonState(lastFetchedVaultInfo);
           });
         }
       });

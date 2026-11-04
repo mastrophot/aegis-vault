@@ -313,8 +313,10 @@ impl LastKeyVault {
             self.backup = backup;
             self.heirs = heirs;
             self.pending_policy = None;
+            self.last_ping_ns = env::block_timestamp();
             env::log_str("POLICY_INITIALIZED: First-time destinations activated immediately");
         } else {
+            self.last_ping_ns = env::block_timestamp();
             let effective_at_ns = env::block_timestamp() + self.policy_timelock_ns;
             self.pending_policy = Some(PendingPolicy {
                 backup,
