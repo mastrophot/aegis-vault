@@ -1386,6 +1386,15 @@
     const NEAR_RPC_URL = 'https://archival-rpc.testnet.near.org';
     const CONTRACT_ID = 'aegis.okgoogleok.testnet';
 
+    function hasConfiguredDestinations(info = lastFetchedVaultInfo) {
+      if (!info) return false;
+      const b = info.backup;
+      const h = info.heirs;
+      const hasBackup = b && (b.btc?.trim() || b.evm?.trim() || b.sol?.trim() || b.near?.trim());
+      const hasHeirs = h && (h.btc?.trim() || h.evm?.trim() || h.sol?.trim() || h.near?.trim());
+      return !!(hasBackup || hasHeirs);
+    }
+
     function isVaultEvacuatedOrBurned() {
       if (lastFetchedVaultInfo && (lastFetchedVaultInfo.state === 'Evacuated' || lastFetchedVaultInfo.state === 'Inheritance')) {
         return true;
@@ -1400,8 +1409,9 @@
       return false;
     }
 
-    // Live On-Chain State Fetcher via NEAR JSON-RPC
+    // Live On-Chain State Fetcher via NEAR JSON-RPC (Multi-User scoped)
     async function fetchLiveContractState() {
+      const currentSigner = localStorage.getItem('aegis_signer_account') || 'newapp9955.testnet';
       try {
         const response = await fetch(NEAR_RPC_URL, {
           method: 'POST',
@@ -1415,7 +1425,7 @@
               finality: 'final',
               account_id: CONTRACT_ID,
               method_name: 'get_vault_info',
-              args_base64: btoa('{}')
+              args_base64: btoa(JSON.stringify({ account_id: currentSigner }))
             }
           })
         });
@@ -1423,17 +1433,35 @@
         if (data.result && data.result.result) {
           const decoded = new TextDecoder().decode(new Uint8Array(data.result.result));
           const vaultInfo = JSON.parse(decoded);
-          console.log('📡 [Aegis] Live NEAR RPC State fetched:', vaultInfo);
-          syncUIWithOnChainState(vaultInfo);
+          console.log(`📡 [Aegis] Live NEAR RPC State fetched for ${currentSigner}:`, vaultInfo);
+          syncUIWithOnChainState(vaultInfo, currentSigner);
           return vaultInfo;
+        } else {
+          // No vault registered for this account yet
+          syncUIWithOnChainState(null, currentSigner);
+          return null;
         }
       } catch (err) {
         console.warn('📡 [Aegis] Live RPC sync notice:', err.message);
       }
     }
 
-    function syncUIWithOnChainState(info) {
-      if (!info) return;
+    function syncUIWithOnChainState(info, signerAccount) {
+      if (!info) {
+        lastFetchedVaultInfo = {
+          state: 'Unconfigured',
+          epoch: 0,
+          backup: { btc: '', evm: '', sol: '', near: null },
+          heirs: { btc: '', evm: '', sol: '', near: null },
+          pending_policy: null,
+          last_ping_ns: 0,
+          heartbeat_interval_ns: 7776000000000000
+        };
+        remainingSeconds = 0;
+        renderBunkerAddresses();
+        updateCountdownDisplay();
+        return;
+      }
 
       lastFetchedVaultInfo = info;
 
@@ -1450,6 +1478,8 @@
         localStorage.setItem('aegis_vault_burned_' + currentEpochIndex, 'true');
         const curr = VAULT_EPOCHS[currentEpochIndex];
         if (curr) localStorage.setItem('aegis_vault_burned_' + curr.epoch, 'true');
+      } else if (info.state === 'Unconfigured' || !hasConfiguredDestinations(info)) {
+        remainingSeconds = 0;
       } else if (info.state === 'Active') {
         const curr = VAULT_EPOCHS[currentEpochIndex];
         if (curr) localStorage.removeItem('aegis_vault_burned_' + curr.epoch);
@@ -1460,13 +1490,13 @@
       renderBunkerAddresses();
 
       // 2. Real on-chain countdown timer derived from smart contract
-      if (info.last_ping_ns && info.heartbeat_interval_ns) {
+      if (info.state === 'Active' && hasConfiguredDestinations(info) && info.last_ping_ns && info.heartbeat_interval_ns) {
         localStorage.setItem('aegis_last_ping_ns', info.last_ping_ns.toString());
         localStorage.setItem('aegis_heartbeat_interval_ns', info.heartbeat_interval_ns.toString());
         const expireNs = BigInt(info.last_ping_ns) + BigInt(info.heartbeat_interval_ns);
         const nowNs = BigInt(info.current_time_ns || (Date.now() * 1000000));
         const diffNs = expireNs > nowNs ? (expireNs - nowNs) : 0n;
-        remainingSeconds = (info.state === 'Evacuated' || info.state === 'Inheritance') ? 0 : Number(diffNs / 1000000000n);
+        remainingSeconds = Number(diffNs / 1000000000n);
         MAX_SECONDS = Number(BigInt(info.heartbeat_interval_ns) / 1000000000n);
         updateCountdownDisplay();
 
@@ -1482,6 +1512,9 @@
         if (graceSelect && [3, 7, 14, 30].includes(graceDays)) {
           graceSelect.value = graceDays.toString();
         }
+      } else {
+        remainingSeconds = 0;
+        updateCountdownDisplay();
       }
 
       // 3. Sync destinations directly from on-chain storage
@@ -1930,13 +1963,18 @@
       }
 
       const isBurned = isVaultEvacuatedOrBurned();
+      const currentSigner = localStorage.getItem('aegis_signer_account') || 'newapp9955.testnet';
       if (pill) {
         if (isBurned) {
           pill.innerText = `Epoch ${current.epoch} · Burned`;
           pill.className = 'text-[11px] font-mono font-bold text-red-400 bg-red-950/40 border border-red-500/30 px-2.5 py-0.5 rounded-full whitespace-nowrap';
           if (banner) banner.classList.remove('hidden');
+        } else if (!hasConfiguredDestinations()) {
+          pill.innerText = `Derivation Path: aegis/${currentSigner}/${current.epoch} (Unarmed)`;
+          pill.className = 'text-[11px] font-mono font-bold text-amber-400 bg-amber-950/40 border border-amber-500/30 px-2.5 py-0.5 rounded-full whitespace-nowrap';
+          if (banner) banner.classList.add('hidden');
         } else {
-          pill.innerText = `Derivation Path: aegis/${current.epoch} (Active)`;
+          pill.innerText = `Derivation Path: aegis/${currentSigner}/${current.epoch} (Active)`;
           pill.className = 'text-[11px] font-mono font-bold text-nearGreen bg-nearGreenMuted border border-nearGreen/30 px-2.5 py-0.5 rounded-full whitespace-nowrap';
           if (banner) banner.classList.add('hidden');
         }
@@ -2129,7 +2167,8 @@
           const banner = document.getElementById('bunkerBurnedBanner');
           if (banner) banner.classList.add('hidden');
 
-          remainingSeconds = MAX_SECONDS;
+          remainingSeconds = 0;
+          clearAllAddresses();
 
           const updatedInfo = await fetchLiveContractState();
           if (updatedInfo && typeof updatedInfo.epoch === 'number') {
@@ -2140,7 +2179,7 @@
           renderBunkerAddresses();
           fetchLiveBalances(true);
           updateCountdownDisplay();
-          showToast(`✅ Clean Bunker Activated! Active Epoch ${VAULT_EPOCHS[currentEpochIndex].epoch}`);
+          showToast(`✅ Clean Bunker Activated! Active Epoch ${VAULT_EPOCHS[currentEpochIndex].epoch} (Unarmed - Enter destinations to arm)`);
         }
       } catch (err) {
         console.error('Rotate bunker failed:', err);
@@ -2358,6 +2397,42 @@
         return;
       }
 
+      // Check if Vault is unconfigured or has no destinations
+      if (!lastFetchedVaultInfo || lastFetchedVaultInfo.state === 'Unconfigured' || !hasConfiguredDestinations()) {
+        if (pulseDot) pulseDot.className = 'w-2.5 h-2.5 rounded-full bg-amber-400';
+        if (cardTitle) {
+          cardTitle.className = 'text-xs font-mono font-bold uppercase tracking-wider text-amber-400';
+          cardTitle.innerText = 'AUTONOMOUS HEARTBEAT MONITOR';
+        }
+        if (heartbeatTag) {
+          heartbeatTag.className = 'text-xs font-mono font-medium text-amber-400/90 bg-amber-950/30 px-3 py-1 rounded-full border border-amber-500/30';
+          heartbeatTag.innerText = 'Vault Unarmed';
+        }
+        if (countdownTitle) countdownTitle.innerText = "Dead-Man's Switch Heartbeat:";
+        if (countdownBox) countdownBox.innerText = 'Ready to Arm';
+        if (statusDisplay) statusDisplay.innerHTML = 'Status: <strong class="text-amber-400 font-bold">Unconfigured (Enter Destinations)</strong>';
+        if (timerBar) {
+          timerBar.style.width = '100%';
+          timerBar.className = 'h-full bg-amber-400/50 rounded-full transition-all duration-300';
+        }
+        if (pctEl) pctEl.innerText = 'Waiting for destinations';
+
+        if (pingBtn) {
+          pingBtn.className = 'w-full bg-amber-400 hover:bg-amber-300 text-black font-extrabold py-3.5 px-6 near-pill-btn text-sm sm:text-base tracking-wide transition shadow-sm active:scale-98 flex items-center justify-center gap-2';
+        }
+        if (pingBtnIcon) {
+          pingBtnIcon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>';
+          pingBtnIcon.setAttribute('viewBox', '0 0 24 24');
+          pingBtnIcon.setAttribute('fill', 'none');
+          pingBtnIcon.setAttribute('stroke', 'currentColor');
+          pingBtnIcon.setAttribute('stroke-width', '2');
+        }
+        if (pingBtnText) {
+          pingBtnText.innerText = 'Save Policy Below to Arm Vault';
+        }
+        return;
+      }
+
       // Normal Active or Expiring State
       if (pulseDot) pulseDot.className = 'w-2.5 h-2.5 rounded-full bg-nearGreen radar-pulse';
       if (cardTitle) {
@@ -2414,7 +2489,9 @@
 
     if (countdownInterval) clearInterval(countdownInterval);
     countdownInterval = setInterval(() => {
-      remainingSeconds--;
+      if (hasConfiguredDestinations() && lastFetchedVaultInfo && lastFetchedVaultInfo.state === 'Active') {
+        remainingSeconds--;
+      }
       updateCountdownDisplay();
     }, 1000);
     updateCountdownDisplay();
@@ -2452,7 +2529,7 @@
       showToast('Address copied to clipboard');
     }
 
-    // Ping Main Button Handler (Smart Connected / Disconnected / Evacuated)
+    // Ping Main Button Handler (Smart Connected / Disconnected / Evacuated / Unconfigured)
     function handlePingMainBtnClick() {
       const isConnected = !!localStorage.getItem('aegis_signer_account');
       if (!isConnected) {
@@ -2461,6 +2538,15 @@
       }
       if (isVaultEvacuatedOrBurned()) {
         rotateBunkerEpoch();
+        return;
+      }
+      if (!hasConfiguredDestinations() || (lastFetchedVaultInfo && lastFetchedVaultInfo.state === 'Unconfigured')) {
+        const destSection = document.getElementById('panel-rescue') || document.getElementById('tab-rescue');
+        if (destSection) {
+          switchTab('rescue');
+          destSection.scrollIntoView({ behavior: 'smooth' });
+        }
+        showToast('Please enter your destination addresses below and click Save Policy to arm your bunker.', true);
         return;
       }
       remainingSeconds = MAX_SECONDS;
