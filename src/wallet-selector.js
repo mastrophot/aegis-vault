@@ -17,6 +17,7 @@ import { setupSender } from "@near-wallet-selector/sender";
 import { setupBitteWallet } from "@near-wallet-selector/bitte-wallet";
 import { contracts, chainAdapters } from "chainsig.js";
 import { Connection } from "@solana/web3.js";
+import bs58 from "bs58";
 
 let selector = null;
 
@@ -183,11 +184,24 @@ export async function deriveVaultAddresses(accountId, path = "aegis/0", networkI
   });
   const sol = await solAdapter.deriveAddressAndPublicKey(accountId, path);
 
+  // 4. NEAR Implicit Account derived from the same Ed25519 MPC public key
+  let nearAddress = accountId;
+  try {
+    const decode = bs58.decode || bs58.default?.decode;
+    if (decode && sol.address) {
+      const decodedBytes = decode(sol.address);
+      nearAddress = (typeof Buffer !== "undefined" ? Buffer.from(decodedBytes) : new Uint8Array(decodedBytes))
+        .toString("hex");
+    }
+  } catch (e) {
+    console.warn("NEAR implicit address derivation notice:", e.message);
+  }
+
   return {
     btc: btc.address,
     evm: evm.address,
     sol: sol.address,
-    near: accountId
+    near: nearAddress
   };
 }
 

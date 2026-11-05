@@ -580,7 +580,7 @@
                   <h4 class="text-base sm:text-lg font-bold text-white truncate leading-tight">NEAR</h4>
                   <span class="text-xs font-mono px-2.5 py-0.5 rounded-full bg-white/[0.05] border border-white/[0.08] text-[#8C929D] shrink-0 font-medium">Testnet</span>
                 </div>
-                <span class="text-xs sm:text-sm text-[#8C929D] font-mono truncate block mt-0.5">Native Contract</span>
+                <span class="text-xs sm:text-sm text-[#8C929D] font-mono truncate block mt-0.5">Native Implicit (Ed25519)</span>
               </div>
             </div>
 
@@ -594,8 +594,8 @@
             <!-- Full Vault Account -->
             <div class="space-y-1.5 pt-1">
               <div class="flex items-center justify-between">
-                <span class="text-xs font-sans font-semibold text-[#A6B0C3] uppercase tracking-wider">Vault Account</span>
-                <span class="text-xs text-nearGreen font-mono font-bold">Full · Testnet</span>
+                <span class="text-xs font-sans font-semibold text-[#A6B0C3] uppercase tracking-wider">Deposit Address</span>
+                <span class="text-xs text-nearGreen font-mono font-bold">Full · Ed25519</span>
               </div>
               <div class="p-3.5 rounded-xl bg-white/[0.03] border border-white/[0.08] hover:border-white/[0.2] transition min-h-[68px] flex items-center cursor-pointer group" onclick="copyAddr('nearAddress')">
                 <span id="nearAddress" data-full="" title="Connect wallet to reveal address" class="font-mono text-xs sm:text-[13px] leading-relaxed text-[#8C929D] break-all select-all font-medium group-hover:text-nearGreen transition-colors">
@@ -1449,19 +1449,19 @@
           btc: 'tb1qgqgtsqnxqzexmq99tlqs76cff244ut0eupukmc',
           evm: '0x6491bB83A2285301925a3c2c827dbcA89E7545F8',
           sol: '9HJHEBcNJPrvK2CwCuNrp24SQfEZGTjmESL9y5E4cuHy',
-          near: 'aegis.okgoogleok.testnet'
+          near: '7b0a53a06b87f699ec3c93836607ba063278cc1b0d8be4d64006deb8695ba9f0'
         },
         1: {
           btc: 'tb1q20nt4cs2ytqcdafss3gn7enhtv83f6ml48p7dc',
           evm: '0xA899e106f808eC97eb1fD34e696F229A73a80959',
           sol: 'HRXtQKBgmd7yYATKMLSvGHtLdYYenFyT8DGvfaoNcwQn',
-          near: 'aegis.okgoogleok.testnet'
+          near: 'f403da79ef30f2d6a59238f15991a3a296c2bb42b6ee9e5030a0b9bb1cf2f3c3'
         },
         2: {
           btc: 'tb1qcca93zwj8faec7pgf2kytuz47pygj3pg2zj2v9',
           evm: '0xe9Fa7D983328f7c8981972bdc782D30B300bDC5c',
           sol: 'BEyM5qxMA4KaMGJkVJdWjk2gfdZSYi6q6kiMvGa6SYKK',
-          near: 'aegis.okgoogleok.testnet'
+          near: '982921762ab2d2f40fb8017fd3129b05ba6afdf1acba20c682d0c0932d27309a'
         }
       },
       'okgoogleok.testnet': {
@@ -1469,7 +1469,7 @@
           btc: 'tb1q3fwk3jw7qyayhun46r8gyw2ypy320s0rx9dw85',
           evm: '0x3DFF025d6A5C68D6Cf11a6a54e3d52e60E5c92bC',
           sol: 'DMHNvnt58VxCQJmUUUte5dySkCKKPFsSqL6BWa9uPwqB',
-          near: 'aegis.okgoogleok.testnet'
+          near: 'b77e60c675f139b93e0d7f9e4dacc5b82dcb3e05579c9d247983d5977f7b0af2'
         }
       }
     };
@@ -1632,7 +1632,15 @@
       const unconfiguredBanner = document.getElementById('unconfiguredBanner');
       // 3. Sync destinations directly from on-chain storage
       let hasActiveAddresses = false;
-      if (info.backup) {
+      if (info.state === 'Unconfigured') {
+        localStorage.removeItem('aegis_addresses');
+        if (!userHasInteractedWithInputs) {
+          inputIds.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.value = '';
+          });
+        }
+      } else if (info.backup) {
         const pNear = document.getElementById('panicNearAddr');
         const pBtc = document.getElementById('panicBtcAddr');
         const pEvm = document.getElementById('panicEvmAddr');
@@ -2064,12 +2072,6 @@
         const ethAddress = accounts[0];
         localStorage.setItem('aegis_connected_evm', ethAddress);
 
-        // Auto-fill backup & heir EVM inputs if empty
-        const pEvm = document.getElementById('panicEvmAddr');
-        const hEvm = document.getElementById('heirEvmAddr');
-        if (pEvm && !pEvm.value) pEvm.value = ethAddress;
-        if (hEvm && !hEvm.value) hEvm.value = ethAddress;
-
         // If no NEAR account connected yet, use EVM address as active preview for bunker derivation
         if (!localStorage.getItem('aegis_signer_account')) {
           localStorage.setItem('aegis_signer_account', ethAddress);
@@ -2078,7 +2080,7 @@
         closeMultichainWalletModal();
         updateMultichainConnectedUI();
         renderBunkerAddresses();
-        showToast(`EVM connected: ${ethAddress.slice(0, 6)}...${ethAddress.slice(-4)} (Destinations auto-filled)`);
+        showToast(`EVM connected: ${ethAddress.slice(0, 6)}...${ethAddress.slice(-4)}`);
       } catch (err) {
         console.error('[Aegis] EVM connection error:', err);
         showToast(`EVM Error: ${err.message}`, true);
@@ -2097,15 +2099,9 @@
         const solAddress = resp.publicKey ? resp.publicKey.toString() : provider.publicKey.toString();
         localStorage.setItem('aegis_connected_sol', solAddress);
 
-        // Auto-fill backup & heir SOL inputs if empty
-        const pSol = document.getElementById('panicSolAddr');
-        const hSol = document.getElementById('heirSolAddr');
-        if (pSol && !pSol.value) pSol.value = solAddress;
-        if (hSol && !hSol.value) hSol.value = solAddress;
-
         closeMultichainWalletModal();
         updateMultichainConnectedUI();
-        showToast(`Solana connected: ${solAddress.slice(0, 5)}...${solAddress.slice(-4)} (Destinations auto-filled)`);
+        showToast(`Solana connected: ${solAddress.slice(0, 5)}...${solAddress.slice(-4)}`);
       } catch (err) {
         console.error('[Aegis] Solana connection error:', err);
         showToast(`Solana Error: ${err.message}`, true);
@@ -2129,15 +2125,9 @@
         }
         localStorage.setItem('aegis_connected_btc', btcAddress);
 
-        // Auto-fill backup & heir BTC inputs if empty
-        const pBtc = document.getElementById('panicBtcAddr');
-        const hBtc = document.getElementById('heirBtcAddr');
-        if (pBtc && !pBtc.value) pBtc.value = btcAddress;
-        if (hBtc && !hBtc.value) hBtc.value = btcAddress;
-
         closeMultichainWalletModal();
         updateMultichainConnectedUI();
-        showToast(`Bitcoin connected: ${btcAddress.slice(0, 5)}...${btcAddress.slice(-4)} (Destinations auto-filled)`);
+        showToast(`Bitcoin connected: ${btcAddress.slice(0, 5)}...${btcAddress.slice(-4)}`);
       } catch (err) {
         console.error('[Aegis] Bitcoin connection error:', err);
         showToast(`Bitcoin Error: ${err.message}`, true);
@@ -3523,6 +3513,11 @@
       // Purge any legacy stale local cooldown flags
       localStorage.removeItem('aegis_cooldown_started');
       localStorage.removeItem('aegis_pending_addresses');
+
+      // Zero-Trust Clean Slate: if vault state is Unconfigured or Evacuated, purge local cache
+      if (lastFetchedVaultInfo && (lastFetchedVaultInfo.state === 'Unconfigured' || lastFetchedVaultInfo.state === 'Evacuated')) {
+        localStorage.removeItem('aegis_addresses');
+      }
 
       const saved = JSON.parse(localStorage.getItem('aegis_addresses') || '{}');
       

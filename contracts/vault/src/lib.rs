@@ -242,11 +242,12 @@ impl LastKeyVault {
         );
         vault.epoch += 1;
         vault.pending_policy = None;
-        // Keep existing backup and heir destinations so late sweeps for previous epochs can still execute
-        vault.state = VaultState::Active;
+        vault.backup = ChainAddresses::empty();
+        vault.heirs = ChainAddresses::empty();
+        vault.state = VaultState::Unconfigured;
         vault.last_ping_ns = env::block_timestamp();
         env::log_str(&format!(
-            "BUNKER_ROTATED: Epoch for {} advanced to v{}, destinations preserved, vault armed and active",
+            "BUNKER_ROTATED: Epoch for {} advanced to v{}, destinations wiped to clean slate, state reset to Unconfigured",
             caller, vault.epoch
         ));
     }
@@ -799,11 +800,12 @@ mod tests {
         assert_eq!(contract.get_vault_info(Some(alice.clone())).unwrap().state, VaultState::Evacuated);
         assert_eq!(contract.get_vault_info(Some(bob.clone())).unwrap().state, VaultState::Active);
 
-        // Alice rotates bunker -> epoch advances to 1, addresses are preserved, vault remains Active
+        // Alice rotates bunker -> epoch advances to 1, destinations wiped to clean slate, state reset to Unconfigured
         contract.rotate_bunker();
         let alice_rot = contract.get_vault_info(Some(alice.clone())).unwrap();
-        assert_eq!(alice_rot.state, VaultState::Active);
-        assert!(!alice_rot.backup.is_empty());
+        assert_eq!(alice_rot.state, VaultState::Unconfigured);
+        assert!(alice_rot.backup.is_empty());
+        assert!(alice_rot.heirs.is_empty());
         assert_eq!(alice_rot.epoch, 1);
         assert_eq!(contract.get_vault_info(Some(bob.clone())).unwrap().epoch, 0);
     }
