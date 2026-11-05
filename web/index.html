@@ -293,6 +293,7 @@
           <div class="grid grid-cols-2 gap-2.5">
             <div class="relative">
               <select id="inactivitySelect" onchange="changeInactivityPeriod(this.value)" class="w-full appearance-none bg-white/[0.04] hover:bg-white/[0.08] text-white font-semibold text-xs sm:text-sm rounded-full pl-4 pr-8 py-3 border border-white/[0.08] focus:border-nearGreen outline-none transition cursor-pointer">
+                <option value="demo_60s" class="bg-[#0B0D12] text-amber-300 font-bold">⚡ 60s (Judge Demo)</option>
                 <option value="30" class="bg-[#0B0D12]">Every 30 Days</option>
                 <option value="90" selected class="bg-[#0B0D12]">Every 90 Days</option>
                 <option value="180" class="bg-[#0B0D12]">Every 180 Days</option>
@@ -302,6 +303,7 @@
             </div>
             <div class="relative">
               <select id="graceSelect" onchange="changeGracePeriod(this.value)" class="w-full appearance-none bg-white/[0.04] hover:bg-white/[0.08] text-white font-semibold text-xs sm:text-sm rounded-full pl-4 pr-8 py-3 border border-white/[0.08] focus:border-nearGreen outline-none transition cursor-pointer">
+                <option value="demo_15s" class="bg-[#0B0D12] text-amber-300 font-bold">⚡ 15s (Judge Demo)</option>
                 <option value="3" class="bg-[#0B0D12]">Grace: 3 Days</option>
                 <option value="7" selected class="bg-[#0B0D12]">Grace: 7 Days</option>
                 <option value="14" class="bg-[#0B0D12]">Grace: 14 Days</option>
@@ -1366,6 +1368,7 @@
       <div>
         <label class="block text-xs font-semibold text-textSilver mb-1.5">Grace Buffer Duration:</label>
         <select id="modalGraceSelect" onchange="changeGracePeriod(this.value)" class="w-full bg-nearElevated text-textWhite font-mono text-xs rounded-2xl p-3.5 border border-nearBorder focus:outline-none focus:border-nearGreen transition">
+          <option value="demo_15s" class="text-amber-300 font-bold">⚡ 15s (Judge Demo)</option>
           <option value="3">3 Extra Days</option>
           <option value="7" selected>7 Extra Days (Default)</option>
           <option value="14">14 Extra Days (High Safety)</option>
@@ -1759,16 +1762,29 @@
         updateCountdownDisplay();
 
         // Sync dropdowns with real on-chain values
-        const inactDays = Math.round(Number(BigInt(info.heartbeat_interval_ns) / 86400000000000n));
+        const totalHbNs = BigInt(info.heartbeat_interval_ns);
         const inactSelect = document.getElementById('inactivitySelect');
-        if (inactSelect && [30, 90, 180, 365].includes(inactDays)) {
-          inactSelect.value = inactDays.toString();
+        if (inactSelect) {
+          if (totalHbNs <= 60000000000n) {
+            inactSelect.value = 'demo_60s';
+          } else {
+            const inactDays = Math.round(Number(totalHbNs / 86400000000000n));
+            if ([30, 90, 180, 365].includes(inactDays)) inactSelect.value = inactDays.toString();
+          }
         }
 
-        const graceDays = Math.round(Number(BigInt(info.challenge_period_ns) / 86400000000000n));
+        const totalCpNs = BigInt(info.challenge_period_ns || 604800000000000n);
         const graceSelect = document.getElementById('graceSelect');
-        if (graceSelect && [3, 7, 14, 30].includes(graceDays)) {
-          graceSelect.value = graceDays.toString();
+        const modalGrace = document.getElementById('modalGraceSelect');
+        if (totalCpNs <= 15000000000n) {
+          if (graceSelect) graceSelect.value = 'demo_15s';
+          if (modalGrace) modalGrace.value = 'demo_15s';
+        } else {
+          const graceDays = Math.round(Number(totalCpNs / 86400000000000n));
+          if ([3, 7, 14, 30].includes(graceDays)) {
+            if (graceSelect) graceSelect.value = graceDays.toString();
+            if (modalGrace) modalGrace.value = graceDays.toString();
+          }
         }
       } else {
         remainingSeconds = 0;
@@ -2088,6 +2104,7 @@
     let currentNetworkFilter = 'all';
 
     function openMultichainWalletModal() {
+      localStorage.removeItem('aegis_manual_logout');
       const modal = document.getElementById('multichainWalletModal');
       if (modal) {
         modal.classList.remove('hidden');
@@ -2151,6 +2168,7 @@
     }
 
     async function connectNearDirect(type) {
+      localStorage.removeItem('aegis_manual_logout');
       closeMultichainWalletModal();
       const moduleMap = {
         meteor: 'meteor-wallet',
@@ -2283,14 +2301,17 @@
 
     async function disconnectChain(chain) {
       if (chain === 'near') {
+        localStorage.setItem('aegis_manual_logout', 'true');
         localStorage.removeItem('aegis_signer_account');
         localStorage.removeItem('aegis_wallet_type');
         localStorage.removeItem('aegis_testnet_signer_key');
+        lastFetchedVaultInfo = null;
         updateWalletDisconnectedUI();
       } else if (chain === 'evm') {
         localStorage.removeItem('aegis_connected_evm');
         if (localStorage.getItem('aegis_signer_account')?.startsWith('0x')) {
           localStorage.removeItem('aegis_signer_account');
+          lastFetchedVaultInfo = null;
           updateWalletDisconnectedUI();
         }
       } else if (chain === 'sol') {
@@ -2304,14 +2325,17 @@
     }
 
     async function disconnectAllWallets() {
+      localStorage.setItem('aegis_manual_logout', 'true');
       localStorage.removeItem('aegis_signer_account');
       localStorage.removeItem('aegis_wallet_type');
       localStorage.removeItem('aegis_testnet_signer_key');
       localStorage.removeItem('aegis_connected_evm');
       localStorage.removeItem('aegis_connected_sol');
       localStorage.removeItem('aegis_connected_btc');
+      lastFetchedVaultInfo = null;
       updateMultichainConnectedUI();
       updateWalletDisconnectedUI();
+      renderBunkerAddresses();
       closeMultichainWalletModal();
       showToast('All wallets disconnected');
     }
@@ -2418,6 +2442,11 @@
     const connectMeteorWallet = openMultichainWalletModal; // Backward-compatibility
 
     async function initNearWallet() {
+      if (localStorage.getItem('aegis_manual_logout') === 'true') {
+        updateWalletDisconnectedUI();
+        renderBunkerAddresses();
+        return;
+      }
       let provider = window.AegisWallet || window.AegisMeteor || window.AegisWalletBundle;
       if (!provider || typeof provider.getSelector !== 'function') {
         for (let i = 0; i < 25; i++) {
@@ -2444,6 +2473,7 @@
           }
 
           sel.store.observable.subscribe((nextState) => {
+            if (localStorage.getItem('aegis_manual_logout') === 'true') return;
             const acc = nextState.accounts.find((a) => a.active)?.accountId || nextState.accounts[0]?.accountId;
             if (acc) {
               const prev = localStorage.getItem('aegis_signer_account');
@@ -2816,11 +2846,36 @@
       // 3. Vault is Active / Configurable
       if (banner) banner.classList.add('hidden');
 
-      const anyConfigured = chains.some(c => c.hasEgress);
-      if (unarmedBanner) {
-        if (!anyConfigured) unarmedBanner.classList.remove('hidden');
-        else unarmedBanner.classList.add('hidden');
+      const isArmed = lastFetchedVaultInfo && lastFetchedVaultInfo.state === 'Active' && hasConfiguredDestinations(lastFetchedVaultInfo);
+
+      // If Bunker is NOT armed (Unconfigured or no egress addresses configured at all):
+      if (!isArmed) {
+        if (pill) {
+          pill.innerText = `Derivation Path: aegis/${currentSigner}/${currentEpochIndex} (Unarmed)`;
+          pill.className = 'text-[11px] font-mono font-bold text-amber-400 bg-amber-950/40 border border-amber-500/30 px-2.5 py-0.5 rounded-full whitespace-nowrap';
+        }
+        if (unarmedBanner) unarmedBanner.classList.remove('hidden');
+
+        chains.forEach(c => {
+          if (c.addrEl) {
+            c.addrEl.innerText = 'Bunker Unarmed · Configure Egress First';
+            c.addrEl.className = 'font-mono text-xs leading-relaxed text-amber-400/80 break-all select-none font-semibold';
+            c.addrEl.dataset.full = '';
+          }
+          if (c.actionsEl) {
+            c.actionsEl.innerHTML = `
+              <button type="button" onclick="switchTab('rescue')" class="col-span-2 py-2 px-3 rounded-xl bg-amber-950/25 hover:bg-amber-950/40 border border-amber-500/25 hover:border-amber-500/40 text-center text-xs font-mono text-amber-400 flex items-center justify-center gap-1.5 transition active:scale-98 cursor-pointer">
+                <svg class="w-3.5 h-3.5 text-amber-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+                <span>Locked · Arm Vault in Tab 1 ↗</span>
+              </button>
+            `;
+          }
+        });
+        checkUnallocatedFunds();
+        return;
       }
+
+      if (unarmedBanner) unarmedBanner.classList.add('hidden');
 
       if (pill) {
         pill.innerText = `Derivation Path: aegis/${currentSigner}/${currentEpochIndex} (Active)`;
@@ -2846,7 +2901,7 @@
           btc: 'Deriving via NEAR MPC...',
           evm: 'Deriving via NEAR MPC...',
           sol: 'Deriving via NEAR MPC...',
-          near: CONTRACT_ID
+          near: 'Deriving via NEAR MPC...'
         };
         if (window.AegisMeteor && typeof window.AegisMeteor.deriveVaultAddresses === 'function') {
           window.AegisMeteor.deriveVaultAddresses(CONTRACT_ID, `aegis/${currentSigner}/${currentEpochIndex}`, 'testnet')
@@ -2869,14 +2924,14 @@
           }
           if (c.actionsEl) {
             c.actionsEl.innerHTML = `
-              <button type="button" onclick="switchTab('rescue')" class="col-span-2 py-2 px-3 rounded-xl bg-amber-950/25 hover:bg-amber-950/40 border border-amber-500/25 hover:border-amber-500/40 text-center text-xs font-mono text-amber-400 flex items-center justify-center gap-1.5 transition active:scale-98">
-                <svg class="w-3.5 h-3.5 text-amber-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+              <button type="button" onclick="switchTab('rescue')" class="col-span-2 py-2 px-3 rounded-xl bg-amber-950/25 hover:bg-amber-950/40 border border-amber-500/25 hover:border-amber-500/40 text-center text-xs font-mono text-amber-400 flex items-center justify-center gap-1.5 transition active:scale-98 cursor-pointer">
+                <svg class="w-3.5 h-3.5 text-amber-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
                 <span>Locked · Set Egress in Tab 1 ↗</span>
               </button>
             `;
           }
         } else {
-          const addr = (c.id === 'near' ? (addresses.near || CONTRACT_ID) : addresses[c.id]) || '';
+          const addr = addresses[c.id] || '';
           if (c.addrEl) {
             c.addrEl.innerText = addr;
             c.addrEl.className = 'font-mono text-xs sm:text-[13px] leading-relaxed text-[#8C929D] break-all select-all font-medium group-hover:text-nearGreen transition-colors';
@@ -2982,7 +3037,7 @@
         btc: document.getElementById('btcAddress')?.dataset?.full || '',
         evm: document.getElementById('evmAddress')?.dataset?.full || '',
         sol: document.getElementById('solAddress')?.dataset?.full || '',
-        near: document.getElementById('nearAddress')?.dataset?.full || CONTRACT_ID
+        near: document.getElementById('nearAddress')?.dataset?.full || ''
       };
 
       // In Evacuated state, addresses are masked in UI, but we check burned addresses for leftover funds
@@ -2998,97 +3053,118 @@
             btc: cachedAddr.btc || '',
             evm: cachedAddr.evm || '',
             sol: cachedAddr.sol || '',
-            near: cachedAddr.near || CONTRACT_ID
+            near: (cachedAddr.near && cachedAddr.near !== CONTRACT_ID) ? cachedAddr.near : ''
           };
         }
       }
 
-      if (!curr.btc || curr.btc.includes('Deriving') || curr.btc.includes('Connect') || curr.btc.includes('Unarmed') || curr.btc.includes('Burned')) return;
+      // 1. NEAR Implicit Bunker Balance via FastNEAR
+      if (curr.near && curr.near !== CONTRACT_ID && curr.near.length === 64 && !curr.near.includes(' ')) {
+        try {
+          const nearRes = await fetch('https://test.rpc.fastnear.com', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              jsonrpc: '2.0',
+              id: 'aegis',
+              method: 'query',
+              params: {
+                request_type: 'view_account',
+                finality: 'final',
+                account_id: curr.near
+              }
+            })
+          }).then(r => r.json());
 
-      // 1. NEAR Testnet RPC View Account
-      try {
-        const nearRes = await fetch('https://rpc.testnet.near.org', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            jsonrpc: '2.0',
-            id: 'aegis',
-            method: 'query',
-            params: {
-              request_type: 'view_account',
-              finality: 'final',
-              account_id: curr.near
-            }
-          })
-        }).then(r => r.json());
-
-        if (nearRes?.result?.amount) {
-          const yoctoStr = nearRes.result.amount;
-          const nearVal = Number(BigInt(yoctoStr) / 100000000000000000000n) / 10000;
-          if (nearBalEl) nearBalEl.innerHTML = `${nearVal.toFixed(4)} <span class="text-sm font-normal text-[#8C929D]">NEAR</span>`;
-          if (nearUsdEl) nearUsdEl.innerText = `≈ ${(nearVal * prices.NEAR).toFixed(2)} USD`;
+          if (nearRes?.result?.amount) {
+            const yoctoStr = nearRes.result.amount;
+            const nearVal = Number(BigInt(yoctoStr) / 100000000000000000000n) / 10000;
+            if (nearBalEl) nearBalEl.innerHTML = `${nearVal.toFixed(4)} <span class="text-sm font-normal text-[#8C929D]">NEAR</span>`;
+            if (nearUsdEl) nearUsdEl.innerText = `≈ ${(nearVal * prices.NEAR).toFixed(2)} USD`;
+          } else {
+            if (nearBalEl) nearBalEl.innerHTML = `0.0000 <span class="text-sm font-normal text-[#8C929D]">NEAR</span>`;
+            if (nearUsdEl) nearUsdEl.innerText = `≈ 0.00 USD`;
+          }
+        } catch (e) {
+          console.warn('NEAR RPC failed', e);
         }
-      } catch (e) {
-        console.warn('NEAR RPC failed', e);
+      } else {
+        if (nearBalEl) nearBalEl.innerHTML = `0.0000 <span class="text-sm font-normal text-[#8C929D]">NEAR</span>`;
+        if (nearUsdEl) nearUsdEl.innerText = `≈ 0.00 USD`;
       }
 
       // 2. Sepolia EVM RPC
-      try {
-        const evmRes = await fetch('https://ethereum-sepolia-rpc.publicnode.com', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            jsonrpc: '2.0',
-            id: 1,
-            method: 'eth_getBalance',
-            params: [curr.evm, 'latest']
-          })
-        }).then(r => r.json());
+      if (curr.evm && curr.evm.startsWith('0x') && curr.evm.length === 42) {
+        try {
+          const evmRes = await fetch('https://ethereum-sepolia-rpc.publicnode.com', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              jsonrpc: '2.0',
+              id: 1,
+              method: 'eth_getBalance',
+              params: [curr.evm, 'latest']
+            })
+          }).then(r => r.json());
 
-        if (evmRes?.result !== undefined) {
-          const wei = BigInt(evmRes.result);
-          const ethVal = Number(wei / 100000000000000n) / 10000;
-          if (evmBalEl) evmBalEl.innerHTML = `${ethVal.toFixed(4)} <span class="text-sm font-normal text-[#8C929D]">ETH</span>`;
-          if (evmUsdEl) evmUsdEl.innerText = `≈ ${(ethVal * prices.ETH).toFixed(2)} USD`;
+          if (evmRes?.result !== undefined) {
+            const wei = BigInt(evmRes.result);
+            const ethVal = Number(wei / 100000000000000n) / 10000;
+            if (evmBalEl) evmBalEl.innerHTML = `${ethVal.toFixed(4)} <span class="text-sm font-normal text-[#8C929D]">ETH</span>`;
+            if (evmUsdEl) evmUsdEl.innerText = `≈ ${(ethVal * prices.ETH).toFixed(2)} USD`;
+          }
+        } catch (e) {
+          console.warn('EVM RPC failed', e);
         }
-      } catch (e) {
-        console.warn('EVM RPC failed', e);
+      } else {
+        if (evmBalEl) evmBalEl.innerHTML = `0.0000 <span class="text-sm font-normal text-[#8C929D]">ETH</span>`;
+        if (evmUsdEl) evmUsdEl.innerText = `≈ 0.00 USD`;
       }
 
       // 3. Solana Devnet RPC
-      try {
-        const solRes = await fetch('https://api.devnet.solana.com', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            jsonrpc: '2.0',
-            id: 1,
-            method: 'getBalance',
-            params: [curr.sol]
-          })
-        }).then(r => r.json());
+      if (curr.sol && curr.sol.length >= 32 && !curr.sol.includes(' ') && !curr.sol.includes('Locked') && !curr.sol.includes('Deriving')) {
+        try {
+          const solRes = await fetch('https://api.devnet.solana.com', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              jsonrpc: '2.0',
+              id: 1,
+              method: 'getBalance',
+              params: [curr.sol]
+            })
+          }).then(r => r.json());
 
-        if (solRes?.result?.value !== undefined) {
-          const lamports = solRes.result.value;
-          const solVal = lamports / 1e9;
-          if (solBalEl) solBalEl.innerHTML = `${solVal.toFixed(4)} <span class="text-sm font-normal text-[#8C929D]">SOL</span>`;
-          if (solUsdEl) solUsdEl.innerText = `≈ ${(solVal * prices.SOL).toFixed(2)} USD`;
+          if (solRes?.result?.value !== undefined) {
+            const lamports = solRes.result.value;
+            const solVal = lamports / 1e9;
+            if (solBalEl) solBalEl.innerHTML = `${solVal.toFixed(4)} <span class="text-sm font-normal text-[#8C929D]">SOL</span>`;
+            if (solUsdEl) solUsdEl.innerText = `≈ ${(solVal * prices.SOL).toFixed(2)} USD`;
+          }
+        } catch (e) {
+          console.warn('Solana RPC failed', e);
         }
-      } catch (e) {
-        console.warn('Solana RPC failed', e);
+      } else {
+        if (solBalEl) solBalEl.innerHTML = `0.0000 <span class="text-sm font-normal text-[#8C929D]">SOL</span>`;
+        if (solUsdEl) solUsdEl.innerText = `≈ 0.00 USD`;
       }
 
       // 4. Bitcoin Testnet Mempool.space
-      try {
-        const btcRes = await fetch(`https://mempool.space/testnet/api/address/${curr.btc}`).then(r => r.json());
-        if (btcRes?.chain_stats) {
-          const funded = (btcRes.chain_stats.funded_txo_sum || 0) - (btcRes.chain_stats.spent_txo_sum || 0);
-          const btcVal = funded / 1e8;
-          if (btcBalEl) btcBalEl.innerHTML = `${btcVal.toFixed(4)} <span class="text-sm font-normal text-[#8C929D]">BTC</span>`;
-          if (btcUsdEl) btcUsdEl.innerText = `≈ ${(btcVal * prices.BTC).toFixed(2)} USD`;
+      if (curr.btc && (curr.btc.startsWith('tb1') || curr.btc.startsWith('bc1') || curr.btc.startsWith('m') || curr.btc.startsWith('n')) && !curr.btc.includes(' ')) {
+        try {
+          const btcRes = await fetch(`https://mempool.space/testnet/api/address/${curr.btc}`).then(r => r.json());
+          if (btcRes?.chain_stats) {
+            const funded = (btcRes.chain_stats.funded_txo_sum || 0) - (btcRes.chain_stats.spent_txo_sum || 0);
+            const btcVal = funded / 1e8;
+            if (btcBalEl) btcBalEl.innerHTML = `${btcVal.toFixed(4)} <span class="text-sm font-normal text-[#8C929D]">BTC</span>`;
+            if (btcUsdEl) btcUsdEl.innerText = `≈ ${(btcVal * prices.BTC).toFixed(2)} USD`;
+          }
+        } catch (e) {
+          console.warn('BTC testnet failed', e);
         }
-      } catch (e) {
-        console.warn('BTC testnet failed', e);
+      } else {
+        if (btcBalEl) btcBalEl.innerHTML = `0.0000 <span class="text-sm font-normal text-[#8C929D]">BTC</span>`;
+        if (btcUsdEl) btcUsdEl.innerText = `≈ 0.00 USD`;
       }
 
       // Save to 1-hour cache scoped to account
@@ -3264,27 +3340,44 @@
       setInterval(() => fetchLiveBalances(false), 60 * 60 * 1000); // Poll once per hour (prevents RPC spam)
     });
 
-    function changeInactivityPeriod(days) {
-      inactivityDays = parseInt(days);
-      MAX_SECONDS = inactivityDays * 24 * 3600;
-      remainingSeconds = MAX_SECONDS;
-      localStorage.setItem('aegis_inactivity_days', days);
+    function changeInactivityPeriod(val) {
+      let hbNs;
+      if (val === 'demo_60s') {
+        MAX_SECONDS = 60;
+        remainingSeconds = 60;
+        hbNs = '60000000000'; // 60 seconds
+        localStorage.setItem('aegis_inactivity_days', 'demo_60s');
+        showToast('⚡ Judge Demo Mode: 60s Heartbeat Activated!');
+      } else {
+        inactivityDays = parseInt(val);
+        MAX_SECONDS = inactivityDays * 24 * 3600;
+        remainingSeconds = MAX_SECONDS;
+        hbNs = (BigInt(val) * 86400n * 1000000000n).toString();
+        localStorage.setItem('aegis_inactivity_days', val);
+        showToast(`Broadcasting check-in timer update (${val} days) to NEAR...`);
+      }
       updateCountdownDisplay();
-      const hbNs = (BigInt(days) * 86400n * 1000000000n).toString();
       dispatchNearTransaction('update_intervals', { heartbeat_interval_ns: hbNs, challenge_period_ns: null });
-      showToast(`Broadcasting check-in timer update (${days} days) to NEAR...`);
     }
 
-    function changeGracePeriod(days) {
-      graceDays = parseInt(days);
+    function changeGracePeriod(val) {
+      let cpNs;
       const sel1 = document.getElementById('graceSelect');
       const sel2 = document.getElementById('modalGraceSelect');
-      if (sel1) sel1.value = days;
-      if (sel2) sel2.value = days;
-      localStorage.setItem('aegis_grace_days', days);
-      const cpNs = (BigInt(days) * 86400n * 1000000000n).toString();
+      if (sel1) sel1.value = val;
+      if (sel2) sel2.value = val;
+
+      if (val === 'demo_15s') {
+        cpNs = '15000000000'; // 15 seconds
+        localStorage.setItem('aegis_grace_days', 'demo_15s');
+        showToast('⚡ Judge Demo Mode: 15s Grace Window Activated!');
+      } else {
+        graceDays = parseInt(val);
+        cpNs = (BigInt(val) * 86400n * 1000000000n).toString();
+        localStorage.setItem('aegis_grace_days', val);
+        showToast(`Broadcasting grace period update (${val} days) to NEAR...`);
+      }
       dispatchNearTransaction('update_intervals', { heartbeat_interval_ns: null, challenge_period_ns: cpNs });
-      showToast(`Broadcasting grace period update (${days} days) to NEAR...`);
     }
 
     function openGraceModal() {
@@ -3961,7 +4054,10 @@
           const linkEl = document.getElementById('monitorBtcLink');
           if (statusEl && s.status) statusEl.innerText = s.status;
           if (linkEl && s.explorer) {
-            linkEl.innerHTML = `<a href="${s.explorer}" target="_blank" rel="noopener noreferrer" class="text-amber-400 hover:underline flex items-center gap-1 font-mono">View on Mempool.space ↗</a>`;
+            const mpcLink = s.near_mpc_tx
+              ? ` <span class="text-white/20">|</span> <a href="${s.near_mpc_tx}" target="_blank" rel="noopener noreferrer" class="text-nearGreen hover:underline">MPC Proof (v1.signer) ↗</a>`
+              : '';
+            linkEl.innerHTML = `<a href="${s.explorer}" target="_blank" rel="noopener noreferrer" class="text-amber-400 hover:underline font-mono">View on Mempool.space ↗</a>${mpcLink}`;
           }
         }
         if (t.sweeps.evm) {
@@ -3970,7 +4066,10 @@
           const linkEl = document.getElementById('monitorEvmLink');
           if (statusBadge && s.status) statusBadge.innerText = s.status;
           if (linkEl && s.explorer) {
-            linkEl.innerHTML = `<a href="${s.explorer}" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:underline flex items-center gap-1 font-mono">View on Etherscan ↗</a>`;
+            const mpcLink = s.near_mpc_tx
+              ? ` <span class="text-white/20">|</span> <a href="${s.near_mpc_tx}" target="_blank" rel="noopener noreferrer" class="text-nearGreen hover:underline">MPC Proof (v1.signer) ↗</a>`
+              : '';
+            linkEl.innerHTML = `<a href="${s.explorer}" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:underline font-mono">View on Etherscan ↗</a>${mpcLink}`;
           }
         }
         if (t.sweeps.sol) {
@@ -3979,7 +4078,10 @@
           const linkEl = document.getElementById('monitorSolLink');
           if (statusEl && s.status) statusEl.innerText = s.status;
           if (linkEl && s.explorer) {
-            linkEl.innerHTML = `<a href="${s.explorer}" target="_blank" rel="noopener noreferrer" class="text-purple-400 hover:underline flex items-center gap-1 font-mono">View on Solscan ↗</a>`;
+            const mpcLink = s.near_mpc_tx
+              ? ` <span class="text-white/20">|</span> <a href="${s.near_mpc_tx}" target="_blank" rel="noopener noreferrer" class="text-nearGreen hover:underline">MPC Proof (v1.signer) ↗</a>`
+              : '';
+            linkEl.innerHTML = `<a href="${s.explorer}" target="_blank" rel="noopener noreferrer" class="text-purple-400 hover:underline font-mono">View on Solscan ↗</a>${mpcLink}`;
           }
         }
         if (t.sweeps.near) {
@@ -3988,7 +4090,10 @@
           const linkEl = document.getElementById('monitorNearLink');
           if (statusEl && s.status) statusEl.innerText = s.status;
           if (linkEl && s.explorer) {
-            linkEl.innerHTML = `<a href="${s.explorer}" target="_blank" rel="noopener noreferrer" class="text-nearGreen hover:underline flex items-center gap-1 font-mono">View on NearBlocks ↗</a>`;
+            const mpcLink = s.near_mpc_tx
+              ? ` <span class="text-white/20">|</span> <a href="${s.near_mpc_tx}" target="_blank" rel="noopener noreferrer" class="text-nearGreen hover:underline">MPC Proof (v1.signer) ↗</a>`
+              : '';
+            linkEl.innerHTML = `<a href="${s.explorer}" target="_blank" rel="noopener noreferrer" class="text-nearGreen hover:underline font-mono">View on NearBlocks ↗</a>${mpcLink}`;
           }
         }
       }).catch(e => {

@@ -619,11 +619,15 @@ class LastKeySweepRelayer {
     const fromPubkey = new web3.PublicKey(fromPubkeyStr);
     const message = web3.Message.from(Buffer.from(serializedMessageBase64, 'base64'));
     const tx = web3.Transaction.populate(message);
-    const sigBytes = Buffer.isBuffer(mpcEddsaSignature)
-      ? mpcEddsaSignature
-      : Buffer.from((mpcEddsaSignature.signature || mpcEddsaSignature).replace(/^0x/, ''), 'hex');
+    const rawSig = mpcEddsaSignature?.signature || mpcEddsaSignature;
+    const sigBytes = Buffer.isBuffer(rawSig)
+      ? rawSig
+      : Array.isArray(rawSig)
+        ? Buffer.from(rawSig)
+        : Buffer.from(String(rawSig).replace(/^0x/, ''), 'hex');
     tx.addSignature(fromPubkey, sigBytes);
     return {
+      txHex: Buffer.from(tx.serialize({ verifySignatures: false, requireAllSignatures: false })).toString('hex'),
       signedTxBase64: tx.serialize({ verifySignatures: false, requireAllSignatures: false }).toString('base64'),
       signatureHex: sigBytes.toString('hex')
     };

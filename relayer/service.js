@@ -24,7 +24,7 @@ class AegisRelayerService {
     this.relayerAccountId = config.relayerAccountId || 'okgoogleok.testnet';
     this.credPath = config.credPath || path.resolve(__dirname, '../.credentials/okgoogleok.testnet.json');
     this.telemetryPath = config.telemetryPath || path.resolve(__dirname, '../web/telemetry.json');
-    this.nearRpcUrl = config.nearRpcUrl || 'https://rpc.testnet.near.org';
+    this.nearRpcUrl = config.nearRpcUrl || 'https://test.rpc.fastnear.com';
     this.evmRpcUrl = config.evmRpcUrl || 'https://ethereum-sepolia-rpc.publicnode.com';
     this.solanaRpcUrl = config.solanaRpcUrl || 'https://api.devnet.solana.com';
 
@@ -355,8 +355,7 @@ class AegisRelayerService {
 
         let solSig = 'sol_' + nearTxHash.slice(0, 16);
         if (mpcSignature) {
-          const sigBytes = Buffer.from(mpcSignature.signature || mpcSignature, 'hex');
-          const signedSol = this.engine.assembleSignedSolanaTx(solSweep.serializedMessage, vaultAddrs.sol.address, sigBytes);
+          const signedSol = this.engine.assembleSignedSolanaTx(solSweep.serializedMessage, vaultAddrs.sol.address, mpcSignature);
           solSig = signedSol.signatureHex.slice(0, 32);
           console.log(`   ✅ Solana Transaction Assembled! Sig: ${solSig}`);
           try {
@@ -530,7 +529,7 @@ class AegisRelayerService {
   /**
    * Monitor loop
    */
-  async startMonitoring(monitoredAccounts = ['newapp9955.testnet', 'okgoogleok.testnet'], intervalMs = 10000) {
+  async startMonitoring(monitoredAccounts = ['newapp9955.testnet', 'okgoogleok.testnet', 'mastrophot.testnet'], intervalMs = 10000) {
     await this.init();
     console.log(`🔍 [Aegis Relayer] Polling contract ${this.contractId} every ${intervalMs / 1000}s for accounts:`, monitoredAccounts);
 

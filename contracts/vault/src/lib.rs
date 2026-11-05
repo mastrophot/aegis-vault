@@ -1,4 +1,5 @@
 use near_sdk::borsh::{BorshDeserialize, BorshSerialize};
+use near_sdk::json_types::U64;
 use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::store::LookupMap;
 use near_sdk::{
@@ -259,13 +260,16 @@ impl LastKeyVault {
         );
         vault.epoch += 1;
         vault.pending_policy = None;
-        vault.backup = ChainAddresses::empty();
-        vault.heirs = ChainAddresses::empty();
-        vault.state = VaultState::Unconfigured;
+        // Preserve configured backup and heir addresses across rotations
+        vault.state = if vault.backup.is_empty() && vault.heirs.is_empty() {
+            VaultState::Unconfigured
+        } else {
+            VaultState::Active
+        };
         vault.last_ping_ns = env::block_timestamp();
         env::log_str(&format!(
-            "BUNKER_ROTATED: Epoch for {} advanced to v{}, destinations wiped to clean slate, state reset to Unconfigured",
-            caller, vault.epoch
+            "BUNKER_ROTATED: Epoch for {} advanced to v{}, destinations preserved, state set to {:?}",
+            caller, vault.epoch, vault.state
         ));
     }
 
@@ -419,8 +423,8 @@ impl LastKeyVault {
     #[payable]
     pub fn update_intervals(
         &mut self,
-        heartbeat_interval_ns: Option<u64>,
-        challenge_period_ns: Option<u64>,
+        heartbeat_interval_ns: Option<U64>,
+        challenge_period_ns: Option<U64>,
     ) {
         let caller = env::predecessor_account_id();
         let vault = self.vaults.get_mut(&caller).expect("No vault found for account");
@@ -430,12 +434,12 @@ impl LastKeyVault {
             "Cannot update intervals during active 72h policy cooldown"
         );
         if let Some(hb) = heartbeat_interval_ns {
-            require!(hb >= 86_400_000_000_000, "Heartbeat interval must be at least 1 day");
-            vault.heartbeat_interval_ns = hb;
+            require!(hb.0 >= 15_000_000_000, "Heartbeat interval must be at least 15 seconds");
+            vault.heartbeat_interval_ns = hb.0;
         }
         if let Some(cp) = challenge_period_ns {
-            require!(cp >= 86_400_000_000_000, "Challenge period must be at least 1 day");
-            vault.challenge_period_ns = cp;
+            require!(cp.0 >= 15_000_000_000, "Challenge period must be at least 15 seconds");
+            vault.challenge_period_ns = cp.0;
         }
         vault.last_ping_ns = env::block_timestamp();
         env::log_str(&format!("INTERVALS_UPDATED: Intervals updated for {}", caller));
@@ -854,12 +858,12 @@ mod tests {
         assert_eq!(contract.get_vault_info(Some(alice.clone())).unwrap().state, VaultState::Evacuated);
         assert_eq!(contract.get_vault_info(Some(bob.clone())).unwrap().state, VaultState::Active);
 
-        // Alice rotates bunker -> epoch advances to 1, destinations wiped to clean slate, state reset to Unconfigured
+        // Alice rotates bunker -> epoch advances to 1, destinations preserved, state active
         contract.rotate_bunker();
         let alice_rot = contract.get_vault_info(Some(alice.clone())).unwrap();
-        assert_eq!(alice_rot.state, VaultState::Unconfigured);
-        assert!(alice_rot.backup.is_empty());
-        assert!(alice_rot.heirs.is_empty());
+        assert_eq!(alice_rot.state, VaultState::Active);
+        assert!(!alice_rot.backup.is_empty());
+        assert!(!alice_rot.heirs.is_empty());
         assert_eq!(alice_rot.epoch, 1);
         assert_eq!(contract.get_vault_info(Some(bob.clone())).unwrap().epoch, 0);
     }
