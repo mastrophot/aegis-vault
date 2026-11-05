@@ -340,6 +340,17 @@ impl LastKeyVault {
         }
 
         let vault = self.vaults.get_mut(&caller).unwrap();
+
+        // If vault is already evacuated, allow owner to fill in previously empty destination slots for leftover assets
+        if vault.state == VaultState::Evacuated {
+            let is_replacing = vault.backup.is_replacing_existing(&backup);
+            require!(!is_replacing, "Cannot overwrite already established evacuation addresses in Evacuated state");
+            vault.backup = backup;
+            vault.last_ping_ns = env::block_timestamp();
+            env::log_str(&format!("POLICY_UPDATED_EVACUATED: Leftover destinations added for {}", caller));
+            return;
+        }
+
         require!(
             vault.state == VaultState::Active || vault.state == VaultState::Unconfigured,
             "Can only update policy in Active or Unconfigured state"
@@ -400,7 +411,8 @@ impl LastKeyVault {
         env::log_str(&format!("POLICY_CANCELLED: Pending policy cancelled for {}", caller));
     }
 
-    /// Update heartbeat interval and challenge (grace) period for caller's bunker
+    /// Update heartbeat interval and challenge (grace) period for caller's bunker.
+    /// Strictly blocked if a 72-hour policy cooldown is active to prevent acceleration attacks.
     #[payable]
     pub fn update_intervals(
         &mut self,
@@ -410,6 +422,10 @@ impl LastKeyVault {
         let caller = env::predecessor_account_id();
         let vault = self.vaults.get_mut(&caller).expect("No vault found for account");
         require!(vault.state == VaultState::Active, "Can only update intervals in Active state");
+        require!(
+            vault.pending_policy.is_none(),
+            "Cannot update intervals during active 72h policy cooldown"
+        );
         if let Some(hb) = heartbeat_interval_ns {
             require!(hb >= 86_400_000_000_000, "Heartbeat interval must be at least 1 day");
             vault.heartbeat_interval_ns = hb;
@@ -432,38 +448,44 @@ impl LastKeyVault {
         env::log_str(&format!("RELAYER_UPDATED: Authorized relayer updated for {}", caller));
     }
 
-    /// Start inheritance claim: callable by designated heirs or relayer if heartbeat interval has elapsed
-    pub fn start_claim(&mut self, vault_owner: AccountId) {
-        let caller = env::predecessor_account_id();
+    /// Autonomous push inheritance trigger: callable by anyone (relayer, keeper bot, heir)
+    /// once the owner's heartbeat interval + grace period has expired without any owner interaction.
+    /// Strictly blocked if a 72-hour policy cooldown is active!
+    pub fn trigger_push_inheritance(&mut self, vault_owner: AccountId) {
         let vault = self.vaults.get_mut(&vault_owner).expect("Target vault not found");
-        require!(vault.state == VaultState::Active, "Vault must be Active to start claim");
-        let now = env::block_timestamp();
         require!(
-            now > vault.last_ping_ns + vault.heartbeat_interval_ns,
-            "Heartbeat interval has not expired yet"
+            vault.state == VaultState::Active || matches!(vault.state, VaultState::Claiming { .. }),
+            "Vault must be Active to trigger push inheritance"
         );
-        let is_heir_or_relayer = vault.heirs.near.as_ref().map_or(false, |h| h == &caller)
-            || vault.authorized_relayer.as_ref().map_or(false, |r| r == &caller)
-            || self.default_relayer.as_ref().map_or(false, |r| r == &caller);
-        require!(is_heir_or_relayer, "Only designated heir or authorized relayer can initiate claim");
-        vault.state = VaultState::Claiming { since_ns: now };
-        env::log_str(&format!("CLAIM_STARTED: Challenge window opened for {}", vault_owner));
+        require!(
+            vault.pending_policy.is_none(),
+            "Cannot trigger push inheritance while 72h policy cooldown is active"
+        );
+        let now = env::block_timestamp();
+        let total_inactivity_ns = vault.heartbeat_interval_ns.saturating_add(vault.challenge_period_ns);
+        require!(
+            now >= vault.last_ping_ns.saturating_add(total_inactivity_ns),
+            "Owner inactivity period (heartbeat + grace) has not elapsed yet"
+        );
+        require!(
+            !vault.heirs.is_empty(),
+            "Cannot trigger inheritance: no heir destination addresses configured"
+        );
+        vault.state = VaultState::Inheritance;
+        env::log_str(&format!(
+            "PUSH_INHERITANCE_TRIGGERED: Owner {} inactive for full period. Vault shifted to Inheritance. Autonomous multichain sweep unlocked for heirs.",
+            vault_owner
+        ));
     }
 
-    /// Finalize claim: transitions vault to Inheritance if challenge period has elapsed without an owner ping
+    /// Backwards compatibility helper for start_claim
+    pub fn start_claim(&mut self, vault_owner: AccountId) {
+        self.trigger_push_inheritance(vault_owner);
+    }
+
+    /// Backwards compatibility helper for finalize_claim
     pub fn finalize_claim(&mut self, vault_owner: AccountId) {
-        let vault = self.vaults.get_mut(&vault_owner).expect("Target vault not found");
-        if let VaultState::Claiming { since_ns } = vault.state {
-            let now = env::block_timestamp();
-            require!(
-                now >= since_ns + vault.challenge_period_ns,
-                "Challenge period still active"
-            );
-            vault.state = VaultState::Inheritance;
-            env::log_str(&format!("CLAIM_FINALIZED: Inheritance state active for {}. Sweeping unlocked for heirs.", vault_owner));
-        } else {
-            env::panic_str("Vault is not in Claiming state");
-        }
+        self.trigger_push_inheritance(vault_owner);
     }
 
     /// Requests an MPC threshold signature from v1.signer for a foreign chain transaction
@@ -537,13 +559,16 @@ impl LastKeyVault {
             };
             (SignPayloadV2::Ecdsa(ecdsa_hash), 0)
         } else {
-            // Solana & EdDSA chains
+            // Solana, NEAR & EdDSA chains (domain_id = 1)
             require!(!clean_hex.is_empty() && clean_hex.len() <= 2464 && hex::decode(&clean_hex).is_ok(), "Invalid EdDSA hex");
-            let raw_msg_bytes = hex::decode(&clean_hex).unwrap_or_else(|_| env::panic_str("Invalid EdDSA hex"));
-            require!(
-                verify_solana_sweep_payload(&raw_msg_bytes, &target_destination.sol),
-                "Solana transaction message failed security validation against target recipient"
-            );
+            let is_near = chain.eq_ignore_ascii_case("NEAR");
+            if !is_near {
+                let raw_msg_bytes = hex::decode(&clean_hex).unwrap_or_else(|_| env::panic_str("Invalid EdDSA hex"));
+                require!(
+                    verify_solana_sweep_payload(&raw_msg_bytes, &target_destination.sol),
+                    "Solana transaction message failed security validation against target recipient"
+                );
+            }
             (SignPayloadV2::Eddsa(clean_hex), 1)
         };
 
@@ -602,7 +627,10 @@ impl LastKeyVault {
     /// Returns vault information for the requested account_id (or caller if omitted).
     /// Returns None if the account does not have a configured vault.
     pub fn get_vault_info(&self, account_id: Option<AccountId>) -> Option<VaultInfo> {
-        let target = account_id.unwrap_or_else(|| env::predecessor_account_id());
+        let target = match account_id {
+            Some(acc) => acc,
+            None => return None,
+        };
         self.vaults.get(&target).map(|vault| VaultInfo {
             owner: target.clone(),
             mpc_contract: self.mpc_contract.clone(),
@@ -836,7 +864,7 @@ mod tests {
     #[test]
     fn test_claim_lifecycle_and_ping_recovery() {
         let owner: AccountId = "alice.testnet".parse().unwrap();
-        let heir_caller: AccountId = "heir.testnet".parse().unwrap();
+        let anyone_caller: AccountId = "random_relayer.testnet".parse().unwrap();
         let mpc: AccountId = "v1.signer-prod.testnet".parse().unwrap();
         let (backup, heirs) = sample_addresses();
 
@@ -850,47 +878,63 @@ mod tests {
         let mut contract = LastKeyVault::new(mpc, None);
         contract.propose_policy(backup, heirs);
 
-        // Advance time before heartbeat -> claim should fail
+        // 1. Advance time before full inactivity (heartbeat + challenge) -> trigger_push_inheritance MUST fail
         testing_env!(context
-            .predecessor_account_id(heir_caller.clone())
-            .block_timestamp(t0 + heartbeat_ns - 100)
+            .predecessor_account_id(anyone_caller.clone())
+            .block_timestamp(t0 + heartbeat_ns + challenge_ns - 100)
             .build());
         
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            // Cannot start claim before heartbeat
+        let early_res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            contract.trigger_push_inheritance(owner.clone());
         }));
-        assert!(result.is_ok());
+        assert!(early_res.is_err(), "Push inheritance should fail before heartbeat + grace window expires");
 
-        // Advance time past heartbeat -> start claim
-        let claim_time = t0 + heartbeat_ns + 1000;
-        testing_env!(context
-            .predecessor_account_id(heir_caller.clone())
-            .block_timestamp(claim_time)
-            .build());
-        contract.start_claim(owner.clone());
-        assert_eq!(contract.get_vault_info(Some(owner.clone())).unwrap().state, VaultState::Claiming { since_ns: claim_time });
-
-        // Owner pings alive -> cancels claim
+        // 2. Owner pings alive -> resets timer
+        let ping_time = t0 + heartbeat_ns;
         testing_env!(context
             .predecessor_account_id(owner.clone())
-            .block_timestamp(claim_time + 100)
+            .block_timestamp(ping_time)
             .build());
         contract.ping();
         assert_eq!(contract.get_vault_info(Some(owner.clone())).unwrap().state, VaultState::Active);
+        assert_eq!(contract.get_vault_info(Some(owner.clone())).unwrap().last_ping_ns, ping_time);
 
-        // Finalize claim after challenge period
-        let new_claim_time = claim_time + heartbeat_ns + 5000;
-        testing_env!(context
-            .predecessor_account_id(heir_caller.clone())
-            .block_timestamp(new_claim_time)
-            .build());
-        contract.start_claim(owner.clone());
+        // 3. Propose a policy change -> pending policy timelock active
+        let new_backup = ChainAddresses {
+            btc: "tb1qmodified".to_string(),
+            evm: "0x5555555555555555555555555555555555555555".to_string(),
+            sol: "SolanaMod55555555555555555555555555555555".to_string(),
+            near: None,
+        };
+        contract.propose_policy(new_backup, ChainAddresses::empty());
+        assert!(contract.get_vault_info(Some(owner.clone())).unwrap().pending_policy.is_some());
 
+        // 4. Even if past inactivity time, trigger_push_inheritance MUST fail while pending policy is active!
         testing_env!(context
-            .predecessor_account_id(heir_caller.clone())
-            .block_timestamp(new_claim_time + challenge_ns + 1)
+            .predecessor_account_id(anyone_caller.clone())
+            .block_timestamp(ping_time + heartbeat_ns + challenge_ns + 100)
             .build());
-        contract.finalize_claim(owner.clone());
+        let timelock_blocked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            contract.trigger_push_inheritance(owner.clone());
+        }));
+        assert!(timelock_blocked.is_err(), "Push inheritance MUST be blocked while policy cooldown is pending");
+
+        // 5. Cancel pending policy proves owner is alive (resets heartbeat).
+        let cancel_time = ping_time + heartbeat_ns + challenge_ns + 200;
+        testing_env!(context
+            .predecessor_account_id(owner.clone())
+            .block_timestamp(cancel_time)
+            .build());
+        contract.cancel_policy();
+        assert_eq!(contract.get_vault_info(Some(owner.clone())).unwrap().last_ping_ns, cancel_time);
+
+        // 6. After full inactivity expires following cancel_policy, push inheritance succeeds autonomously
+        let final_expire_time = cancel_time + heartbeat_ns + challenge_ns + 1;
+        testing_env!(context
+            .predecessor_account_id(anyone_caller.clone())
+            .block_timestamp(final_expire_time)
+            .build());
+        contract.trigger_push_inheritance(owner.clone());
         assert_eq!(contract.get_vault_info(Some(owner.clone())).unwrap().state, VaultState::Inheritance);
     }
 

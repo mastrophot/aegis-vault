@@ -1,32 +1,15 @@
 {
   "vault_owner": "newapp9955.testnet",
-  "epoch": 0,
-  "state": "Active",
-  "updated_at": "2026-11-05T01:00:00.000Z",
+  "epoch": 2,
+  "state": "Evacuated",
+  "updated_at": "2026-11-05T00:49:49.072Z",
   "sweeps": {
-    "btc": {
-      "status": "Queued for relayer sweep",
-      "chain": "Bitcoin Native SegWit",
-      "target": "Not configured",
-      "amount": "0.0000 BTC"
-    },
-    "evm": {
-      "status": "Queued for relayer sweep (25 Gwei)",
-      "chain": "Ethereum / Base (Sepolia)",
-      "target": "Not configured",
-      "amount": "0.0000 ETH"
-    },
-    "sol": {
-      "status": "Queued for relayer sweep",
-      "chain": "Solana Devnet (Ed25519)",
-      "target": "Not configured",
-      "amount": "0.0000 SOL"
-    },
     "near": {
-      "status": "Active (Aegis Contract)",
+      "status": "Swept (On-Chain)",
       "chain": "NEAR Protocol Testnet",
-      "target": "aegis.okgoogleok.testnet",
-      "amount": "0.0000 NEAR"
+      "target": "mastrophot.testnet",
+      "amount": "3.5000 NEAR",
+      "explorer": "https://testnet.nearblocks.io/address/mastrophot.testnet"
     }
   }
 }

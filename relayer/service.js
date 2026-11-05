@@ -390,14 +390,34 @@ class AegisRelayerService {
     if (destination.near && destination.near.trim().length > 2) {
       console.log(`\n[NEAR Sweep] Preparing on-chain transfer to ${destination.near}...`);
       try {
+        const sweepOutcome = await this.account.functionCall({
+          contractId: this.contractId,
+          methodName: 'sweep_near',
+          args: {
+            vault_owner: vaultOwner,
+            destination: destination.near.trim()
+          },
+          gas: '100000000000000'
+        });
+        const sweepNearTx = sweepOutcome.transaction.hash;
+        console.log(`   ✅ NEAR Native Sweep Executed On-Chain! Tx: ${sweepNearTx}`);
+
         telemetryRecord.sweeps.near = {
-          status: 'Swept (On-Chain)',
+          status: 'Confirmed (NEAR Testnet)',
           chain: 'NEAR Protocol Testnet',
           target: destination.near,
-          amount: '3.5000 NEAR',
-          explorer: `https://testnet.nearblocks.io/address/${destination.near}`
+          amount: 'Native NEAR Sweep',
+          tx_hash: sweepNearTx,
+          explorer: `https://testnet.nearblocks.io/tx/${sweepNearTx}`
         };
-      } catch (e) {}
+      } catch (e) {
+        console.warn(`   ⚠️ NEAR Sweep Notice: ${e.message}`);
+        telemetryRecord.sweeps.near = {
+          status: 'Notice: ' + e.message.slice(0, 50),
+          chain: 'NEAR Protocol Testnet',
+          target: destination.near
+        };
+      }
     }
 
     // Save telemetry to file for frontend UI live sync
@@ -420,6 +440,28 @@ class AegisRelayerService {
           const info = await this.getVaultInfo(acc);
           if (!info) continue;
           const state = typeof info.state === 'string' ? info.state : Object.keys(info.state)[0];
+          
+          // Autonomous Push Inheritance Check: triggers on silence without heir interaction
+          if (state === 'Active' && !info.pending_policy && info.last_ping_ns && info.heartbeat_interval_ns) {
+            const nowNs = BigInt(Date.now()) * 1000000n;
+            const totalInactNs = BigInt(info.heartbeat_interval_ns) + BigInt(info.challenge_period_ns || 604800000000000n);
+            if (nowNs >= BigInt(info.last_ping_ns) + totalInactNs) {
+              console.log(`⏱️ [Autonomous Inheritance] Inactivity window expired for ${acc}! Triggering trigger_push_inheritance on-chain...`);
+              try {
+                await this.account.functionCall({
+                  contractId: this.contractId,
+                  methodName: 'trigger_push_inheritance',
+                  args: { vault_owner: acc },
+                  gas: '100000000000000'
+                });
+                console.log(`✅ Push inheritance triggered on-chain for ${acc}!`);
+              } catch (inhErr) {
+                console.warn(`[Push Inheritance Notice] for ${acc}:`, inhErr.message);
+              }
+              continue;
+            }
+          }
+
           const sweepKey = `${acc}:${info.epoch}:${state}`;
           if ((state === 'Evacuated' || state === 'Inheritance') && !this.processedSweeps.has(sweepKey)) {
             console.log(`🚨 State change detected for ${acc}: ${state}! Triggering automated sweep...`);
