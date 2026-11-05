@@ -3685,6 +3685,34 @@
       showToast('Applying active policy on-chain...');
     }
 
+    // Silent On-Chain Heartbeat on site activity (Dual Heartbeat System)
+    let lastSilentPingAttempt = 0;
+    async function triggerSilentActivityPing() {
+      const now = Date.now();
+      if (now - lastSilentPingAttempt < 60000) return; // Throttle checks to max once per minute
+      lastSilentPingAttempt = now;
+
+      const currentSigner = localStorage.getItem('aegis_signer_account');
+      if (!currentSigner || isVaultEvacuatedOrBurned()) return;
+      if (!hasConfiguredDestinations() || (lastFetchedVaultInfo && lastFetchedVaultInfo.state !== 'Active')) return;
+
+      const lastPing = parseInt(localStorage.getItem('aegis_last_ping_ns') || '0');
+      const nowNs = now * 1000000;
+      // If more than 5 minutes have elapsed since last on-chain ping, silently check-in
+      if (nowNs - lastPing > 300 * 1e9) {
+        console.log('[Aegis] Site activity detected: sending silent on-chain ping()...');
+        try {
+          const outcome = await dispatchNearTransaction('ping');
+          if (outcome) {
+            console.log('[Aegis] Silent on-chain heartbeat successfully registered!');
+            setTimeout(fetchLiveContractState, 1500);
+          }
+        } catch (e) {
+          console.warn('[Aegis] Silent auto-ping note:', e.message);
+        }
+      }
+    }
+
     // Initialize Live On-Chain Polling and Wallet Connection on page load
     document.addEventListener('DOMContentLoaded', () => {
       initNearWallet();
@@ -3692,6 +3720,12 @@
       renderWalletsGrid('all');
       fetchLiveContractState();
       setInterval(fetchLiveContractState, 15000);
+
+      // Trigger silent heartbeat check on load and on any page interaction
+      setTimeout(triggerSilentActivityPing, 3000);
+      ['click', 'keydown', 'scroll'].forEach(evt => {
+        window.addEventListener(evt, triggerSilentActivityPing, { passive: true });
+      });
 
       // Handle ESC key to close modal
       document.addEventListener('keydown', (e) => {
