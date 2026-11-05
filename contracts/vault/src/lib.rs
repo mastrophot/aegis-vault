@@ -363,6 +363,7 @@ impl LastKeyVault {
             );
             vault.backup = pending.backup;
             vault.heirs = pending.heirs;
+            vault.last_ping_ns = env::block_timestamp();
             env::log_str(&format!("POLICY_APPLIED: New destinations activated for {}", caller));
         } else {
             env::panic_str("No pending policy found");
@@ -376,6 +377,7 @@ impl LastKeyVault {
         let vault = self.vaults.get_mut(&caller).expect("No vault found for account");
         require!(vault.pending_policy.is_some(), "No pending policy to cancel");
         vault.pending_policy = None;
+        vault.last_ping_ns = env::block_timestamp();
         env::log_str(&format!("POLICY_CANCELLED: Pending policy cancelled for {}", caller));
     }
 
@@ -397,6 +399,7 @@ impl LastKeyVault {
             require!(cp >= 86_400_000_000_000, "Challenge period must be at least 1 day");
             vault.challenge_period_ns = cp;
         }
+        vault.last_ping_ns = env::block_timestamp();
         env::log_str(&format!("INTERVALS_UPDATED: Intervals updated for {}", caller));
     }
 
@@ -406,6 +409,7 @@ impl LastKeyVault {
         let caller = env::predecessor_account_id();
         let vault = self.vaults.get_mut(&caller).expect("No vault found for account");
         vault.authorized_relayer = relayer;
+        vault.last_ping_ns = env::block_timestamp();
         env::log_str(&format!("RELAYER_UPDATED: Authorized relayer updated for {}", caller));
     }
 
