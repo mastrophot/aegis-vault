@@ -11,7 +11,6 @@
     "@near-wallet-selector/core": "^10.1.4",
     "@near-wallet-selector/here-wallet": "^10.1.4",
     "@near-wallet-selector/meteor-wallet": "^10.1.4",
-    "@near-wallet-selector/modal-ui": "^10.1.4",
     "@near-wallet-selector/nightly": "^10.1.4",
     "@near-wallet-selector/sender": "^10.1.4",
     "bitcoinjs-lib": "^6.1.6",

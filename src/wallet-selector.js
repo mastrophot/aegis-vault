@@ -10,7 +10,6 @@ if (typeof globalThis !== "undefined") {
 }
 
 import { setupWalletSelector } from "@near-wallet-selector/core";
-import { setupModal } from "@near-wallet-selector/modal-ui";
 import { setupMeteorWallet } from "@near-wallet-selector/meteor-wallet";
 import { setupHereWallet } from "@near-wallet-selector/here-wallet";
 import { setupNightly } from "@near-wallet-selector/nightly";
@@ -20,7 +19,6 @@ import { contracts, chainAdapters } from "chainsig.js";
 import { Connection } from "@solana/web3.js";
 
 let selector = null;
-let modal = null;
 
 export async function getSelector(contractId = "aegis.okgoogleok.testnet") {
   if (!selector) {
@@ -34,19 +32,21 @@ export async function getSelector(contractId = "aegis.okgoogleok.testnet") {
         setupBitteWallet()
       ],
     });
-    modal = setupModal(selector, {
-      contractId: contractId,
-      description: "Connect your NEAR wallet to manage Aegis multichain vault."
-    });
   }
   return selector;
 }
 
-export async function connectNearWallet(contractId = "aegis.okgoogleok.testnet") {
-  await getSelector(contractId);
-  if (modal) {
-    modal.show();
+export async function signInWallet(walletId = "meteor-wallet", contractId = "aegis.okgoogleok.testnet") {
+  const sel = await getSelector(contractId);
+  const wallet = await sel.wallet(walletId);
+  if (!wallet) {
+    throw new Error(`Wallet module "${walletId}" not found in selector`);
   }
+  return await wallet.signIn({ contractId });
+}
+
+export async function connectNearWallet(walletId = "meteor-wallet", contractId = "aegis.okgoogleok.testnet") {
+  return await signInWallet(walletId, contractId);
 }
 
 export async function connectEvmWallet() {
@@ -147,7 +147,6 @@ export async function signAndSendNearTx(contractId, methodName, args = {}, depos
     const signerId = state.accounts.find((acc) => acc.active)?.accountId || state.accounts[0]?.accountId;
 
     if (!wallet || !signerId) {
-      if (modal) modal.show();
       throw new Error("No wallet connected. Please connect wallet first.");
     }
 
@@ -229,6 +228,7 @@ export const connectWallet = connectNearWallet;
 if (typeof window !== "undefined") {
   window.AegisWallet = {
     getSelector,
+    signInWallet,
     connectWallet: connectNearWallet,
     connectNearWallet,
     connectEvmWallet,
@@ -238,8 +238,7 @@ if (typeof window !== "undefined") {
     disconnectWallet,
     signAndSendNearTx,
     deriveVaultAddresses,
-    signNep413Message,
-    getModal: () => modal
+    signNep413Message
   };
   // Backward-compatibility aliases
   window.AegisMeteor = window.AegisWallet;

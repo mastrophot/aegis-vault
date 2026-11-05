@@ -23,8 +23,6 @@
     window.process = window.process || { env: { NODE_ENV: 'production' }, browser: true };
     window.global = window;
   </script>
-  <!-- NEAR Wallet Selector Modal UI Styles -->
-  <link rel="stylesheet" href="./modal-ui.css">
   <!-- NEAR Wallet Selector Standalone Bundle -->
   <script src="./wallet-bundle.js"></script>
   
@@ -1999,9 +1997,19 @@
 
     async function connectNearDirect(type) {
       closeMultichainWalletModal();
+      const moduleMap = {
+        meteor: 'meteor-wallet',
+        here: 'here-wallet',
+        nightly: 'nightly',
+        sender: 'sender',
+        bitte: 'bitte-wallet'
+      };
+      const moduleId = moduleMap[type] || 'meteor-wallet';
+      showToast(`Connecting ${type.toUpperCase()}...`);
+
+      // 1. Direct extension fast path for Meteor
       if (type === 'meteor' && window.meteorWallet && typeof window.meteorWallet.signIn === 'function') {
         try {
-          showToast('Connecting Meteor Wallet extension...');
           await window.meteorWallet.signIn({ contractId: CONTRACT_ID });
           const acc = window.meteorWallet.accountId || (typeof window.meteorWallet.getAccountId === 'function' ? await window.meteorWallet.getAccountId() : null);
           if (acc) {
@@ -2014,10 +2022,31 @@
             return;
           }
         } catch (e) {
-          console.warn('[Aegis] Direct meteor error, falling back to selector:', e);
+          console.warn('[Aegis] Direct meteor error, trying selector:', e);
         }
       }
-      await connectNearWallet();
+
+      // 2. Direct wallet module sign-in via selector (NO SECOND MODAL!)
+      try {
+        let provider = window.AegisWallet || window.AegisMeteor || window.AegisWalletBundle;
+        if (!provider || typeof provider.signInWallet !== 'function') {
+          for (let i = 0; i < 25; i++) {
+            await new Promise(r => setTimeout(r, 100));
+            provider = window.AegisWallet || window.AegisMeteor || window.AegisWalletBundle;
+            if (provider && typeof provider.signInWallet === 'function') break;
+          }
+        }
+
+        if (provider && typeof provider.signInWallet === 'function') {
+          await provider.signInWallet(moduleId, CONTRACT_ID);
+          return;
+        }
+
+        showToast('Wallet provider initializing, please try again in a moment...');
+      } catch (err) {
+        console.error(`[Aegis] ${type} connection error:`, err);
+        showToast(`Connection error: ${err.message}`, true);
+      }
     }
 
     async function connectEvmDirect(type) {
@@ -2247,29 +2276,9 @@
       renderModalConnectedSummary();
     }
 
-    // Official NEAR Multi-Wallet Selector Modal Handler
-    async function connectNearWallet() {
-      showToast('Opening NEAR Wallet Selector...');
-      try {
-        let provider = window.AegisWallet || window.AegisMeteor || window.AegisWalletBundle;
-        if (!provider || typeof provider.connectWallet !== 'function') {
-          for (let i = 0; i < 25; i++) {
-            await new Promise(r => setTimeout(r, 100));
-            provider = window.AegisWallet || window.AegisMeteor || window.AegisWalletBundle;
-            if (provider && typeof provider.connectWallet === 'function') break;
-          }
-        }
-        if (provider && typeof provider.connectWallet === 'function') {
-          await provider.connectWallet(CONTRACT_ID);
-        } else if (window.meteorWallet && typeof window.meteorWallet.signIn === 'function') {
-          await window.meteorWallet.signIn({ contractId: CONTRACT_ID });
-        } else {
-          showToast('Wallet selector initializing, please try again in a moment...');
-        }
-      } catch (err) {
-        console.error('[Aegis] Wallet connection error:', err);
-        showToast(`Wallet error: ${err.message}`, true);
-      }
+    // Direct NEAR Wallet Selector Handler (no duplicate modal)
+    async function connectNearWallet(walletId = 'meteor') {
+      return await connectNearDirect(walletId);
     }
     const connectMeteorWallet = openMultichainWalletModal; // Backward-compatibility
 
