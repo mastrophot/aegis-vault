@@ -404,6 +404,22 @@
         </button>
       </div>
 
+      <!-- Unallocated Bunker Funds Warning Banner (Appears when deposit exists without backup egress) -->
+      <div id="unallocatedDepositAlert" class="p-4 rounded-2xl bg-amber-950/30 border border-amber-500/40 hidden flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center font-bold shrink-0">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+          </div>
+          <div>
+            <h4 class="text-xs sm:text-sm font-extrabold text-amber-200">Unallocated Funds Detected — No Egress Destination Configured</h4>
+            <p id="unallocatedDepositText" class="text-xs text-[#C5CAD3] mt-0.5 font-mono"></p>
+          </div>
+        </div>
+        <button onclick="switchTab('rescue')" class="px-4 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-black font-extrabold text-xs transition whitespace-nowrap shrink-0">
+          Set Egress Addresses ↗
+        </button>
+      </div>
+
       <!-- Header row for Deposit tab with Live Sync Status -->
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2">
         <div>
@@ -650,6 +666,17 @@
             <button onclick="saveAddresses()" class="save-policy-btn bg-nearGreen hover:bg-nearGreenHover text-nearBlack font-extrabold py-2 px-5 rounded-xl text-xs transition shadow-near-glow active:scale-98 whitespace-nowrap cursor-pointer">
               Save Policy
             </button>
+          </div>
+        </div>
+
+        <!-- Unallocated Funds Alert in Rescue Policy Tab -->
+        <div id="unallocatedPolicyAlert" class="p-4 rounded-xl bg-amber-950/30 border border-amber-500/40 hidden items-center gap-3 text-amber-200">
+          <div class="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center font-bold shrink-0">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+          </div>
+          <div>
+            <div class="font-bold text-amber-200 text-xs">Action Required: Unallocated Deposit Funds</div>
+            <div id="unallocatedPolicyText" class="text-xs text-[#C5CAD3] mt-0.5 font-mono"></div>
           </div>
         </div>
 
@@ -1227,7 +1254,19 @@
       <div class="space-y-2">
         <h3 class="text-xl font-extrabold text-textWhite tracking-tight">CONFIRM EMERGENCY EVACUATION</h3>
         <p class="text-xs sm:text-sm text-textSilver leading-relaxed">
-          All Bitcoin, Ethereum, Solana, and NEAR assets will be immediately swept to your designated backup addresses. The contract transitions to Evacuated state and burns Epoch v0.
+          All Bitcoin, Ethereum, Solana, and NEAR assets will be immediately swept to your designated backup addresses. The contract transitions to Evacuated state and burns the current epoch.
+        </p>
+      </div>
+
+      <!-- Unallocated Funds Warning inside Panic Modal -->
+      <div id="panicUnallocatedAlert" class="hidden p-4 rounded-2xl bg-amber-950/70 border border-amber-500/60 text-left space-y-2">
+        <div class="flex items-center gap-2 text-amber-300 font-bold text-xs font-mono uppercase">
+          <svg class="w-4 h-4 text-amber-400 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+          <span>⚠️ Unprotected Bunker Funds Detected!</span>
+        </div>
+        <p id="panicUnallocatedText" class="text-xs text-amber-200/90 leading-relaxed font-mono"></p>
+        <p class="text-[11px] text-amber-300/70 font-mono">
+          Funds in networks without designated backup addresses CANNOT be evacuated and will remain stuck. Add destination addresses first!
         </p>
       </div>
 
@@ -1700,6 +1739,7 @@
       }
 
       updateSaveButtonState(info);
+      checkUnallocatedFunds();
 
       // Check current input values if user has typed
       const anyInputFilled = inputIds.some(id => {
@@ -2756,6 +2796,7 @@
 
       if (syncBadge) syncBadge.innerText = 'Synced: Just now';
       if (syncDot) syncDot.className = 'w-2 h-2 rounded-full bg-nearGreen';
+      checkUnallocatedFunds();
       if (force) showToast('Balances and rates updated from RPC');
     }
 
@@ -2878,8 +2919,21 @@
           `;
           btn.className = 'save-policy-btn bg-nearGreen/15 hover:bg-nearGreen/25 text-nearGreen border border-nearGreen/40 font-bold py-2 px-5 rounded-xl text-xs transition active:scale-98 whitespace-nowrap cursor-pointer';
         } else {
-          btn.innerHTML = `Save Policy`;
-          btn.className = 'save-policy-btn bg-nearGreen hover:bg-nearGreenHover text-nearBlack font-extrabold py-2 px-5 rounded-xl text-xs transition shadow-near-glow active:scale-98 whitespace-nowrap cursor-pointer';
+          const isReplacingExisting = (onChainBackupNear && pNear && onChainBackupNear !== pNear) ||
+                                      (onChainBackupBtc && pBtc && onChainBackupBtc !== pBtc) ||
+                                      (onChainBackupEvm && pEvm && onChainBackupEvm.toLowerCase() !== pEvm.toLowerCase()) ||
+                                      (onChainBackupSol && pSol && onChainBackupSol !== pSol) ||
+                                      (onChainHeirNear && hNear && onChainHeirNear !== hNear) ||
+                                      (onChainHeirBtc && hBtc && onChainHeirBtc !== hBtc) ||
+                                      (onChainHeirEvm && hEvm && onChainHeirEvm.toLowerCase() !== hEvm.toLowerCase()) ||
+                                      (onChainHeirSol && hSol && onChainHeirSol !== hSol);
+          if (isReplacingExisting) {
+            btn.innerHTML = `Save Policy (72h Cooldown)`;
+            btn.className = 'save-policy-btn bg-amber-400 hover:bg-amber-300 text-black font-extrabold py-2 px-5 rounded-xl text-xs transition shadow-sm active:scale-98 whitespace-nowrap cursor-pointer';
+          } else {
+            btn.innerHTML = `Save Policy (⚡ Instant)`;
+            btn.className = 'save-policy-btn bg-nearGreen hover:bg-nearGreenHover text-nearBlack font-extrabold py-2 px-5 rounded-xl text-xs transition shadow-near-glow active:scale-98 whitespace-nowrap cursor-pointer';
+          }
         }
       });
     }
@@ -3277,7 +3331,101 @@
       }
     }
 
+    function getUnallocatedBunkerFunds() {
+      const unallocated = [];
+      const info = lastFetchedVaultInfo;
+      const backup = info?.backup || {};
+
+      let cachedBal = {};
+      try {
+        cachedBal = JSON.parse(localStorage.getItem('aegis_balance_cache') || '{}');
+      } catch(e) {}
+
+      const btcText = document.getElementById('btcBalanceText')?.innerText || cachedBal.btcBal || '0';
+      const evmText = document.getElementById('evmBalanceText')?.innerText || cachedBal.evmBal || '0';
+      const solText = document.getElementById('solBalanceText')?.innerText || cachedBal.solBal || '0';
+      const nearText = document.getElementById('nearBalanceText')?.innerText || cachedBal.nearBal || '0';
+
+      const btcVal = parseFloat(btcText) || 0;
+      const evmVal = parseFloat(evmText) || 0;
+      const solVal = parseFloat(solText) || 0;
+      const nearVal = parseFloat(nearText) || 0;
+
+      if (btcVal > 0 && (!backup.btc || !backup.btc.trim())) {
+        unallocated.push(`Bitcoin (${btcVal} BTC)`);
+      }
+      if (evmVal > 0 && (!backup.evm || !backup.evm.trim())) {
+        unallocated.push(`Ethereum / EVM (${evmVal} ETH)`);
+      }
+      if (solVal > 0 && (!backup.sol || !backup.sol.trim())) {
+        unallocated.push(`Solana (${solVal} SOL)`);
+      }
+      if (nearVal > 0 && (!backup.near || !backup.near.trim())) {
+        unallocated.push(`NEAR (${nearVal} NEAR)`);
+      }
+
+      return unallocated;
+    }
+
+    function checkUnallocatedFunds() {
+      const unallocated = getUnallocatedBunkerFunds();
+      const hasUnallocated = unallocated.length > 0;
+
+      const depBanner = document.getElementById('unallocatedDepositAlert');
+      const depText = document.getElementById('unallocatedDepositText');
+      if (depBanner && depText) {
+        if (hasUnallocated) {
+          depBanner.classList.remove('hidden');
+          depBanner.classList.add('flex');
+          depText.innerText = `You have funds deposited in ${unallocated.join(', ')}, but no emergency backup destination address configured. These funds will NOT be evacuated on panic!`;
+        } else {
+          depBanner.classList.add('hidden');
+          depBanner.classList.remove('flex');
+        }
+      }
+
+      const polBanner = document.getElementById('unallocatedPolicyAlert');
+      const polText = document.getElementById('unallocatedPolicyText');
+      if (polBanner && polText) {
+        if (hasUnallocated) {
+          polBanner.classList.remove('hidden');
+          polBanner.classList.add('flex');
+          polText.innerText = `Unallocated assets detected: ${unallocated.join(', ')}. Set backup destination addresses for these networks before triggering emergency panic or heartbeat expiry!`;
+        } else {
+          polBanner.classList.add('hidden');
+          polBanner.classList.remove('flex');
+        }
+      }
+
+      return unallocated;
+    }
+
     function startAbortCountdown() {
+      // 1. Guard against panic during 72h policy timelock
+      if (lastFetchedVaultInfo && lastFetchedVaultInfo.pending_policy) {
+        showToast('🛑 PANIC BLOCKED: 72h policy timelock is active. Cancel pending proposal or wait for cooldown.', true);
+        return;
+      }
+
+      // 2. Guard against panic when no backup addresses exist
+      if (!lastFetchedVaultInfo || !hasConfiguredDestinations(lastFetchedVaultInfo) || !lastFetchedVaultInfo.backup || !lastFetchedVaultInfo.backup.near && !lastFetchedVaultInfo.backup.evm && !lastFetchedVaultInfo.backup.btc && !lastFetchedVaultInfo.backup.sol) {
+        showToast('🛑 PANIC BLOCKED: No backup destinations configured! Enter emergency addresses first.', true);
+        return;
+      }
+
+      // 3. Check for deposited funds without corresponding destination addresses
+      const unalloc = checkUnallocatedFunds();
+      const panicAlert = document.getElementById('panicUnallocatedAlert');
+      const panicAlertText = document.getElementById('panicUnallocatedText');
+      if (panicAlert && panicAlertText) {
+        if (unalloc.length > 0) {
+          panicAlert.classList.remove('hidden');
+          panicAlertText.innerText = `You have funds deposited in ${unalloc.join(', ')}, but NO backup address is configured! If you proceed with evacuation, these funds CANNOT be swept and will remain stranded.`;
+        } else {
+          panicAlert.classList.add('hidden');
+        }
+      }
+
       if (isInstantPanicEnabled()) {
         executePanic();
         return;

@@ -36,6 +36,15 @@ impl ChainAddresses {
             near: None,
         }
     }
+
+    /// Checks if applying `new` would replace any non-empty existing address
+    pub fn is_replacing_existing(&self, new: &ChainAddresses) -> bool {
+        let btc_replaced = !self.btc.trim().is_empty() && !new.btc.trim().is_empty() && self.btc.trim() != new.btc.trim();
+        let evm_replaced = !self.evm.trim().is_empty() && !new.evm.trim().is_empty() && !self.evm.trim().eq_ignore_ascii_case(new.evm.trim());
+        let sol_replaced = !self.sol.trim().is_empty() && !new.sol.trim().is_empty() && self.sol.trim() != new.sol.trim();
+        let near_replaced = self.near.is_some() && new.near.is_some() && self.near != new.near;
+        btc_replaced || evm_replaced || sol_replaced || near_replaced
+    }
 }
 
 #[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -216,7 +225,7 @@ impl LastKeyVault {
     }
 
     /// Emergency Panic button: instantly shifts caller's vault into Evacuated state.
-    /// Drops any pending policy changes to prevent race attacks.
+    /// Strictly blocked if a 72-hour policy cooldown is pending, or if no backup destinations are configured.
     #[payable]
     pub fn panic(&mut self) {
         let caller = env::predecessor_account_id();
@@ -224,6 +233,14 @@ impl LastKeyVault {
         require!(
             vault.state == VaultState::Active || matches!(vault.state, VaultState::Claiming { .. }),
             "Cannot trigger panic: vault is not Active"
+        );
+        require!(
+            vault.pending_policy.is_none(),
+            "Cannot trigger panic during an active 72h policy cooldown. Cancel or wait for pending policy first."
+        );
+        require!(
+            !vault.backup.is_empty(),
+            "Cannot trigger panic: no backup egress destinations are configured in vault policy"
         );
         vault.pending_policy = None;
         vault.state = VaultState::Evacuated;
@@ -330,14 +347,16 @@ impl LastKeyVault {
 
         let is_initial_setup = vault.state == VaultState::Unconfigured
             || (vault.backup.is_empty() && vault.heirs.is_empty());
+        let is_replacing = vault.backup.is_replacing_existing(&backup)
+            || vault.heirs.is_replacing_existing(&heirs);
 
-        if is_initial_setup {
+        if is_initial_setup || !is_replacing {
             vault.backup = backup;
             vault.heirs = heirs;
             vault.pending_policy = None;
             vault.last_ping_ns = env::block_timestamp();
             vault.state = VaultState::Active;
-            env::log_str(&format!("POLICY_INITIALIZED: First-time destinations activated immediately for {}", caller));
+            env::log_str(&format!("POLICY_INITIALIZED_INSTANT: Destinations activated immediately (new/additive addresses, no 72h cooldown) for {}", caller));
         } else {
             vault.last_ping_ns = env::block_timestamp();
             let effective_at_ns = env::block_timestamp() + vault.policy_timelock_ns;
@@ -346,7 +365,7 @@ impl LastKeyVault {
                 heirs,
                 effective_at_ns,
             });
-            env::log_str(&format!("POLICY_PROPOSED: 72h timelock started for {}", caller));
+            env::log_str(&format!("POLICY_PROPOSED: 72h timelock started for modifying existing configured addresses for {}", caller));
         }
     }
 
@@ -1096,5 +1115,61 @@ mod tests {
         assert_eq!(extracted_spoofed, Some(attacker_addr));
         // Ensures the extractor didn't mistake the data payload for the `to` recipient!
         assert_ne!(extracted_spoofed, Some(to_addr));
+    }
+
+    #[test]
+    fn test_additive_policy_instant_activation_without_timelock() {
+        let owner: AccountId = "alice.testnet".parse().unwrap();
+        let mpc: AccountId = "v1.signer-prod.testnet".parse().unwrap();
+        let context = get_context(owner.clone());
+        testing_env!(context.build());
+
+        let mut contract = LastKeyVault::new(mpc, None);
+
+        // 1. Initial setup with only NEAR destination configured
+        let mut initial_backup = ChainAddresses::empty();
+        initial_backup.near = Some("alice-backup.testnet".parse().unwrap());
+        let mut initial_heirs = ChainAddresses::empty();
+        initial_heirs.near = Some("alice-heir.testnet".parse().unwrap());
+
+        contract.propose_policy(initial_backup.clone(), initial_heirs.clone());
+        let info = contract.get_vault_info(Some(owner.clone())).unwrap();
+        assert_eq!(info.state, VaultState::Active);
+        assert!(info.pending_policy.is_none());
+        assert_eq!(info.backup.near, Some("alice-backup.testnet".parse().unwrap()));
+        assert_eq!(info.backup.evm, "");
+
+        // 2. Add EVM and BTC addresses to previously empty fields
+        let mut additive_backup = initial_backup.clone();
+        additive_backup.evm = "0x1111111111111111111111111111111111111111".to_string();
+        additive_backup.btc = "tb1qaddbackup".to_string();
+
+        let mut additive_heirs = initial_heirs.clone();
+        additive_heirs.evm = "0x2222222222222222222222222222222222222222".to_string();
+
+        contract.propose_policy(additive_backup.clone(), additive_heirs.clone());
+
+        // MUST activate immediately without 72h timelock!
+        let updated_info = contract.get_vault_info(Some(owner.clone())).unwrap();
+        assert_eq!(updated_info.state, VaultState::Active);
+        assert!(updated_info.pending_policy.is_none(), "Additive policy should NOT trigger 72h timelock");
+        assert_eq!(updated_info.backup.evm, "0x1111111111111111111111111111111111111111");
+        assert_eq!(updated_info.backup.btc, "tb1qaddbackup");
+        assert_eq!(updated_info.backup.near, Some("alice-backup.testnet".parse().unwrap()));
+
+        // 3. Changing an already configured address MUST trigger 72h timelock
+        let mut replacing_backup = additive_backup.clone();
+        replacing_backup.near = Some("new-evil-backup.testnet".parse().unwrap()); // CHANGING existing NEAR!
+
+        contract.propose_policy(replacing_backup.clone(), additive_heirs.clone());
+        let replacing_info = contract.get_vault_info(Some(owner.clone())).unwrap();
+        assert!(replacing_info.pending_policy.is_some(), "Modifying existing address MUST trigger timelock");
+
+        // 4. Panic must be rejected while pending policy is active
+        let panic_res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let mut c = contract;
+            c.panic();
+        }));
+        assert!(panic_res.is_err(), "Panic must fail during active policy timelock");
     }
 }
