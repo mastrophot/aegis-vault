@@ -4469,7 +4469,7 @@
     }
 
     function clearAllAddresses() {
-      userHasInteractedWithInputs = false;
+      userHasInteractedWithInputs = true;
       isEditing = false;
       inputIds.forEach(id => {
         const el = document.getElementById(id);
@@ -4482,8 +4482,8 @@
       if (currentSigner) {
         localStorage.removeItem('aegis_addresses_' + currentSigner);
       }
-      loadSavedAddresses();
-      showToast('All address fields cleared.');
+      checkUnallocatedFunds();
+      showToast('All address fields cleared. Enter new destinations to arm.');
     }
 
     function toggleEditMode() {
