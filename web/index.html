@@ -1822,44 +1822,61 @@
       const unconfiguredBanner = document.getElementById('unconfiguredBanner');
       // 3. Sync destinations directly from on-chain storage
       let hasActiveAddresses = false;
-      if (info.state === 'Unconfigured') {
+      const isEvacuated = info && (info.state === 'Evacuated' || info.state === 'Inheritance');
+
+      if (isEvacuated) {
+        // Vault is evacuated/burned: NEVER populate or display old addresses in inputs
+        inputIds.forEach(id => {
+          const el = document.getElementById(id);
+          if (el) {
+            el.value = '';
+            el.disabled = true;
+          }
+        });
+      } else if (info.state === 'Unconfigured') {
         localStorage.removeItem('aegis_addresses');
-        if (!userHasInteractedWithInputs) {
-          inputIds.forEach(id => {
-            const el = document.getElementById(id);
-            if (el) el.value = '';
-          });
+        inputIds.forEach(id => {
+          const el = document.getElementById(id);
+          if (el) {
+            el.disabled = false;
+            if (!userHasInteractedWithInputs) el.value = '';
+          }
+        });
+      } else {
+        inputIds.forEach(id => {
+          const el = document.getElementById(id);
+          if (el) el.disabled = false;
+        });
+        if (info.backup) {
+          const pNear = document.getElementById('panicNearAddr');
+          const pBtc = document.getElementById('panicBtcAddr');
+          const pEvm = document.getElementById('panicEvmAddr');
+          const pSol = document.getElementById('panicSolAddr');
+          if (!userHasInteractedWithInputs) {
+            if (pNear) pNear.value = info.backup.near || '';
+            if (pBtc) pBtc.value = info.backup.btc || '';
+            if (pEvm) pEvm.value = info.backup.evm || '';
+            if (pSol) pSol.value = info.backup.sol || '';
+          }
+          if (info.backup.btc || info.backup.evm || info.backup.sol || info.backup.near) hasActiveAddresses = true;
         }
-      } else if (info.backup) {
-        const pNear = document.getElementById('panicNearAddr');
-        const pBtc = document.getElementById('panicBtcAddr');
-        const pEvm = document.getElementById('panicEvmAddr');
-        const pSol = document.getElementById('panicSolAddr');
-        if (!userHasInteractedWithInputs) {
-          if (pNear) pNear.value = info.backup.near || '';
-          if (pBtc) pBtc.value = info.backup.btc || '';
-          if (pEvm) pEvm.value = info.backup.evm || '';
-          if (pSol) pSol.value = info.backup.sol || '';
+        if (info.heirs) {
+          const hNear = document.getElementById('heirNearAddr');
+          const hBtc = document.getElementById('heirBtcAddr');
+          const hEvm = document.getElementById('heirEvmAddr');
+          const hSol = document.getElementById('heirSolAddr');
+          if (!userHasInteractedWithInputs) {
+            if (hNear) hNear.value = info.heirs.near || '';
+            if (hBtc) hBtc.value = info.heirs.btc || '';
+            if (hEvm) hEvm.value = info.heirs.evm || '';
+            if (hSol) hSol.value = info.heirs.sol || '';
+          }
+          if (info.heirs.btc || info.heirs.evm || info.heirs.sol || info.heirs.near) hasActiveAddresses = true;
         }
-        if (info.backup.btc || info.backup.evm || info.backup.sol || info.backup.near) hasActiveAddresses = true;
-      }
-      if (info.heirs) {
-        const hNear = document.getElementById('heirNearAddr');
-        const hBtc = document.getElementById('heirBtcAddr');
-        const hEvm = document.getElementById('heirEvmAddr');
-        const hSol = document.getElementById('heirSolAddr');
-        if (!userHasInteractedWithInputs) {
-          if (hNear) hNear.value = info.heirs.near || '';
-          if (hBtc) hBtc.value = info.heirs.btc || '';
-          if (hEvm) hEvm.value = info.heirs.evm || '';
-          if (hSol) hSol.value = info.heirs.sol || '';
-        }
-        if (info.heirs.btc || info.heirs.evm || info.heirs.sol || info.heirs.near) hasActiveAddresses = true;
       }
 
       // Save latest state & update visual indication
       lastFetchedVaultInfo = info;
-      const isEvacuated = info && (info.state === 'Evacuated' || info.state === 'Inheritance');
       const activeBanner = document.getElementById('activePolicyBanner');
       const activeSummary = document.getElementById('activePolicySummary');
       const evacuatedBanner = document.getElementById('evacuatedPolicyBanner');
@@ -1873,12 +1890,9 @@
         if (unconfiguredBanner) unconfiguredBanner.classList.add('hidden');
         if (evacuatedBanner) {
           evacuatedBanner.classList.remove('hidden');
-          let parts = [];
-          if (info.backup?.near) parts.push(`Backup NEAR: <strong class="text-white">${info.backup.near}</strong>`);
-          if (info.backup?.btc) parts.push(`Backup BTC: <strong class="text-white">${info.backup.btc.slice(0, 10)}...</strong>`);
-          if (info.backup?.evm) parts.push(`Backup EVM: <strong class="text-white">${info.backup.evm.slice(0, 8)}...</strong>`);
-          if (info.backup?.sol) parts.push(`Backup SOL: <strong class="text-white">${info.backup.sol.slice(0, 8)}...</strong>`);
-          if (evacuatedSummary) evacuatedSummary.innerHTML = parts.join(' · ') || 'Active epoch keys burned during evacuation.';
+          if (evacuatedSummary) {
+            evacuatedSummary.innerHTML = 'All bunker assets swept. Active epoch keys permanently burned. Click <strong>Activate Clean Bunker</strong> to advance to next epoch.';
+          }
         }
         if (tabRescue) {
           tabRescue.innerHTML = `1. Rescue & Inheritance <span class="ml-1.5 px-2 py-0.5 text-[10px] bg-red-950/60 text-red-400 border border-red-500/40 rounded-full font-bold">EVACUATED</span>`;
@@ -4340,6 +4354,17 @@
         return;
       }
 
+      if (isVaultEvacuatedOrBurned()) {
+        inputIds.forEach(id => {
+          const el = document.getElementById(id);
+          if (el) {
+            el.value = '';
+            el.disabled = true;
+          }
+        });
+        return;
+      }
+
       // If user has on-chain destinations in lastFetchedVaultInfo, populate from them!
       if (lastFetchedVaultInfo && hasConfiguredDestinations(lastFetchedVaultInfo)) {
         const pNear = document.getElementById('panicNearAddr');
@@ -4423,6 +4448,10 @@
       localStorage.removeItem('aegis_addresses');
       localStorage.removeItem('aegis_pending_addresses');
       localStorage.removeItem('aegis_cooldown_started');
+      const currentSigner = localStorage.getItem('aegis_signer_account');
+      if (currentSigner) {
+        localStorage.removeItem('aegis_addresses_' + currentSigner);
+      }
       loadSavedAddresses();
       showToast('All address fields cleared.');
     }
