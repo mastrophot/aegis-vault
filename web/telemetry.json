@@ -2,12 +2,15 @@
   "vault_owner": "newapp9955.testnet",
   "epoch": 2,
   "state": "Evacuated",
-  "updated_at": "2026-11-05T17:47:40.158Z",
+  "updated_at": "2026-11-05T18:55:58.854Z",
   "sweeps": {
     "near": {
-      "status": "Notice: {\"index\":0,\"kind\":{\"index\":0,\"kind\":{\"FunctionCall",
-      "chain": "NEAR Protocol Testnet",
-      "target": "mastrophot.testnet"
+      "status": "Confirmed (NEAR Testnet)",
+      "chain": "NEAR Protocol Testnet (Ed25519)",
+      "target": "mastrophot.testnet",
+      "amount": "0.9950 NEAR",
+      "tx_hash": "GAg4vRCkj7CYTSw9N8VaLnBsDAvajpyGRaV66TCm8TTo",
+      "explorer": "https://testnet.nearblocks.io/tx/GAg4vRCkj7CYTSw9N8VaLnBsDAvajpyGRaV66TCm8TTo"
     }
   }
 }

@@ -491,7 +491,7 @@
           </div>
 
           <!-- Action Row -->
-          <div class="grid grid-cols-2 gap-2.5 pt-4 border-t border-white/[0.08]">
+          <div id="btcActions" class="grid grid-cols-2 gap-2.5 pt-4 border-t border-white/[0.08]">
             <button onclick="copyAddr('btcAddress')" class="py-2.5 px-3.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.08] hover:border-nearGreen/50 text-xs sm:text-sm font-bold text-white transition-all flex items-center justify-center gap-1.5 shadow-sm active:scale-98">
               <svg class="w-4 h-4 text-nearGreen" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
               <span>Copy</span>
@@ -540,7 +540,7 @@
           </div>
 
           <!-- Action Row -->
-          <div class="grid grid-cols-2 gap-2.5 pt-4 border-t border-white/[0.08]">
+          <div id="evmActions" class="grid grid-cols-2 gap-2.5 pt-4 border-t border-white/[0.08]">
             <button onclick="copyAddr('evmAddress')" class="py-2.5 px-3.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.08] hover:border-nearGreen/50 text-xs sm:text-sm font-bold text-white transition-all flex items-center justify-center gap-1.5 shadow-sm active:scale-98">
               <svg class="w-4 h-4 text-nearGreen" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
               <span>Copy</span>
@@ -589,7 +589,7 @@
           </div>
 
           <!-- Action Row -->
-          <div class="grid grid-cols-2 gap-2.5 pt-4 border-t border-white/[0.08]">
+          <div id="solActions" class="grid grid-cols-2 gap-2.5 pt-4 border-t border-white/[0.08]">
             <button onclick="copyAddr('solAddress')" class="py-2.5 px-3.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.08] hover:border-nearGreen/50 text-xs sm:text-sm font-bold text-white transition-all flex items-center justify-center gap-1.5 shadow-sm active:scale-98">
               <svg class="w-4 h-4 text-nearGreen" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
               <span>Copy</span>
@@ -638,7 +638,7 @@
           </div>
 
           <!-- Action Row -->
-          <div class="grid grid-cols-2 gap-2.5 pt-4 border-t border-white/[0.08]">
+          <div id="nearActions" class="grid grid-cols-2 gap-2.5 pt-4 border-t border-white/[0.08]">
             <button onclick="copyAddr('nearAddress')" class="py-2.5 px-3.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.08] hover:border-nearGreen/50 text-xs sm:text-sm font-bold text-white transition-all flex items-center justify-center gap-1.5 shadow-sm active:scale-98">
               <svg class="w-4 h-4 text-nearGreen" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
               <span>Copy</span>
@@ -2719,11 +2719,60 @@
       const banner = document.getElementById('bunkerBurnedBanner');
       const unarmedBanner = document.getElementById('bunkerUnarmedBanner');
 
+      const chains = [
+        {
+          id: 'btc',
+          name: 'Bitcoin',
+          addrEl: btcEl,
+          actionsEl: document.getElementById('btcActions'),
+          hasEgress: Boolean(lastFetchedVaultInfo?.backup?.btc?.trim() && lastFetchedVaultInfo?.heirs?.btc?.trim())
+        },
+        {
+          id: 'evm',
+          name: 'Ethereum',
+          addrEl: evmEl,
+          actionsEl: document.getElementById('evmActions'),
+          hasEgress: Boolean(lastFetchedVaultInfo?.backup?.evm?.trim() && lastFetchedVaultInfo?.heirs?.evm?.trim())
+        },
+        {
+          id: 'sol',
+          name: 'Solana',
+          addrEl: solEl,
+          actionsEl: document.getElementById('solActions'),
+          hasEgress: Boolean(lastFetchedVaultInfo?.backup?.sol?.trim() && lastFetchedVaultInfo?.heirs?.sol?.trim())
+        },
+        {
+          id: 'near',
+          name: 'NEAR Protocol',
+          addrEl: nearEl,
+          actionsEl: document.getElementById('nearActions'),
+          hasEgress: Boolean(lastFetchedVaultInfo?.backup?.near?.trim() && lastFetchedVaultInfo?.heirs?.near?.trim())
+        }
+      ];
+
+      const renderActiveButtons = (c) => `
+        <button onclick="copyAddr('${c.id}Address')" class="py-2.5 px-3.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.08] hover:border-nearGreen/50 text-xs sm:text-sm font-bold text-white transition-all flex items-center justify-center gap-1.5 shadow-sm active:scale-98">
+          <svg class="w-4 h-4 text-nearGreen" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+          <span>Copy</span>
+        </button>
+        <button onclick="openQr('${c.name}', document.getElementById('${c.id}Address').dataset.full)" class="py-2.5 px-3.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.08] hover:border-white/[0.25] text-xs sm:text-sm font-bold text-[#C5CAD3] hover:text-white transition-all flex items-center justify-center gap-1.5 shadow-sm active:scale-98">
+          <svg class="w-4 h-4 text-[#8C929D]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" /></svg>
+          <span>QR Code</span>
+        </button>
+      `;
+
+      // 1. Disconnected State
       if (!currentSigner) {
-        if (btcEl) { btcEl.innerText = 'Connect wallet to reveal address'; btcEl.dataset.full = ''; }
-        if (evmEl) { evmEl.innerText = 'Connect wallet to reveal address'; evmEl.dataset.full = ''; }
-        if (solEl) { solEl.innerText = 'Connect wallet to reveal address'; solEl.dataset.full = ''; }
-        if (nearEl) { nearEl.innerText = 'Connect wallet to reveal address'; nearEl.dataset.full = ''; }
+        chains.forEach(c => {
+          if (c.addrEl) {
+            c.addrEl.innerText = 'Connect wallet to reveal address';
+            c.addrEl.className = 'font-mono text-xs sm:text-[13px] leading-relaxed text-[#8C929D] break-all select-none font-medium';
+            c.addrEl.dataset.full = '';
+          }
+          if (c.actionsEl) {
+            c.actionsEl.innerHTML = `<div class="col-span-2 py-2 px-3 rounded-xl bg-white/[0.03] border border-white/[0.08] text-center text-xs font-mono text-[#8C929D] flex items-center justify-center gap-1.5 select-none">Connect Wallet to Unlock</div>`;
+          }
+        });
         if (pill) {
           pill.innerText = 'Derivation Path: Connect Wallet to View';
           pill.className = 'text-[11px] font-mono font-bold text-[#8E99AD] bg-white/[0.04] border border-white/[0.08] px-2.5 py-0.5 rounded-full whitespace-nowrap';
@@ -2735,15 +2784,25 @@
       }
 
       const isBurned = isVaultEvacuatedOrBurned();
-      const isUnarmed = !lastFetchedVaultInfo || lastFetchedVaultInfo.state === 'Unconfigured' || !hasConfiguredDestinations();
 
-      // Guard 1: Evacuated or Burned bunker (Keys exposed/evacuated - NEVER show deposit addresses!)
+      // 2. Guard 1: Evacuated or Burned bunker (Keys exposed/evacuated - NEVER show deposit addresses!)
       if (isBurned) {
         const burnedMsg = `Epoch ${currentEpochIndex} Burned · Deposits Disabled`;
-        if (btcEl) { btcEl.innerText = burnedMsg; btcEl.dataset.full = ''; }
-        if (evmEl) { evmEl.innerText = burnedMsg; evmEl.dataset.full = ''; }
-        if (solEl) { solEl.innerText = burnedMsg; solEl.dataset.full = ''; }
-        if (nearEl) { nearEl.innerText = burnedMsg; nearEl.dataset.full = ''; }
+        chains.forEach(c => {
+          if (c.addrEl) {
+            c.addrEl.innerText = burnedMsg;
+            c.addrEl.className = 'font-mono text-xs leading-relaxed text-red-400 break-all select-none font-bold';
+            c.addrEl.dataset.full = '';
+          }
+          if (c.actionsEl) {
+            c.actionsEl.innerHTML = `
+              <div class="col-span-2 py-2.5 px-3 rounded-xl bg-red-950/30 border border-red-500/20 text-center text-xs font-mono text-red-400 flex items-center justify-center gap-1.5 select-none">
+                <svg class="w-4 h-4 text-red-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
+                <span>Epoch Burned · Deposits Disabled</span>
+              </div>
+            `;
+          }
+        });
         if (pill) {
           pill.innerText = `Epoch ${currentEpochIndex} · Burned (Inactive)`;
           pill.className = 'text-[11px] font-mono font-bold text-red-400 bg-red-950/40 border border-red-500/30 px-2.5 py-0.5 rounded-full whitespace-nowrap';
@@ -2754,26 +2813,15 @@
         return;
       }
 
-      // Guard 2: Unconfigured / Unarmed bunker (User has not configured policy - NEVER show deposit addresses!)
-      if (isUnarmed) {
-        const unarmMsg = 'Bunker Unarmed · Save Policy in Tab 1';
-        if (btcEl) { btcEl.innerText = unarmMsg; btcEl.dataset.full = ''; }
-        if (evmEl) { evmEl.innerText = unarmMsg; evmEl.dataset.full = ''; }
-        if (solEl) { solEl.innerText = unarmMsg; solEl.dataset.full = ''; }
-        if (nearEl) { nearEl.innerText = unarmMsg; nearEl.dataset.full = ''; }
-        if (pill) {
-          pill.innerText = 'Derivation Path: Inactive (Arm in Tab 1)';
-          pill.className = 'text-[11px] font-mono font-bold text-amber-400 bg-amber-950/40 border border-amber-500/30 px-2.5 py-0.5 rounded-full whitespace-nowrap';
-        }
-        if (banner) banner.classList.add('hidden');
-        if (unarmedBanner) unarmedBanner.classList.remove('hidden');
-        checkUnallocatedFunds();
-        return;
+      // 3. Vault is Active / Configurable
+      if (banner) banner.classList.add('hidden');
+
+      const anyConfigured = chains.some(c => c.hasEgress);
+      if (unarmedBanner) {
+        if (!anyConfigured) unarmedBanner.classList.remove('hidden');
+        else unarmedBanner.classList.add('hidden');
       }
 
-      // 3. Vault is Active & Armed — Derive/Display Active MPC Deposit Addresses
-      if (banner) banner.classList.add('hidden');
-      if (unarmedBanner) unarmedBanner.classList.add('hidden');
       if (pill) {
         pill.innerText = `Derivation Path: aegis/${currentSigner}/${currentEpochIndex} (Active)`;
         pill.className = 'text-[11px] font-mono font-bold text-nearGreen bg-nearGreenMuted border border-nearGreen/30 px-2.5 py-0.5 rounded-full whitespace-nowrap';
@@ -2811,22 +2859,34 @@
         }
       }
 
-      if (btcEl) {
-        btcEl.innerText = addresses.btc;
-        btcEl.dataset.full = addresses.btc;
-      }
-      if (evmEl) {
-        evmEl.innerText = addresses.evm;
-        evmEl.dataset.full = addresses.evm;
-      }
-      if (solEl) {
-        solEl.innerText = addresses.sol;
-        solEl.dataset.full = addresses.sol;
-      }
-      if (nearEl) {
-        nearEl.innerText = addresses.near || CONTRACT_ID;
-        nearEl.dataset.full = addresses.near || CONTRACT_ID;
-      }
+      // 4. Per-Chain Gating Display: Only show deposit address if BOTH panic & heir are set for this chain!
+      chains.forEach(c => {
+        if (!c.hasEgress) {
+          if (c.addrEl) {
+            c.addrEl.innerText = 'Egress Incomplete · Set in Tab 1';
+            c.addrEl.className = 'font-mono text-xs leading-relaxed text-amber-400/80 break-all select-none font-semibold';
+            c.addrEl.dataset.full = '';
+          }
+          if (c.actionsEl) {
+            c.actionsEl.innerHTML = `
+              <button type="button" onclick="switchTab('rescue')" class="col-span-2 py-2 px-3 rounded-xl bg-amber-950/25 hover:bg-amber-950/40 border border-amber-500/25 hover:border-amber-500/40 text-center text-xs font-mono text-amber-400 flex items-center justify-center gap-1.5 transition active:scale-98">
+                <svg class="w-3.5 h-3.5 text-amber-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+                <span>Locked · Set Egress in Tab 1 ↗</span>
+              </button>
+            `;
+          }
+        } else {
+          const addr = (c.id === 'near' ? (addresses.near || CONTRACT_ID) : addresses[c.id]) || '';
+          if (c.addrEl) {
+            c.addrEl.innerText = addr;
+            c.addrEl.className = 'font-mono text-xs sm:text-[13px] leading-relaxed text-[#8C929D] break-all select-all font-medium group-hover:text-nearGreen transition-colors';
+            c.addrEl.dataset.full = addr;
+          }
+          if (c.actionsEl) {
+            c.actionsEl.innerHTML = renderActiveButtons(c);
+          }
+        }
+      });
 
       checkUnallocatedFunds();
     }
@@ -3450,13 +3510,17 @@
         showToast('🛑 Deposit rejected: This bunker epoch was evacuated and keys are burned. Activate clean bunker first.', true);
         return;
       }
-      if (!lastFetchedVaultInfo || lastFetchedVaultInfo.state === 'Unconfigured' || !hasConfiguredDestinations()) {
-        showToast('⚠️ Bunker unarmed: Save your destination policy in Tab 1 first.', true);
+      const chainId = elemId.replace('Address', '').toLowerCase();
+      const b = lastFetchedVaultInfo?.backup?.[chainId]?.trim();
+      const h = lastFetchedVaultInfo?.heirs?.[chainId]?.trim();
+      if (!b || !h) {
+        showToast(`⚠️ ${chainId.toUpperCase()} locked: Set both Panic & Heir destinations in Tab 1 first.`, true);
+        switchTab('rescue');
         return;
       }
       const el = document.getElementById(elemId);
       const text = el ? (el.dataset.full || el.innerText) : '';
-      if (!text || text.includes('Bunker Unarmed') || text.includes('Epoch Burned') || text.includes('Connect wallet') || text.includes('Deriving')) {
+      if (!text || text.includes('Bunker Unarmed') || text.includes('Epoch Burned') || text.includes('Connect wallet') || text.includes('Deriving') || text.includes('Egress Incomplete')) {
         showToast('No active deposit address available', true);
         return;
       }
@@ -3515,12 +3579,9 @@
         showToast('🛑 QR Code disabled: This bunker epoch is burned.', true);
         return;
       }
-      if (!lastFetchedVaultInfo || lastFetchedVaultInfo.state === 'Unconfigured' || !hasConfiguredDestinations()) {
-        showToast('⚠️ QR Code disabled: Bunker is unarmed. Save destinations in Tab 1 first.', true);
-        return;
-      }
-      if (!address || address.includes('Bunker Unarmed') || address.includes('Epoch Burned') || address.includes('Connect wallet') || address.includes('Deriving')) {
-        showToast('No active deposit address available for QR', true);
+      if (!address || address.includes('Bunker Unarmed') || address.includes('Epoch Burned') || address.includes('Connect wallet') || address.includes('Deriving') || address.includes('Egress Incomplete')) {
+        showToast('⚠️ QR Code locked: Configure Panic and Heir destinations in Tab 1 first.', true);
+        switchTab('rescue');
         return;
       }
       currentQrAddr = address;
