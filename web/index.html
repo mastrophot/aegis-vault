@@ -2211,7 +2211,21 @@
         }
 
         if (provider && typeof provider.signInWallet === 'function') {
-          await provider.signInWallet(moduleId, CONTRACT_ID);
+          const res = await provider.signInWallet(moduleId, CONTRACT_ID);
+          const sel = await provider.getSelector(CONTRACT_ID);
+          const state = sel.store.getState();
+          const activeAcc = (Array.isArray(res) && res[0]?.accountId) ||
+                            state.accounts.find((acc) => acc.active)?.accountId ||
+                            state.accounts[0]?.accountId;
+          if (activeAcc) {
+            localStorage.setItem('aegis_signer_account', activeAcc);
+            localStorage.removeItem('aegis_manual_logout');
+            updateWalletConnectedUI(activeAcc);
+            fetchAccountNearBalance(activeAcc);
+            fetchLiveContractState();
+            renderBunkerAddresses();
+            showToast(`Connected: ${activeAcc}`);
+          }
           return;
         }
 
@@ -2442,11 +2456,6 @@
     const connectMeteorWallet = openMultichainWalletModal; // Backward-compatibility
 
     async function initNearWallet() {
-      if (localStorage.getItem('aegis_manual_logout') === 'true') {
-        updateWalletDisconnectedUI();
-        renderBunkerAddresses();
-        return;
-      }
       let provider = window.AegisWallet || window.AegisMeteor || window.AegisWalletBundle;
       if (!provider || typeof provider.getSelector !== 'function') {
         for (let i = 0; i < 25; i++) {
@@ -2460,14 +2469,15 @@
           const sel = await provider.getSelector(CONTRACT_ID);
           const state = sel.store.getState();
           const activeAcc = state.accounts.find((acc) => acc.active)?.accountId || state.accounts[0]?.accountId;
-          if (activeAcc) {
+          const isManualLogout = localStorage.getItem('aegis_manual_logout') === 'true';
+          if (activeAcc && !isManualLogout) {
             localStorage.setItem('aegis_signer_account', activeAcc);
             updateWalletConnectedUI(activeAcc);
             fetchAccountNearBalance(activeAcc);
             fetchLiveContractState();
             renderBunkerAddresses();
           } else {
-            localStorage.removeItem('aegis_signer_account');
+            if (!activeAcc) localStorage.removeItem('aegis_signer_account');
             updateWalletDisconnectedUI();
             renderBunkerAddresses();
           }
