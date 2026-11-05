@@ -290,17 +290,20 @@ impl LastKeyVault {
         };
 
         let target_account_id: AccountId = if let Some(override_dest) = destination {
-            require!(caller == vault_owner, "Only owner can override destination");
+            if &Some(override_dest.clone()) != target_dest {
+                require!(caller == vault_owner, "Only owner can override destination");
+            }
             override_dest
         } else {
             target_dest.clone().expect("No destination NEAR account configured in vault policy")
         };
 
         let contract_balance = env::account_balance();
-        let storage_reserve = NearToken::from_millinear(500); // 0.5 NEAR
+        let min_storage_stake = env::storage_byte_cost().saturating_mul(env::storage_usage() as u128);
+        let storage_reserve = min_storage_stake.saturating_add(NearToken::from_millinear(500)); // Storage stake + 0.5 NEAR buffer
         require!(
             contract_balance > storage_reserve,
-            "Insufficient contract balance above 0.5 NEAR storage reserve"
+            "Insufficient contract balance above required storage stake"
         );
         let sweep_amount = contract_balance.saturating_sub(storage_reserve);
 

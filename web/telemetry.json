@@ -2,14 +2,12 @@
   "vault_owner": "newapp9955.testnet",
   "epoch": 2,
   "state": "Evacuated",
-  "updated_at": "2026-11-05T00:49:49.072Z",
+  "updated_at": "2026-11-05T17:47:40.158Z",
   "sweeps": {
     "near": {
-      "status": "Swept (On-Chain)",
+      "status": "Notice: {\"index\":0,\"kind\":{\"index\":0,\"kind\":{\"FunctionCall",
       "chain": "NEAR Protocol Testnet",
-      "target": "mastrophot.testnet",
-      "amount": "3.5000 NEAR",
-      "explorer": "https://testnet.nearblocks.io/address/mastrophot.testnet"
+      "target": "mastrophot.testnet"
     }
   }
 }

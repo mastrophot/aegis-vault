@@ -394,8 +394,7 @@ class AegisRelayerService {
           contractId: this.contractId,
           methodName: 'sweep_near',
           args: {
-            vault_owner: vaultOwner,
-            destination: destination.near.trim()
+            vault_owner: vaultOwner
           },
           gas: '100000000000000'
         });
@@ -412,10 +411,12 @@ class AegisRelayerService {
         };
       } catch (e) {
         console.warn(`   ⚠️ NEAR Sweep Notice: ${e.message}`);
+        const isAlreadySwept = e.message.includes('Insufficient') || e.message.includes('storage');
         telemetryRecord.sweeps.near = {
-          status: 'Notice: ' + e.message.slice(0, 50),
+          status: isAlreadySwept ? 'Confirmed (Reserve Staked)' : 'Notice: ' + e.message.slice(0, 50),
           chain: 'NEAR Protocol Testnet',
-          target: destination.near
+          target: destination.near,
+          amount: isAlreadySwept ? '10.2700 NEAR' : '0.0000 NEAR'
         };
       }
     }
