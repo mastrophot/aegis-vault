@@ -726,6 +726,28 @@
           </div>
         </div>
 
+        <!-- Evacuated Policy Banner (Shown when vault is in Evacuated state) -->
+        <div id="evacuatedPolicyBanner" class="hidden p-4 rounded-xl bg-red-950/25 border border-red-500/35 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-white">
+          <div class="flex items-center gap-3">
+            <div class="w-8 h-8 rounded-lg bg-red-500/20 flex items-center justify-center text-red-400 shrink-0 font-bold">
+              <svg class="w-4 h-4 text-red-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+            </div>
+            <div>
+              <div class="font-bold text-red-400 flex items-center gap-2">
+                <span>Bunker Evacuated · Protection Inactive</span>
+                <span class="text-[10px] font-mono bg-red-500/20 text-red-300 border border-red-500/40 px-2 py-0.5 rounded-full font-bold">KEYS BURNED</span>
+              </div>
+              <div id="evacuatedPolicySummary" class="text-white/80 text-[11px] mt-0.5 font-mono">
+                <!-- Egress destinations used during evacuation -->
+              </div>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 text-xs font-mono text-red-400 self-start sm:self-auto">
+            <span class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
+            <span class="font-bold">Vault Burned</span>
+          </div>
+        </div>
+
         <!-- 2-Column Multichain Routing Panel -->
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
@@ -1538,8 +1560,14 @@
       { epoch: '2' }
     ];
 
-    let currentEpochIndex = parseInt(localStorage.getItem('aegis_bunker_epoch') || '0');
+        let currentEpochIndex = parseInt(localStorage.getItem('aegis_bunker_epoch') || '0');
     let lastFetchedVaultInfo = null;
+    let isEditing = false;
+    let userHasInteractedWithInputs = false;
+    const inputIds = [
+      'panicNearAddr', 'panicBtcAddr', 'panicEvmAddr', 'panicSolAddr',
+      'heirNearAddr', 'heirBtcAddr', 'heirEvmAddr', 'heirSolAddr', 'heirFinalMemo'
+    ];
     const NEAR_RPC_URLS = [
       'https://test.rpc.fastnear.com',
       'https://rpc.testnet.near.org'
@@ -1831,11 +1859,37 @@
 
       // Save latest state & update visual indication
       lastFetchedVaultInfo = info;
+      const isEvacuated = info && (info.state === 'Evacuated' || info.state === 'Inheritance');
       const activeBanner = document.getElementById('activePolicyBanner');
       const activeSummary = document.getElementById('activePolicySummary');
+      const evacuatedBanner = document.getElementById('evacuatedPolicyBanner');
+      const evacuatedSummary = document.getElementById('evacuatedPolicySummary');
       const tabRescue = document.getElementById('tab-rescue');
+      const badge = document.getElementById('addressStatusBadge');
+      const dot = document.getElementById('addressStatusDot');
 
-      if (hasActiveAddresses) {
+      if (isEvacuated) {
+        if (activeBanner) activeBanner.classList.add('hidden');
+        if (unconfiguredBanner) unconfiguredBanner.classList.add('hidden');
+        if (evacuatedBanner) {
+          evacuatedBanner.classList.remove('hidden');
+          let parts = [];
+          if (info.backup?.near) parts.push(`Backup NEAR: <strong class="text-white">${info.backup.near}</strong>`);
+          if (info.backup?.btc) parts.push(`Backup BTC: <strong class="text-white">${info.backup.btc.slice(0, 10)}...</strong>`);
+          if (info.backup?.evm) parts.push(`Backup EVM: <strong class="text-white">${info.backup.evm.slice(0, 8)}...</strong>`);
+          if (info.backup?.sol) parts.push(`Backup SOL: <strong class="text-white">${info.backup.sol.slice(0, 8)}...</strong>`);
+          if (evacuatedSummary) evacuatedSummary.innerHTML = parts.join(' · ') || 'Active epoch keys burned during evacuation.';
+        }
+        if (tabRescue) {
+          tabRescue.innerHTML = `1. Rescue & Inheritance <span class="ml-1.5 px-2 py-0.5 text-[10px] bg-red-950/60 text-red-400 border border-red-500/40 rounded-full font-bold">EVACUATED</span>`;
+        }
+        if (badge) {
+          badge.innerText = 'Evacuated (Keys Burned)';
+          badge.className = 'text-red-400 font-mono font-bold';
+        }
+        if (dot) dot.className = 'w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse';
+      } else if (hasActiveAddresses) {
+        if (evacuatedBanner) evacuatedBanner.classList.add('hidden');
         if (unconfiguredBanner) unconfiguredBanner.classList.add('hidden');
         if (activeBanner) {
           activeBanner.classList.remove('hidden');
@@ -1853,12 +1907,23 @@
         if (tabRescue) {
           tabRescue.innerHTML = `1. Rescue & Inheritance <span class="ml-1.5 px-2 py-0.5 text-[10px] bg-nearGreen text-nearBlack rounded-full font-bold">ARMED</span>`;
         }
+        if (badge && !info.pending_policy) {
+          badge.innerText = 'Active & Enforced';
+          badge.className = 'text-nearGreen font-mono font-bold';
+        }
+        if (dot && !info.pending_policy) dot.className = 'w-2.5 h-2.5 rounded-full bg-nearGreen shadow-near-glow';
       } else {
         if (activeBanner) activeBanner.classList.add('hidden');
+        if (evacuatedBanner) evacuatedBanner.classList.add('hidden');
         if (unconfiguredBanner) unconfiguredBanner.classList.remove('hidden');
         if (tabRescue) {
           tabRescue.innerText = `1. Rescue & Inheritance (Destinations)`;
         }
+        if (badge && !info.pending_policy) {
+          badge.innerText = 'Unconfigured';
+          badge.className = 'text-amber-300 font-mono font-bold';
+        }
+        if (dot && !info.pending_policy) dot.className = 'w-2.5 h-2.5 rounded-full bg-amber-400';
       }
 
       updateSaveButtonState(info);
@@ -1872,8 +1937,6 @@
       const isConfigured = hasActiveAddresses || anyInputFilled;
 
       // 4. Real on-chain Timelock & Pending Policy status
-      const badge = document.getElementById('addressStatusBadge');
-      const dot = document.getElementById('addressStatusDot');
       const cooldownAlert = document.getElementById('cooldownAlertBanner');
       const saveBtns = document.querySelectorAll('.save-policy-btn');
       const cancelBtns = document.querySelectorAll('.cancel-policy-btn');
@@ -2487,6 +2550,20 @@
             const acc = nextState.accounts.find((a) => a.active)?.accountId || nextState.accounts[0]?.accountId;
             if (acc) {
               const prev = localStorage.getItem('aegis_signer_account');
+              if (prev && prev !== acc) {
+                // Switching account: reset all user inputs, caches and DOM balances immediately!
+                userHasInteractedWithInputs = false;
+                lastFetchedVaultInfo = null;
+                inputIds.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+                const btcBalEl = document.getElementById('btcBalanceText');
+                const evmBalEl = document.getElementById('evmBalanceText');
+                const solBalEl = document.getElementById('solBalanceText');
+                const nearBalEl = document.getElementById('nearBalanceText');
+                if (btcBalEl) btcBalEl.innerHTML = '0.0000 <span class="text-base font-normal text-[#B0B9C9]">BTC</span>';
+                if (evmBalEl) evmBalEl.innerHTML = '0.0000 <span class="text-base font-normal text-[#B0B9C9]">ETH</span>';
+                if (solBalEl) solBalEl.innerHTML = '0.0000 <span class="text-base font-normal text-[#B0B9C9]">SOL</span>';
+                if (nearBalEl) nearBalEl.innerHTML = '0.0000 <span class="text-base font-normal text-[#B0B9C9]">NEAR</span>';
+              }
               localStorage.setItem('aegis_signer_account', acc);
               updateWalletConnectedUI(acc);
               fetchAccountNearBalance(acc);
@@ -3295,6 +3372,26 @@
                          (hSol === onChainHeirSol);
 
       saveBtns.forEach(btn => {
+        if (!localStorage.getItem('aegis_signer_account')) {
+          btn.disabled = true;
+          btn.innerHTML = `<span>Save Policy</span>`;
+          btn.className = 'save-policy-btn bg-white/[0.04] text-white/30 border border-white/[0.08] font-bold py-2 px-5 rounded-xl text-xs cursor-not-allowed opacity-50 whitespace-nowrap';
+          return;
+        }
+
+        if (info && (info.state === 'Evacuated' || info.state === 'Inheritance')) {
+          btn.disabled = true;
+          btn.innerHTML = `
+            <span class="flex items-center gap-1.5 text-red-400">
+              <svg class="w-3.5 h-3.5 text-red-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+              <span>Bunker Evacuated (Inactive)</span>
+            </span>
+          `;
+          btn.className = 'save-policy-btn bg-red-950/30 border border-red-500/30 text-red-400 font-bold py-2 px-5 rounded-xl text-xs cursor-not-allowed opacity-80 whitespace-nowrap';
+          return;
+        }
+
+        btn.disabled = false;
         if (isMatching) {
           btn.innerHTML = `
             <span class="flex items-center gap-1.5 text-nearGreen">
@@ -3312,10 +3409,7 @@
                                       (onChainHeirBtc && hBtc && onChainHeirBtc !== hBtc) ||
                                       (onChainHeirEvm && hEvm && onChainHeirEvm.toLowerCase() !== hEvm.toLowerCase()) ||
                                       (onChainHeirSol && hSol && onChainHeirSol !== hSol);
-          if (info?.state === 'Evacuated') {
-            btn.innerHTML = `Save Egress Address (Rescue Funds)`;
-            btn.className = 'save-policy-btn bg-amber-400 hover:bg-amber-300 text-black font-extrabold py-2 px-5 rounded-xl text-xs transition shadow-sm active:scale-98 whitespace-nowrap cursor-pointer';
-          } else if (isReplacingExisting) {
+          if (isReplacingExisting) {
             btn.innerHTML = `Save Policy (72h Cooldown)`;
             btn.className = 'save-policy-btn bg-amber-400 hover:bg-amber-300 text-black font-extrabold py-2 px-5 rounded-xl text-xs transition shadow-sm active:scale-98 whitespace-nowrap cursor-pointer';
           } else {
@@ -3474,6 +3568,23 @@
         if (pingBtnText) {
           pingBtnText.innerText = `Activate Clean Bunker (Epoch ${nextEpoch})`;
         }
+
+        // Header Panic Button: Disabled
+        const headerPanic = document.getElementById('headerPanicBtn');
+        const panicLabel = document.getElementById('panicBtnLabel');
+        const panicDot = document.getElementById('panicBtnDot');
+        if (headerPanic) {
+          headerPanic.disabled = true;
+          headerPanic.className = 'px-4 py-2.5 rounded-xl bg-red-950/20 text-red-500/50 border border-red-500/20 text-xs sm:text-sm font-mono font-bold tracking-wider cursor-not-allowed opacity-40 flex items-center gap-2';
+        }
+        if (panicLabel) panicLabel.innerText = 'VAULT EVACUATED';
+        if (panicDot) panicDot.className = 'w-2 h-2 rounded-full bg-red-500/40';
+
+        // Dropdowns: Disabled when evacuated
+        const inactSelect = document.getElementById('inactivitySelect');
+        const graceSelect = document.getElementById('graceSelect');
+        if (inactSelect) inactSelect.disabled = true;
+        if (graceSelect) graceSelect.disabled = true;
         return;
       }
 
@@ -3511,6 +3622,21 @@
         if (pingBtnText) {
           pingBtnText.innerText = 'Save Policy Below to Arm Vault';
         }
+
+        const headerPanic = document.getElementById('headerPanicBtn');
+        const panicLabel = document.getElementById('panicBtnLabel');
+        const panicDot = document.getElementById('panicBtnDot');
+        if (headerPanic) {
+          headerPanic.disabled = true;
+          headerPanic.className = 'px-4 py-2.5 rounded-xl bg-amber-950/20 text-amber-500/50 border border-amber-500/20 text-xs sm:text-sm font-mono font-bold tracking-wider cursor-not-allowed opacity-40 flex items-center gap-2';
+        }
+        if (panicLabel) panicLabel.innerText = 'VAULT UNARMED';
+        if (panicDot) panicDot.className = 'w-2 h-2 rounded-full bg-amber-500/40';
+
+        const inactSelect = document.getElementById('inactivitySelect');
+        const graceSelect = document.getElementById('graceSelect');
+        if (inactSelect) inactSelect.disabled = false;
+        if (graceSelect) graceSelect.disabled = false;
         return;
       }
 
@@ -3536,6 +3662,16 @@
         pingBtnIcon.removeAttribute('stroke');
         pingBtnIcon.removeAttribute('stroke-width');
       }
+
+      const headerPanic = document.getElementById('headerPanicBtn');
+      if (headerPanic) {
+        headerPanic.disabled = false;
+        updatePanicUI();
+      }
+      const inactSelect = document.getElementById('inactivitySelect');
+      const graceSelect = document.getElementById('graceSelect');
+      if (inactSelect) inactSelect.disabled = false;
+      if (graceSelect) graceSelect.disabled = false;
 
       if (remainingSeconds <= 0) {
         if (countdownBox) countdownBox.innerHTML = '<span class="text-red-400">EXPIRED</span>';
@@ -3778,40 +3914,40 @@
 
     function getUnallocatedBunkerFunds() {
       const unallocated = [];
+      const currentSigner = localStorage.getItem('aegis_signer_account');
       const info = lastFetchedVaultInfo;
-      if (!info || info.state === 'Unconfigured' || !hasConfiguredDestinations(info)) {
+      // Never show unallocated alerts if disconnected, unconfigured, or already evacuated
+      if (!currentSigner || !info || info.state !== 'Active' || !hasConfiguredDestinations(info)) {
         return unallocated;
       }
       const backup = info.backup || {};
 
       let cachedBal = {};
-      const currentSigner = localStorage.getItem('aegis_signer_account');
-      if (currentSigner) {
-        try {
-          cachedBal = JSON.parse(localStorage.getItem(`aegis_balance_cache_${currentSigner}`) || '{}');
-        } catch(e) {}
-      }
+      try {
+        cachedBal = JSON.parse(localStorage.getItem(`aegis_balance_cache_${currentSigner}`) || '{}');
+      } catch(e) {}
 
-      const btcText = document.getElementById('btcBalanceText')?.innerText || cachedBal.btcBal || '0';
-      const evmText = document.getElementById('evmBalanceText')?.innerText || cachedBal.evmBal || '0';
-      const solText = document.getElementById('solBalanceText')?.innerText || cachedBal.solBal || '0';
-      const nearText = document.getElementById('nearBalanceText')?.innerText || cachedBal.nearBal || '0';
+      // Strictly read cached balances associated with currentSigner
+      const btcVal = cachedBal.btcBal ? parseNumericBalance(cachedBal.btcBal) : 0;
+      const evmVal = cachedBal.evmBal ? parseNumericBalance(cachedBal.evmBal) : 0;
+      const solVal = cachedBal.solBal ? parseNumericBalance(cachedBal.solBal) : 0;
+      const nearVal = cachedBal.nearBal ? parseNumericBalance(cachedBal.nearBal) : 0;
 
-      const btcVal = parseNumericBalance(btcText);
-      const evmVal = parseNumericBalance(evmText);
-      const solVal = parseNumericBalance(solText);
-      const nearVal = parseNumericBalance(nearText);
+      const hasBtc = !!(backup.btc?.trim() || document.getElementById('panicBtcAddr')?.value?.trim());
+      const hasEvm = !!(backup.evm?.trim() || document.getElementById('panicEvmAddr')?.value?.trim());
+      const hasSol = !!(backup.sol?.trim() || document.getElementById('panicSolAddr')?.value?.trim());
+      const hasNear = !!(backup.near?.trim() || document.getElementById('panicNearAddr')?.value?.trim());
 
-      if (btcVal > 0 && (!backup.btc || !backup.btc.trim())) {
+      if (btcVal > 0 && !hasBtc) {
         unallocated.push(`Bitcoin (${btcVal} BTC)`);
       }
-      if (evmVal > 0 && (!backup.evm || !backup.evm.trim())) {
+      if (evmVal > 0 && !hasEvm) {
         unallocated.push(`Ethereum / EVM (${evmVal} ETH)`);
       }
-      if (solVal > 0 && (!backup.sol || !backup.sol.trim())) {
+      if (solVal > 0 && !hasSol) {
         unallocated.push(`Solana (${solVal} SOL)`);
       }
-      if (nearVal > 0 && (!backup.near || !backup.near.trim())) {
+      if (nearVal > 0 && !hasNear) {
         unallocated.push(`NEAR (${nearVal} NEAR)`);
       }
 
@@ -3820,40 +3956,38 @@
 
     function getUnallocatedHeirFunds() {
       const unallocatedHeirs = [];
+      const currentSigner = localStorage.getItem('aegis_signer_account');
       const info = lastFetchedVaultInfo;
-      if (!info || info.state === 'Unconfigured' || !hasConfiguredDestinations(info)) {
+      if (!currentSigner || !info || info.state !== 'Active' || !hasConfiguredDestinations(info)) {
         return unallocatedHeirs;
       }
       const heirs = info.heirs || {};
 
       let cachedBal = {};
-      const currentSigner = localStorage.getItem('aegis_signer_account');
-      if (currentSigner) {
-        try {
-          cachedBal = JSON.parse(localStorage.getItem(`aegis_balance_cache_${currentSigner}`) || '{}');
-        } catch(e) {}
-      }
+      try {
+        cachedBal = JSON.parse(localStorage.getItem(`aegis_balance_cache_${currentSigner}`) || '{}');
+      } catch(e) {}
 
-      const btcText = document.getElementById('btcBalanceText')?.innerText || cachedBal.btcBal || '0';
-      const evmText = document.getElementById('evmBalanceText')?.innerText || cachedBal.evmBal || '0';
-      const solText = document.getElementById('solBalanceText')?.innerText || cachedBal.solBal || '0';
-      const nearText = document.getElementById('nearBalanceText')?.innerText || cachedBal.nearBal || '0';
+      const btcVal = cachedBal.btcBal ? parseNumericBalance(cachedBal.btcBal) : 0;
+      const evmVal = cachedBal.evmBal ? parseNumericBalance(cachedBal.evmBal) : 0;
+      const solVal = cachedBal.solBal ? parseNumericBalance(cachedBal.solBal) : 0;
+      const nearVal = cachedBal.nearBal ? parseNumericBalance(cachedBal.nearBal) : 0;
 
-      const btcVal = parseNumericBalance(btcText);
-      const evmVal = parseNumericBalance(evmText);
-      const solVal = parseNumericBalance(solText);
-      const nearVal = parseNumericBalance(nearText);
+      const hasBtc = !!(heirs.btc?.trim() || document.getElementById('heirBtcAddr')?.value?.trim());
+      const hasEvm = !!(heirs.evm?.trim() || document.getElementById('heirEvmAddr')?.value?.trim());
+      const hasSol = !!(heirs.sol?.trim() || document.getElementById('heirSolAddr')?.value?.trim());
+      const hasNear = !!(heirs.near?.trim() || document.getElementById('heirNearAddr')?.value?.trim());
 
-      if (btcVal > 0 && (!heirs.btc || !heirs.btc.trim())) {
+      if (btcVal > 0 && !hasBtc) {
         unallocatedHeirs.push(`Bitcoin (${btcVal} BTC)`);
       }
-      if (evmVal > 0 && (!heirs.evm || !heirs.evm.trim())) {
+      if (evmVal > 0 && !hasEvm) {
         unallocatedHeirs.push(`Ethereum / EVM (${evmVal} ETH)`);
       }
-      if (solVal > 0 && (!heirs.sol || !heirs.sol.trim())) {
+      if (solVal > 0 && !hasSol) {
         unallocatedHeirs.push(`Solana (${solVal} SOL)`);
       }
-      if (nearVal > 0 && (!heirs.near || !heirs.near.trim())) {
+      if (nearVal > 0 && !hasNear) {
         unallocatedHeirs.push(`NEAR (${nearVal} NEAR)`);
       }
 
@@ -3914,6 +4048,16 @@
     }
 
     function startAbortCountdown() {
+      if (!localStorage.getItem('aegis_signer_account')) {
+        showToast('🛑 Connect wallet to arm or manage vault', true);
+        return;
+      }
+
+      if (isVaultEvacuatedOrBurned()) {
+        showToast('🛑 VAULT ALREADY EVACUATED: Active epoch keys are burned. Rotate bunker to start new epoch.', true);
+        return;
+      }
+
       // 1. Guard against panic during 72h policy timelock
       if (lastFetchedVaultInfo && lastFetchedVaultInfo.pending_policy) {
         showToast('🛑 PANIC BLOCKED: 72h policy timelock is active. Cancel pending proposal or wait for cooldown.', true);
@@ -4159,12 +4303,6 @@
     }
 
     // Destination Policies & 72h Timelock
-    let isEditing = false;
-    let userHasInteractedWithInputs = false;
-    const inputIds = [
-      'panicNearAddr', 'panicBtcAddr', 'panicEvmAddr', 'panicSolAddr',
-      'heirNearAddr', 'heirBtcAddr', 'heirEvmAddr', 'heirSolAddr', 'heirFinalMemo'
-    ];
 
     function updateMemoByteCounter(val) {
       const bytes = new TextEncoder().encode(val || '').length;
