@@ -1538,13 +1538,9 @@
     }
 
     function isVaultEvacuatedOrBurned() {
-      if (lastFetchedVaultInfo && (lastFetchedVaultInfo.state === 'Evacuated' || lastFetchedVaultInfo.state === 'Inheritance')) {
-        return true;
-      }
-      if (localStorage.getItem('aegis_vault_burned_' + currentEpochIndex) === 'true') {
-        return true;
-      }
-      return false;
+      const currentSigner = localStorage.getItem('aegis_signer_account');
+      if (!currentSigner || !lastFetchedVaultInfo) return false;
+      return lastFetchedVaultInfo.state === 'Evacuated' || lastFetchedVaultInfo.state === 'Inheritance';
     }
 
     // Live On-Chain State Fetcher via NEAR JSON-RPC (FastNEAR with Failover)
@@ -1599,7 +1595,34 @@
     }
 
     function syncUIWithOnChainState(info, signerAccount) {
-      if (!info) {
+      if (!signerAccount) {
+        lastFetchedVaultInfo = null;
+        currentEpochIndex = 0;
+        remainingSeconds = 0;
+        userHasInteractedWithInputs = false;
+        inputIds.forEach(id => {
+          const el = document.getElementById(id);
+          if (el) el.value = '';
+        });
+        const activeBanner = document.getElementById('activePolicyBanner');
+        if (activeBanner) activeBanner.classList.add('hidden');
+        const unconfigBanner = document.getElementById('unconfiguredBanner');
+        if (unconfigBanner) unconfigBanner.classList.remove('hidden');
+        const burnedBanner = document.getElementById('bunkerBurnedBanner');
+        if (burnedBanner) burnedBanner.classList.add('hidden');
+        const unallocDep = document.getElementById('unallocatedDepositAlert');
+        if (unallocDep) { unallocDep.classList.add('hidden'); unallocDep.classList.remove('flex'); }
+        const unallocPol = document.getElementById('unallocatedPolicyAlert');
+        if (unallocPol) { unallocPol.classList.add('hidden'); unallocPol.classList.remove('flex'); }
+        const tabRescue = document.getElementById('tab-rescue');
+        if (tabRescue) tabRescue.innerText = '1. Rescue & Inheritance (Destinations)';
+        updateSaveButtonState(null);
+        renderBunkerAddresses();
+        updateCountdownDisplay();
+        return;
+      }
+
+      if (!info || info.state === 'Unconfigured') {
         lastFetchedVaultInfo = {
           state: 'Unconfigured',
           epoch: 0,
@@ -1609,7 +1632,30 @@
           last_ping_ns: 0,
           heartbeat_interval_ns: 7776000000000000
         };
+        currentEpochIndex = 0;
         remainingSeconds = 0;
+        userHasInteractedWithInputs = false;
+
+        inputIds.forEach(id => {
+          const el = document.getElementById(id);
+          if (el) el.value = '';
+        });
+
+        const activeBanner = document.getElementById('activePolicyBanner');
+        if (activeBanner) activeBanner.classList.add('hidden');
+        const unconfigBanner = document.getElementById('unconfiguredBanner');
+        if (unconfigBanner) unconfigBanner.classList.remove('hidden');
+        const burnedBanner = document.getElementById('bunkerBurnedBanner');
+        if (burnedBanner) burnedBanner.classList.add('hidden');
+        const unallocDep = document.getElementById('unallocatedDepositAlert');
+        if (unallocDep) { unallocDep.classList.add('hidden'); unallocDep.classList.remove('flex'); }
+        const unallocPol = document.getElementById('unallocatedPolicyAlert');
+        if (unallocPol) { unallocPol.classList.add('hidden'); unallocPol.classList.remove('flex'); }
+
+        const tabRescue = document.getElementById('tab-rescue');
+        if (tabRescue) tabRescue.innerText = '1. Rescue & Inheritance (Destinations)';
+
+        updateSaveButtonState(lastFetchedVaultInfo);
         renderBunkerAddresses();
         updateCountdownDisplay();
         return;
@@ -1620,19 +1666,13 @@
       // 1. Sync epoch & bunker addresses
       if (typeof info.epoch === 'number') {
         currentEpochIndex = info.epoch;
-        localStorage.setItem('aegis_bunker_epoch', currentEpochIndex.toString());
       }
 
       // Check if Vault is in Evacuated or Inheritance state
       if (info.state === 'Evacuated' || info.state === 'Inheritance') {
         remainingSeconds = 0;
-        localStorage.setItem('aegis_vault_burned_' + info.epoch, 'true');
-        localStorage.setItem('aegis_vault_burned_' + currentEpochIndex, 'true');
       } else if (info.state === 'Unconfigured' || !hasConfiguredDestinations(info)) {
         remainingSeconds = 0;
-      } else if (info.state === 'Active') {
-        localStorage.removeItem('aegis_vault_burned_' + currentEpochIndex);
-        localStorage.removeItem('aegis_vault_burned_' + info.epoch);
       }
 
       renderBunkerAddresses();
@@ -2181,10 +2221,12 @@
           try { await provider.disconnectWallet(); } catch (e) {}
         }
         localStorage.removeItem('aegis_signer_account');
+        updateWalletDisconnectedUI();
       } else if (chain === 'evm') {
         localStorage.removeItem('aegis_connected_evm');
         if (localStorage.getItem('aegis_signer_account')?.startsWith('0x')) {
           localStorage.removeItem('aegis_signer_account');
+          updateWalletDisconnectedUI();
         }
       } else if (chain === 'sol') {
         localStorage.removeItem('aegis_connected_sol');
@@ -2206,7 +2248,7 @@
       localStorage.removeItem('aegis_connected_sol');
       localStorage.removeItem('aegis_connected_btc');
       updateMultichainConnectedUI();
-      renderBunkerAddresses();
+      updateWalletDisconnectedUI();
       closeMultichainWalletModal();
       showToast('All wallets disconnected');
     }
@@ -2399,6 +2441,35 @@
       if (connectBtn) connectBtn.classList.remove('hidden');
       if (connectedPill) connectedPill.classList.add('hidden');
 
+      // 1. Reset client state
+      lastFetchedVaultInfo = null;
+      currentEpochIndex = 0;
+      remainingSeconds = 0;
+      userHasInteractedWithInputs = false;
+
+      // 2. Clear all address input boxes
+      inputIds.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+      });
+
+      // 3. Hide all active banners and alert dialogs
+      const activeBanner = document.getElementById('activePolicyBanner');
+      if (activeBanner) activeBanner.classList.add('hidden');
+      const unconfigBanner = document.getElementById('unconfiguredBanner');
+      if (unconfigBanner) unconfigBanner.classList.remove('hidden');
+      const burnedBanner = document.getElementById('bunkerBurnedBanner');
+      if (burnedBanner) burnedBanner.classList.add('hidden');
+      const unallocDep = document.getElementById('unallocatedDepositAlert');
+      if (unallocDep) { unallocDep.classList.add('hidden'); unallocDep.classList.remove('flex'); }
+      const unallocPol = document.getElementById('unallocatedPolicyAlert');
+      if (unallocPol) { unallocPol.classList.add('hidden'); unallocPol.classList.remove('flex'); }
+
+      const tabRescue = document.getElementById('tab-rescue');
+      if (tabRescue) tabRescue.innerText = '1. Rescue & Inheritance (Destinations)';
+
+      updateSaveButtonState(null);
+
       // Hero HUD state: Disconnected / Awaiting Arming
       const pulseDot = document.getElementById('heartbeatPulseDot');
       const cardTitle = document.getElementById('heartbeatCardTitle');
@@ -2426,6 +2497,9 @@
         pingBtn.className = 'w-full bg-purple-600 hover:bg-purple-500 text-white font-extrabold py-3.5 px-6 near-pill-btn text-sm sm:text-base tracking-wide transition shadow-sm active:scale-98 flex items-center justify-center gap-2';
       }
       if (pingBtnText) pingBtnText.innerText = 'Connect Wallet to Arm Vault';
+
+      renderBunkerAddresses();
+      checkUnallocatedFunds();
     }
 
     async function fetchAccountNearBalance(accountId) {
@@ -2648,8 +2722,25 @@
       const syncBadge = document.getElementById('liveSyncBadge');
       const syncDot = document.getElementById('liveSyncDot');
 
-      // Check 1-hour cache (invalidated if contract changed)
-      const cached = JSON.parse(localStorage.getItem('aegis_balance_cache') || 'null');
+      const currentSigner = localStorage.getItem('aegis_signer_account');
+      if (!currentSigner) {
+        if (btcBalEl) btcBalEl.innerHTML = '0.0000 <span class="text-sm font-normal text-[#8C929D]">BTC</span>';
+        if (btcUsdEl) btcUsdEl.innerText = '≈ 0.00 USD';
+        if (evmBalEl) evmBalEl.innerHTML = '0.0000 <span class="text-sm font-normal text-[#8C929D]">ETH</span>';
+        if (evmUsdEl) evmUsdEl.innerText = '≈ 0.00 USD';
+        if (solBalEl) solBalEl.innerHTML = '0.0000 <span class="text-sm font-normal text-[#8C929D]">SOL</span>';
+        if (solUsdEl) solUsdEl.innerText = '≈ 0.00 USD';
+        if (nearBalEl) nearBalEl.innerHTML = '0.0000 <span class="text-sm font-normal text-[#8C929D]">NEAR</span>';
+        if (nearUsdEl) nearUsdEl.innerText = '≈ 0.00 USD';
+        if (syncBadge) syncBadge.innerText = 'Connect Wallet to Sync';
+        if (syncDot) syncDot.className = 'w-2 h-2 rounded-full bg-white/20';
+        checkUnallocatedFunds();
+        return;
+      }
+
+      // Check 1-hour cache scoped to current account
+      const cacheKey = `aegis_balance_cache_${currentSigner}`;
+      const cached = JSON.parse(localStorage.getItem(cacheKey) || 'null');
       const now = Date.now();
 
       if (!force && cached && cached.contractId === CONTRACT_ID && (now - cached.timestamp < CACHE_TTL_MS)) {
@@ -2782,8 +2873,8 @@
         console.warn('BTC testnet failed', e);
       }
 
-      // Save to 1-hour cache
-      localStorage.setItem('aegis_balance_cache', JSON.stringify({
+      // Save to 1-hour cache scoped to account
+      localStorage.setItem(`aegis_balance_cache_${currentSigner}`, JSON.stringify({
         contractId: CONTRACT_ID,
         timestamp: Date.now(),
         btcBal: btcBalEl ? btcBalEl.innerHTML : '0.0000 <span class="text-sm font-normal text-[#8C929D]">BTC</span>',
@@ -2814,17 +2905,6 @@
       try {
         const outcome = await dispatchNearTransaction('rotate_bunker');
         if (outcome) {
-          // Clear all burned flags
-          VAULT_EPOCHS.forEach(e => {
-            localStorage.removeItem('aegis_vault_burned_' + e.epoch);
-          });
-          localStorage.removeItem('aegis_vault_burned_0');
-          localStorage.removeItem('aegis_vault_burned_1');
-          localStorage.removeItem('aegis_vault_burned_2');
-
-          currentEpochIndex = currentEpochIndex + 1;
-          localStorage.setItem('aegis_bunker_epoch', currentEpochIndex.toString());
-
           const banner = document.getElementById('bunkerBurnedBanner');
           if (banner) banner.classList.add('hidden');
 
@@ -2834,13 +2914,12 @@
           const updatedInfo = await fetchLiveContractState();
           if (updatedInfo && typeof updatedInfo.epoch === 'number') {
             currentEpochIndex = updatedInfo.epoch;
-            localStorage.setItem('aegis_bunker_epoch', currentEpochIndex.toString());
           }
 
           renderBunkerAddresses();
           fetchLiveBalances(true);
           updateCountdownDisplay();
-          showToast(`✅ Clean Bunker Activated! Active Epoch ${VAULT_EPOCHS[currentEpochIndex].epoch} (Unarmed - Enter destinations to arm)`);
+          showToast(`✅ Clean Bunker Activated! Active Epoch ${currentEpochIndex} (Unarmed - Enter destinations to arm)`);
         }
       } catch (err) {
         console.error('Rotate bunker failed:', err);
@@ -3554,7 +3633,6 @@
 
       dispatchNearTransaction('panic').then(() => {
         remainingSeconds = 0;
-        localStorage.setItem('aegis_vault_burned_' + currentEpochIndex, 'true');
         if (lastFetchedVaultInfo) {
           lastFetchedVaultInfo.state = 'Evacuated';
         }
@@ -3726,23 +3804,62 @@
     }
 
     function loadSavedAddresses() {
-      // Purge any legacy stale local cooldown flags
+      // Purge any legacy global keys
       localStorage.removeItem('aegis_cooldown_started');
       localStorage.removeItem('aegis_pending_addresses');
+      localStorage.removeItem('aegis_addresses');
+      localStorage.removeItem('aegis_vault_burned_0');
+      localStorage.removeItem('aegis_vault_burned_1');
+      localStorage.removeItem('aegis_vault_burned_2');
+      localStorage.removeItem('aegis_vault_burned_3');
 
-      // Zero-Trust Clean Slate: if vault state is Unconfigured or Evacuated, purge local cache
-      if (lastFetchedVaultInfo && (lastFetchedVaultInfo.state === 'Unconfigured' || lastFetchedVaultInfo.state === 'Evacuated')) {
-        localStorage.removeItem('aegis_addresses');
+      const currentSigner = localStorage.getItem('aegis_signer_account');
+      if (!currentSigner) {
+        inputIds.forEach(id => {
+          const el = document.getElementById(id);
+          if (el) el.value = '';
+        });
+        const banner = document.getElementById('unconfiguredBanner');
+        if (banner) banner.classList.remove('hidden');
+        return;
       }
 
-      const saved = JSON.parse(localStorage.getItem('aegis_addresses') || '{}');
-      
-      // Auto-sanitize: clear legacy/bogus mastrophot.testnet from panicNearAddr if present
-      if (saved.panicNearAddr === 'mastrophot.testnet') {
-        delete saved.panicNearAddr;
-        localStorage.setItem('aegis_addresses', JSON.stringify(saved));
+      // If user has on-chain destinations in lastFetchedVaultInfo, populate from them!
+      if (lastFetchedVaultInfo && hasConfiguredDestinations(lastFetchedVaultInfo)) {
+        const pNear = document.getElementById('panicNearAddr');
+        const pBtc = document.getElementById('panicBtcAddr');
+        const pEvm = document.getElementById('panicEvmAddr');
+        const pSol = document.getElementById('panicSolAddr');
+        const hNear = document.getElementById('heirNearAddr');
+        const hBtc = document.getElementById('heirBtcAddr');
+        const hEvm = document.getElementById('heirEvmAddr');
+        const hSol = document.getElementById('heirSolAddr');
+
+        if (!userHasInteractedWithInputs) {
+          if (pNear) pNear.value = lastFetchedVaultInfo.backup?.near || '';
+          if (pBtc) pBtc.value = lastFetchedVaultInfo.backup?.btc || '';
+          if (pEvm) pEvm.value = lastFetchedVaultInfo.backup?.evm || '';
+          if (pSol) pSol.value = lastFetchedVaultInfo.backup?.sol || '';
+          if (hNear) hNear.value = lastFetchedVaultInfo.heirs?.near || '';
+          if (hBtc) hBtc.value = lastFetchedVaultInfo.heirs?.btc || '';
+          if (hEvm) hEvm.value = lastFetchedVaultInfo.heirs?.evm || '';
+          if (hSol) hSol.value = lastFetchedVaultInfo.heirs?.sol || '';
+        }
+        return;
       }
 
+      // If vault is Unconfigured, keep inputs pristine empty!
+      if (lastFetchedVaultInfo && lastFetchedVaultInfo.state === 'Unconfigured') {
+        inputIds.forEach(id => {
+          const el = document.getElementById(id);
+          if (el) el.value = '';
+        });
+        const banner = document.getElementById('unconfiguredBanner');
+        if (banner) banner.classList.remove('hidden');
+        return;
+      }
+
+      const saved = JSON.parse(localStorage.getItem('aegis_addresses_' + currentSigner) || '{}');
       let hasAny = false;
       inputIds.forEach(id => {
         const el = document.getElementById(id);
@@ -3876,8 +3993,12 @@
         }
       };
 
-      // Save policy directly to NEAR smart contract
-      localStorage.setItem('aegis_addresses', JSON.stringify(data));
+      // Save policy scoped to connected account
+      const currentSigner = localStorage.getItem('aegis_signer_account');
+      if (currentSigner) {
+        localStorage.setItem('aegis_addresses_' + currentSigner, JSON.stringify(data));
+      }
+      localStorage.removeItem('aegis_addresses');
       dispatchNearTransaction('propose_policy', policyPayload).then(() => {
         userHasInteractedWithInputs = false;
         isEditing = false;
