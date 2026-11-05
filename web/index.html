@@ -404,6 +404,22 @@
         </button>
       </div>
 
+      <!-- Unarmed Bunker Notice Banner (Appears when vault is connected but unconfigured) -->
+      <div id="bunkerUnarmedBanner" class="p-4 rounded-2xl bg-amber-950/25 border border-amber-500/35 hidden flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center font-bold shrink-0">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+          </div>
+          <div>
+            <h4 class="text-xs sm:text-sm font-extrabold text-amber-200">Bunker Inactive — Arm Vault Before Depositing</h4>
+            <p class="text-xs text-[#C5CAD3] mt-0.5">Deposit addresses are disabled for security until you configure and save emergency backup or inheritance destinations in Tab 1.</p>
+          </div>
+        </div>
+        <button onclick="switchTab('rescue')" class="px-4 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-black font-extrabold text-xs transition whitespace-nowrap shrink-0">
+          Configure Policy in Tab 1 ↗
+        </button>
+      </div>
+
       <!-- Unallocated Bunker Funds Warning Banner (Appears when deposit exists without backup egress) -->
       <div id="unallocatedDepositAlert" class="p-4 rounded-2xl bg-amber-950/30 border border-amber-500/40 hidden flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div class="flex items-center gap-3">
@@ -1610,12 +1626,38 @@
         if (unconfigBanner) unconfigBanner.classList.remove('hidden');
         const burnedBanner = document.getElementById('bunkerBurnedBanner');
         if (burnedBanner) burnedBanner.classList.add('hidden');
+        const unarmedBanner = document.getElementById('bunkerUnarmedBanner');
+        if (unarmedBanner) unarmedBanner.classList.add('hidden');
         const unallocDep = document.getElementById('unallocatedDepositAlert');
         if (unallocDep) { unallocDep.classList.add('hidden'); unallocDep.classList.remove('flex'); }
         const unallocPol = document.getElementById('unallocatedPolicyAlert');
         if (unallocPol) { unallocPol.classList.add('hidden'); unallocPol.classList.remove('flex'); }
         const tabRescue = document.getElementById('tab-rescue');
         if (tabRescue) tabRescue.innerText = '1. Rescue & Inheritance (Destinations)';
+
+        // Reset balances to zero
+        const btcBalEl = document.getElementById('btcBalanceText');
+        const btcUsdEl = document.getElementById('btcUsdText');
+        const evmBalEl = document.getElementById('evmBalanceText');
+        const evmUsdEl = document.getElementById('evmUsdText');
+        const solBalEl = document.getElementById('solBalanceText');
+        const solUsdEl = document.getElementById('solUsdText');
+        const nearBalEl = document.getElementById('nearBalanceText');
+        const nearUsdEl = document.getElementById('nearUsdText');
+        const syncBadge = document.getElementById('liveSyncBadge');
+        const syncDot = document.getElementById('liveSyncDot');
+
+        if (btcBalEl) btcBalEl.innerHTML = '0.0000 <span class="text-base font-normal text-[#B0B9C9]">BTC</span>';
+        if (btcUsdEl) btcUsdEl.innerText = '≈ 0.00 USD';
+        if (evmBalEl) evmBalEl.innerHTML = '0.0000 <span class="text-base font-normal text-[#B0B9C9]">ETH</span>';
+        if (evmUsdEl) evmUsdEl.innerText = '≈ 0.00 USD';
+        if (solBalEl) solBalEl.innerHTML = '0.0000 <span class="text-base font-normal text-[#B0B9C9]">SOL</span>';
+        if (solUsdEl) solUsdEl.innerText = '≈ 0.00 USD';
+        if (nearBalEl) nearBalEl.innerHTML = '0.0000 <span class="text-base font-normal text-[#B0B9C9]">NEAR</span>';
+        if (nearUsdEl) nearUsdEl.innerText = '≈ 0.00 USD';
+        if (syncBadge) syncBadge.innerText = 'Connect Wallet to Sync';
+        if (syncDot) syncDot.className = 'w-2 h-2 rounded-full bg-white/20';
+
         updateSaveButtonState(null);
         renderBunkerAddresses();
         updateCountdownDisplay();
@@ -1647,6 +1689,8 @@
         if (unconfigBanner) unconfigBanner.classList.remove('hidden');
         const burnedBanner = document.getElementById('bunkerBurnedBanner');
         if (burnedBanner) burnedBanner.classList.add('hidden');
+        const unarmedBanner = document.getElementById('bunkerUnarmedBanner');
+        if (unarmedBanner) unarmedBanner.classList.remove('hidden');
         const unallocDep = document.getElementById('unallocatedDepositAlert');
         if (unallocDep) { unallocDep.classList.add('hidden'); unallocDep.classList.remove('flex'); }
         const unallocPol = document.getElementById('unallocatedPolicyAlert');
@@ -1654,6 +1698,29 @@
 
         const tabRescue = document.getElementById('tab-rescue');
         if (tabRescue) tabRescue.innerText = '1. Rescue & Inheritance (Destinations)';
+
+        // Ensure balances are clean 0.0000 for unconfigured vaults
+        const btcBalEl = document.getElementById('btcBalanceText');
+        const btcUsdEl = document.getElementById('btcUsdText');
+        const evmBalEl = document.getElementById('evmBalanceText');
+        const evmUsdEl = document.getElementById('evmUsdText');
+        const solBalEl = document.getElementById('solBalanceText');
+        const solUsdEl = document.getElementById('solUsdText');
+        const nearBalEl = document.getElementById('nearBalanceText');
+        const nearUsdEl = document.getElementById('nearUsdText');
+        const syncBadge = document.getElementById('liveSyncBadge');
+        const syncDot = document.getElementById('liveSyncDot');
+
+        if (btcBalEl) btcBalEl.innerHTML = '0.0000 <span class="text-base font-normal text-[#B0B9C9]">BTC</span>';
+        if (btcUsdEl) btcUsdEl.innerText = '≈ 0.00 USD';
+        if (evmBalEl) evmBalEl.innerHTML = '0.0000 <span class="text-base font-normal text-[#B0B9C9]">ETH</span>';
+        if (evmUsdEl) evmUsdEl.innerText = '≈ 0.00 USD';
+        if (solBalEl) solBalEl.innerHTML = '0.0000 <span class="text-base font-normal text-[#B0B9C9]">SOL</span>';
+        if (solUsdEl) solUsdEl.innerText = '≈ 0.00 USD';
+        if (nearBalEl) nearBalEl.innerHTML = '0.0000 <span class="text-base font-normal text-[#B0B9C9]">NEAR</span>';
+        if (nearUsdEl) nearUsdEl.innerText = '≈ 0.00 USD';
+        if (syncBadge) syncBadge.innerText = 'Vault Unarmed';
+        if (syncDot) syncDot.className = 'w-2 h-2 rounded-full bg-white/20';
 
         updateSaveButtonState(lastFetchedVaultInfo);
         renderBunkerAddresses();
@@ -2216,11 +2283,9 @@
 
     async function disconnectChain(chain) {
       if (chain === 'near') {
-        let provider = window.AegisWallet || window.AegisMeteor || window.AegisWalletBundle;
-        if (provider && typeof provider.disconnectWallet === 'function') {
-          try { await provider.disconnectWallet(); } catch (e) {}
-        }
         localStorage.removeItem('aegis_signer_account');
+        localStorage.removeItem('aegis_wallet_type');
+        localStorage.removeItem('aegis_testnet_signer_key');
         updateWalletDisconnectedUI();
       } else if (chain === 'evm') {
         localStorage.removeItem('aegis_connected_evm');
@@ -2239,11 +2304,9 @@
     }
 
     async function disconnectAllWallets() {
-      let provider = window.AegisWallet || window.AegisMeteor || window.AegisWalletBundle;
-      if (provider && typeof provider.disconnectWallet === 'function') {
-        try { await provider.disconnectWallet(); } catch (e) {}
-      }
       localStorage.removeItem('aegis_signer_account');
+      localStorage.removeItem('aegis_wallet_type');
+      localStorage.removeItem('aegis_testnet_signer_key');
       localStorage.removeItem('aegis_connected_evm');
       localStorage.removeItem('aegis_connected_sol');
       localStorage.removeItem('aegis_connected_btc');
@@ -2460,6 +2523,8 @@
       if (unconfigBanner) unconfigBanner.classList.remove('hidden');
       const burnedBanner = document.getElementById('bunkerBurnedBanner');
       if (burnedBanner) burnedBanner.classList.add('hidden');
+      const unarmedBanner = document.getElementById('bunkerUnarmedBanner');
+      if (unarmedBanner) unarmedBanner.classList.add('hidden');
       const unallocDep = document.getElementById('unallocatedDepositAlert');
       if (unallocDep) { unallocDep.classList.add('hidden'); unallocDep.classList.remove('flex'); }
       const unallocPol = document.getElementById('unallocatedPolicyAlert');
@@ -2498,6 +2563,35 @@
       }
       if (pingBtnText) pingBtnText.innerText = 'Connect Wallet to Arm Vault';
 
+      // Reset Header Account and Balance
+      const headName = document.getElementById('headerAccountName');
+      if (headName) headName.innerText = 'account.testnet';
+      const headBal = document.getElementById('headerAccountBalance');
+      if (headBal) headBal.innerText = '0.00 NEAR';
+
+      // Reset Bunker Balances to 0.0000
+      const btcBalEl = document.getElementById('btcBalanceText');
+      const btcUsdEl = document.getElementById('btcUsdText');
+      const evmBalEl = document.getElementById('evmBalanceText');
+      const evmUsdEl = document.getElementById('evmUsdText');
+      const solBalEl = document.getElementById('solBalanceText');
+      const solUsdEl = document.getElementById('solUsdText');
+      const nearBalEl = document.getElementById('nearBalanceText');
+      const nearUsdEl = document.getElementById('nearUsdText');
+      const syncBadge = document.getElementById('liveSyncBadge');
+      const syncDot = document.getElementById('liveSyncDot');
+
+      if (btcBalEl) btcBalEl.innerHTML = '0.0000 <span class="text-base font-normal text-[#B0B9C9]">BTC</span>';
+      if (btcUsdEl) btcUsdEl.innerText = '≈ 0.00 USD';
+      if (evmBalEl) evmBalEl.innerHTML = '0.0000 <span class="text-base font-normal text-[#B0B9C9]">ETH</span>';
+      if (evmUsdEl) evmUsdEl.innerText = '≈ 0.00 USD';
+      if (solBalEl) solBalEl.innerHTML = '0.0000 <span class="text-base font-normal text-[#B0B9C9]">SOL</span>';
+      if (solUsdEl) solUsdEl.innerText = '≈ 0.00 USD';
+      if (nearBalEl) nearBalEl.innerHTML = '0.0000 <span class="text-base font-normal text-[#B0B9C9]">NEAR</span>';
+      if (nearUsdEl) nearUsdEl.innerText = '≈ 0.00 USD';
+      if (syncBadge) syncBadge.innerText = 'Connect Wallet to Sync';
+      if (syncDot) syncDot.className = 'w-2 h-2 rounded-full bg-white/20';
+
       renderBunkerAddresses();
       checkUnallocatedFunds();
     }
@@ -2533,18 +2627,17 @@
     }
 
     async function disconnectWallet() {
-      const provider = window.AegisWallet || window.AegisMeteor;
-      if (provider && typeof provider.disconnectWallet === 'function') {
-        try { await provider.disconnectWallet(); } catch (e) {}
-      }
-      if (window.meteorWallet && typeof window.meteorWallet.signOut === 'function') {
-        try { window.meteorWallet.signOut(); } catch (e) {}
-      }
       localStorage.removeItem('aegis_signer_account');
       localStorage.removeItem('aegis_wallet_type');
       localStorage.removeItem('aegis_testnet_signer_key');
+      localStorage.removeItem('aegis_connected_evm');
+      localStorage.removeItem('aegis_connected_sol');
+      localStorage.removeItem('aegis_connected_btc');
       updateWalletDisconnectedUI();
+      updateMultichainConnectedUI();
       renderBunkerAddresses();
+      showToast('Wallet disconnected');
+    }
       showToast('Wallet disconnected');
     }
 
@@ -2626,6 +2719,7 @@
       const nearEl = document.getElementById('nearAddress');
       const pill = document.getElementById('bunkerEpochPill');
       const banner = document.getElementById('bunkerBurnedBanner');
+      const unarmedBanner = document.getElementById('bunkerUnarmedBanner');
 
       if (!currentSigner) {
         if (btcEl) { btcEl.innerText = 'Connect wallet to reveal address'; btcEl.dataset.full = ''; }
@@ -2635,9 +2729,56 @@
         if (pill) {
           pill.innerText = 'Derivation Path: Connect Wallet to View';
           pill.className = 'text-[11px] font-mono font-bold text-[#8E99AD] bg-white/[0.04] border border-white/[0.08] px-2.5 py-0.5 rounded-full whitespace-nowrap';
-          if (banner) banner.classList.add('hidden');
         }
+        if (banner) banner.classList.add('hidden');
+        if (unarmedBanner) unarmedBanner.classList.add('hidden');
+        checkUnallocatedFunds();
         return;
+      }
+
+      const isBurned = isVaultEvacuatedOrBurned();
+      const isUnarmed = !lastFetchedVaultInfo || lastFetchedVaultInfo.state === 'Unconfigured' || !hasConfiguredDestinations();
+
+      // Guard 1: Evacuated or Burned bunker (Keys exposed/evacuated - NEVER show deposit addresses!)
+      if (isBurned) {
+        const burnedMsg = `Epoch ${currentEpochIndex} Burned · Deposits Disabled`;
+        if (btcEl) { btcEl.innerText = burnedMsg; btcEl.dataset.full = ''; }
+        if (evmEl) { evmEl.innerText = burnedMsg; evmEl.dataset.full = ''; }
+        if (solEl) { solEl.innerText = burnedMsg; solEl.dataset.full = ''; }
+        if (nearEl) { nearEl.innerText = burnedMsg; nearEl.dataset.full = ''; }
+        if (pill) {
+          pill.innerText = `Epoch ${currentEpochIndex} · Burned (Inactive)`;
+          pill.className = 'text-[11px] font-mono font-bold text-red-400 bg-red-950/40 border border-red-500/30 px-2.5 py-0.5 rounded-full whitespace-nowrap';
+        }
+        if (banner) banner.classList.remove('hidden');
+        if (unarmedBanner) unarmedBanner.classList.add('hidden');
+        checkUnallocatedFunds();
+        return;
+      }
+
+      // Guard 2: Unconfigured / Unarmed bunker (User has not configured policy - NEVER show deposit addresses!)
+      if (isUnarmed) {
+        const unarmMsg = 'Bunker Unarmed · Save Policy in Tab 1';
+        if (btcEl) { btcEl.innerText = unarmMsg; btcEl.dataset.full = ''; }
+        if (evmEl) { evmEl.innerText = unarmMsg; evmEl.dataset.full = ''; }
+        if (solEl) { solEl.innerText = unarmMsg; solEl.dataset.full = ''; }
+        if (nearEl) { nearEl.innerText = unarmMsg; nearEl.dataset.full = ''; }
+        if (pill) {
+          pill.innerText = 'Derivation Path: Inactive (Arm in Tab 1)';
+          pill.className = 'text-[11px] font-mono font-bold text-amber-400 bg-amber-950/40 border border-amber-500/30 px-2.5 py-0.5 rounded-full whitespace-nowrap';
+        }
+        if (banner) banner.classList.add('hidden');
+        if (unarmedBanner) unarmedBanner.classList.remove('hidden');
+        checkUnallocatedFunds();
+        return;
+      }
+
+      // 3. Vault is Active & Armed — Derive/Display Active MPC Deposit Addresses
+      if (banner) banner.classList.add('hidden');
+      if (unarmedBanner) unarmedBanner.classList.add('hidden');
+      if (pill) {
+        pill.innerText = `Derivation Path: aegis/${currentSigner}/${currentEpochIndex} (Active)`;
+        pill.className = 'text-[11px] font-mono font-bold text-nearGreen bg-nearGreenMuted border border-nearGreen/30 px-2.5 py-0.5 rounded-full whitespace-nowrap';
       }
 
       // 1. Check local dynamic cache
@@ -2689,22 +2830,6 @@
         nearEl.dataset.full = addresses.near || CONTRACT_ID;
       }
 
-      const isBurned = isVaultEvacuatedOrBurned();
-      if (pill) {
-        if (isBurned) {
-          pill.innerText = `Epoch ${currentEpochIndex} · Burned`;
-          pill.className = 'text-[11px] font-mono font-bold text-red-400 bg-red-950/40 border border-red-500/30 px-2.5 py-0.5 rounded-full whitespace-nowrap';
-          if (banner) banner.classList.remove('hidden');
-        } else if (!hasConfiguredDestinations()) {
-          pill.innerText = `Derivation Path: aegis/${currentSigner}/${currentEpochIndex} (Unarmed)`;
-          pill.className = 'text-[11px] font-mono font-bold text-amber-400 bg-amber-950/40 border border-amber-500/30 px-2.5 py-0.5 rounded-full whitespace-nowrap';
-          if (banner) banner.classList.add('hidden');
-        } else {
-          pill.innerText = `Derivation Path: aegis/${currentSigner}/${currentEpochIndex} (Active)`;
-          pill.className = 'text-[11px] font-mono font-bold text-nearGreen bg-nearGreenMuted border border-nearGreen/30 px-2.5 py-0.5 rounded-full whitespace-nowrap';
-          if (banner) banner.classList.add('hidden');
-        }
-      }
       checkUnallocatedFunds();
     }
 
@@ -2733,6 +2858,22 @@
         if (nearBalEl) nearBalEl.innerHTML = '0.0000 <span class="text-sm font-normal text-[#8C929D]">NEAR</span>';
         if (nearUsdEl) nearUsdEl.innerText = '≈ 0.00 USD';
         if (syncBadge) syncBadge.innerText = 'Connect Wallet to Sync';
+        if (syncDot) syncDot.className = 'w-2 h-2 rounded-full bg-white/20';
+        checkUnallocatedFunds();
+        return;
+      }
+
+      // If vault is unconfigured / unarmed, zero out balances immediately
+      if (!lastFetchedVaultInfo || lastFetchedVaultInfo.state === 'Unconfigured' || !hasConfiguredDestinations()) {
+        if (btcBalEl) btcBalEl.innerHTML = '0.0000 <span class="text-sm font-normal text-[#8C929D]">BTC</span>';
+        if (btcUsdEl) btcUsdEl.innerText = '≈ 0.00 USD';
+        if (evmBalEl) evmBalEl.innerHTML = '0.0000 <span class="text-sm font-normal text-[#8C929D]">ETH</span>';
+        if (evmUsdEl) evmUsdEl.innerText = '≈ 0.00 USD';
+        if (solBalEl) solBalEl.innerHTML = '0.0000 <span class="text-sm font-normal text-[#8C929D]">SOL</span>';
+        if (solUsdEl) solUsdEl.innerText = '≈ 0.00 USD';
+        if (nearBalEl) nearBalEl.innerHTML = '0.0000 <span class="text-sm font-normal text-[#8C929D]">NEAR</span>';
+        if (nearUsdEl) nearUsdEl.innerText = '≈ 0.00 USD';
+        if (syncBadge) syncBadge.innerText = 'Vault Unarmed';
         if (syncDot) syncDot.className = 'w-2 h-2 rounded-full bg-white/20';
         checkUnallocatedFunds();
         return;
@@ -2779,13 +2920,32 @@
         console.warn('Fallback to baseline prices', e);
       }
 
-      const curr = {
+      let curr = {
         btc: document.getElementById('btcAddress')?.dataset?.full || '',
         evm: document.getElementById('evmAddress')?.dataset?.full || '',
         sol: document.getElementById('solAddress')?.dataset?.full || '',
         near: document.getElementById('nearAddress')?.dataset?.full || CONTRACT_ID
       };
-      if (!curr.btc || curr.btc.includes('Deriving') || curr.btc.includes('Connect')) return;
+
+      // In Evacuated state, addresses are masked in UI, but we check burned addresses for leftover funds
+      if (isVaultEvacuatedOrBurned() && (!curr.btc || !curr.evm)) {
+        const derivedKey = `aegis_derived_${currentSigner}_${currentEpochIndex}`;
+        let cachedAddr = null;
+        try { cachedAddr = JSON.parse(localStorage.getItem(derivedKey)); } catch(e) {}
+        if (!cachedAddr && PRECOMPUTED_DERIVED_VAULTS[currentSigner]?.[currentEpochIndex]) {
+          cachedAddr = PRECOMPUTED_DERIVED_VAULTS[currentSigner][currentEpochIndex];
+        }
+        if (cachedAddr) {
+          curr = {
+            btc: cachedAddr.btc || '',
+            evm: cachedAddr.evm || '',
+            sol: cachedAddr.sol || '',
+            near: cachedAddr.near || CONTRACT_ID
+          };
+        }
+      }
+
+      if (!curr.btc || curr.btc.includes('Deriving') || curr.btc.includes('Connect') || curr.btc.includes('Unarmed') || curr.btc.includes('Burned')) return;
 
       // 1. NEAR Testnet RPC View Account
       try {
@@ -2883,8 +3043,8 @@
         evmUsd: evmUsdEl ? evmUsdEl.innerText : '≈ 0.00 USD',
         solBal: solBalEl ? solBalEl.innerHTML : '0.0000 <span class="text-sm font-normal text-[#8C929D]">SOL</span>',
         solUsd: solUsdEl ? solUsdEl.innerText : '≈ 0.00 USD',
-        nearBal: nearBalEl ? nearBalEl.innerHTML : '3.5000 <span class="text-sm font-normal text-[#8C929D]">NEAR</span>',
-        nearUsd: nearUsdEl ? nearUsdEl.innerText : '≈ 13.40 USD'
+        nearBal: nearBalEl ? nearBalEl.innerHTML : '0.0000 <span class="text-sm font-normal text-[#8C929D]">NEAR</span>',
+        nearUsd: nearUsdEl ? nearUsdEl.innerText : '≈ 0.00 USD'
       }));
 
       if (syncBadge) syncBadge.innerText = 'Synced: Just now';
@@ -3284,10 +3444,26 @@
     }
 
     function copyAddr(elemId) {
+      if (!localStorage.getItem('aegis_signer_account')) {
+        showToast('Connect wallet first', true);
+        return;
+      }
+      if (isVaultEvacuatedOrBurned()) {
+        showToast('🛑 Deposit rejected: This bunker epoch was evacuated and keys are burned. Activate clean bunker first.', true);
+        return;
+      }
+      if (!lastFetchedVaultInfo || lastFetchedVaultInfo.state === 'Unconfigured' || !hasConfiguredDestinations()) {
+        showToast('⚠️ Bunker unarmed: Save your destination policy in Tab 1 first.', true);
+        return;
+      }
       const el = document.getElementById(elemId);
-      const text = el.dataset.full || el.innerText;
+      const text = el ? (el.dataset.full || el.innerText) : '';
+      if (!text || text.includes('Bunker Unarmed') || text.includes('Epoch Burned') || text.includes('Connect wallet') || text.includes('Deriving')) {
+        showToast('No active deposit address available', true);
+        return;
+      }
       navigator.clipboard.writeText(text);
-      showToast('Address copied to clipboard');
+      showToast('Deposit address copied to clipboard');
     }
 
     // Ping Main Button Handler (Smart Connected / Disconnected / Evacuated / Unconfigured)
@@ -3333,6 +3509,22 @@
 
     // QR Code
     function openQr(title, address) {
+      if (!localStorage.getItem('aegis_signer_account')) {
+        showToast('Connect wallet first', true);
+        return;
+      }
+      if (isVaultEvacuatedOrBurned()) {
+        showToast('🛑 QR Code disabled: This bunker epoch is burned.', true);
+        return;
+      }
+      if (!lastFetchedVaultInfo || lastFetchedVaultInfo.state === 'Unconfigured' || !hasConfiguredDestinations()) {
+        showToast('⚠️ QR Code disabled: Bunker is unarmed. Save destinations in Tab 1 first.', true);
+        return;
+      }
+      if (!address || address.includes('Bunker Unarmed') || address.includes('Epoch Burned') || address.includes('Connect wallet') || address.includes('Deriving')) {
+        showToast('No active deposit address available for QR', true);
+        return;
+      }
       currentQrAddr = address;
       document.getElementById('qrTitle').innerText = `${title} QR Code`;
       document.getElementById('qrAddressText').innerText = address;
@@ -3425,12 +3617,18 @@
     function getUnallocatedBunkerFunds() {
       const unallocated = [];
       const info = lastFetchedVaultInfo;
-      const backup = info?.backup || {};
+      if (!info || info.state === 'Unconfigured' || !hasConfiguredDestinations(info)) {
+        return unallocated;
+      }
+      const backup = info.backup || {};
 
       let cachedBal = {};
-      try {
-        cachedBal = JSON.parse(localStorage.getItem('aegis_balance_cache') || '{}');
-      } catch(e) {}
+      const currentSigner = localStorage.getItem('aegis_signer_account');
+      if (currentSigner) {
+        try {
+          cachedBal = JSON.parse(localStorage.getItem(`aegis_balance_cache_${currentSigner}`) || '{}');
+        } catch(e) {}
+      }
 
       const btcText = document.getElementById('btcBalanceText')?.innerText || cachedBal.btcBal || '0';
       const evmText = document.getElementById('evmBalanceText')?.innerText || cachedBal.evmBal || '0';
@@ -3461,12 +3659,18 @@
     function getUnallocatedHeirFunds() {
       const unallocatedHeirs = [];
       const info = lastFetchedVaultInfo;
-      const heirs = info?.heirs || {};
+      if (!info || info.state === 'Unconfigured' || !hasConfiguredDestinations(info)) {
+        return unallocatedHeirs;
+      }
+      const heirs = info.heirs || {};
 
       let cachedBal = {};
-      try {
-        cachedBal = JSON.parse(localStorage.getItem('aegis_balance_cache') || '{}');
-      } catch(e) {}
+      const currentSigner = localStorage.getItem('aegis_signer_account');
+      if (currentSigner) {
+        try {
+          cachedBal = JSON.parse(localStorage.getItem(`aegis_balance_cache_${currentSigner}`) || '{}');
+        } catch(e) {}
+      }
 
       const btcText = document.getElementById('btcBalanceText')?.innerText || cachedBal.btcBal || '0';
       const evmText = document.getElementById('evmBalanceText')?.innerText || cachedBal.evmBal || '0';
