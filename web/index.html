@@ -3047,7 +3047,7 @@
       checkUnallocatedFunds();
     }
 
-    const CACHE_TTL_MS = 60 * 60 * 1000; // 1-hour cache interval to minimize RPC overhead
+    const CACHE_TTL_MS = 30 * 1000; // 30-second cache interval for responsive sync
 
     async function fetchLiveBalances(force = false) {
       const btcBalEl = document.getElementById('btcBalanceText');
@@ -3093,12 +3093,15 @@
         return;
       }
 
-      // Check 1-hour cache scoped to current account
+      // Check 30-second cache scoped to current account
       const cacheKey = `aegis_balance_cache_${currentSigner}`;
       const cached = JSON.parse(localStorage.getItem(cacheKey) || 'null');
       const now = Date.now();
+      const currentVaultState = lastFetchedVaultInfo?.state || 'Active';
+      const isEvac = isVaultEvacuatedOrBurned();
 
-      if (!force && cached && cached.contractId === CONTRACT_ID && (now - cached.timestamp < CACHE_TTL_MS)) {
+      // Bypass cache if: forced, vault is evacuated/burned, or state changed since cache was saved
+      if (!force && !isEvac && cached && cached.contractId === CONTRACT_ID && cached.state === currentVaultState && (now - cached.timestamp < CACHE_TTL_MS)) {
         if (btcBalEl && cached.btcBal) btcBalEl.innerHTML = cached.btcBal;
         if (btcUsdEl && cached.btcUsd) btcUsdEl.innerText = cached.btcUsd;
         if (evmBalEl && cached.evmBal) evmBalEl.innerHTML = cached.evmBal;
@@ -3108,8 +3111,10 @@
         if (nearBalEl && cached.nearBal) nearBalEl.innerHTML = cached.nearBal;
         if (nearUsdEl && cached.nearUsd) nearUsdEl.innerText = cached.nearUsd;
 
-        const minutesAgo = Math.floor((now - cached.timestamp) / 60000);
-        if (syncBadge) syncBadge.innerText = minutesAgo < 1 ? 'Synced: Just now' : `Synced: ${minutesAgo}m ago`;
+        const secondsAgo = Math.floor((now - cached.timestamp) / 1000);
+        if (syncBadge) {
+          syncBadge.innerText = secondsAgo < 15 ? 'Synced: Just now' : `Synced: ${secondsAgo}s ago`;
+        }
         if (syncDot) syncDot.className = 'w-2 h-2 rounded-full bg-nearGreen';
         checkUnallocatedFunds();
         return;
@@ -3268,9 +3273,10 @@
         if (btcUsdEl) btcUsdEl.innerText = `≈ 0.00 USD`;
       }
 
-      // Save to 1-hour cache scoped to account
+      // Save to cache scoped to account & vault state
       localStorage.setItem(`aegis_balance_cache_${currentSigner}`, JSON.stringify({
         contractId: CONTRACT_ID,
+        state: lastFetchedVaultInfo?.state || 'Active',
         timestamp: Date.now(),
         btcBal: btcBalEl ? btcBalEl.innerHTML : '0.0000 <span class="text-sm font-normal text-[#8C929D]">BTC</span>',
         btcUsd: btcUsdEl ? btcUsdEl.innerText : '≈ 0.00 USD',
@@ -3282,7 +3288,15 @@
         nearUsd: nearUsdEl ? nearUsdEl.innerText : '≈ 0.00 USD'
       }));
 
-      if (syncBadge) syncBadge.innerText = 'Synced: Just now';
+      // Update monitor elements if active
+      if (document.getElementById('monitorBtcBal') && btcBalEl) document.getElementById('monitorBtcBal').innerText = btcBalEl.innerText;
+      if (document.getElementById('monitorEvmBal') && evmBalEl) document.getElementById('monitorEvmBal').innerText = evmBalEl.innerText;
+      if (document.getElementById('monitorSolBal') && solBalEl) document.getElementById('monitorSolBal').innerText = solBalEl.innerText;
+      if (document.getElementById('monitorNearBal') && nearBalEl) document.getElementById('monitorNearBal').innerText = nearBalEl.innerText;
+
+      if (syncBadge) {
+        syncBadge.innerText = isVaultEvacuatedOrBurned() ? 'Evacuated · Live Synced' : 'Synced: Just now';
+      }
       if (syncDot) syncDot.className = 'w-2 h-2 rounded-full bg-nearGreen';
       checkUnallocatedFunds();
       if (force) showToast('Balances and rates updated from RPC');
@@ -3454,8 +3468,8 @@
       renderBunkerAddresses();
       loadSavedAddresses();
       updatePanicUI();
-      fetchLiveBalances(false); // Uses 1-hour cache if fresh
-      setInterval(() => fetchLiveBalances(false), 60 * 60 * 1000); // Poll once per hour (prevents RPC spam)
+      fetchLiveBalances(false); // Uses 30s cache if fresh
+      setInterval(() => fetchLiveBalances(false), 30 * 1000); // Check balances every 30s
     });
 
     function changeInactivityPeriod(val) {
@@ -3817,9 +3831,16 @@
       document.querySelectorAll('.tab-panel').forEach(p => p.classList.add('hidden'));
 
       const activeBtn = document.getElementById(`tab-${name}`);
-      activeBtn.classList.add('text-nearBlack', 'bg-nearGreen', 'font-bold');
-      activeBtn.classList.remove('text-[#8C929D]', 'font-semibold');
-      document.getElementById(`panel-${name}`).classList.remove('hidden');
+      if (activeBtn) {
+        activeBtn.classList.add('text-nearBlack', 'bg-nearGreen', 'font-bold');
+        activeBtn.classList.remove('text-[#8C929D]', 'font-semibold');
+      }
+      const panel = document.getElementById(`panel-${name}`);
+      if (panel) panel.classList.remove('hidden');
+
+      if (name === 'vault') {
+        fetchLiveBalances(isVaultEvacuatedOrBurned());
+      }
     }
 
     // QR Code
@@ -4160,11 +4181,20 @@
         if (lastFetchedVaultInfo) {
           lastFetchedVaultInfo.state = 'Evacuated';
         }
+        const currentSigner = localStorage.getItem('aegis_signer_account');
+        if (currentSigner) {
+          localStorage.removeItem(`aegis_balance_cache_${currentSigner}`);
+        }
         renderBunkerAddresses();
         updateCountdownDisplay();
 
         showToast('PANIC CONFIRMED ON-CHAIN: Vault evacuated.', true);
         openEvacMonitor();
+
+        fetchLiveBalances(true);
+        setTimeout(() => fetchLiveBalances(true), 2500);
+        setTimeout(() => fetchLiveBalances(true), 6000);
+        setTimeout(() => fetchLiveBalances(true), 12000);
       }).catch(err => {
         console.error('Panic execution aborted or failed:', err);
       });
