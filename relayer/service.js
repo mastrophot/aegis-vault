@@ -38,6 +38,7 @@ class AegisRelayerService {
     this.evmProvider = null;
     this.solanaConnection = null;
     this.processedSweeps = new Set();
+    this.ownerActivityNonces = new Map();
   }
 
   async init() {
@@ -135,6 +136,7 @@ class AegisRelayerService {
 
     const epoch = vault.epoch;
     const sweepId = `${vaultOwner}:${epoch}:${state}`;
+    this.processedSweeps.add(sweepId);
     const destination = state === 'Evacuated' ? vault.backup : vault.heirs;
     const derivationPath = `aegis/${vaultOwner}/${epoch}`;
 
@@ -539,6 +541,47 @@ class AegisRelayerService {
           const info = await this.getVaultInfo(acc);
           if (!info) continue;
           const state = typeof info.state === 'string' ? info.state : Object.keys(info.state)[0];
+
+          // 1. Passive Proof-of-Life: detect on-chain wallet activity (outgoing transactions, deposits, etc.)
+          if (state === 'Active' && info.last_ping_ns) {
+            try {
+              const keyRes = await this.near.connection.provider.query({
+                request_type: 'view_access_key_list',
+                account_id: acc,
+                finality: 'optimistic'
+              });
+
+              if (keyRes && Array.isArray(keyRes.keys)) {
+                let maxNonce = 0n;
+                for (const k of keyRes.keys) {
+                  const n = BigInt(k.access_key.nonce || 0);
+                  if (n > maxNonce) maxNonce = n;
+                }
+
+                const prevNonce = this.ownerActivityNonces.get(acc);
+                if (prevNonce !== undefined && maxNonce > prevNonce) {
+                  const nowNs = BigInt(Date.now()) * 1000000n;
+                  const elapsedSincePingNs = nowNs - BigInt(info.last_ping_ns);
+                  console.log(`📡 [Passive Proof-of-Life] On-chain activity detected for ${acc}!`);
+                  console.log(`   • Key nonce increased: ${prevNonce} -> ${maxNonce}`);
+                  
+                  // Renew heartbeat if more than 30 seconds have passed since last on-chain ping
+                  if (elapsedSincePingNs > 30000000000n) {
+                    console.log(`   • Sponsoring automatic heartbeat renewal (ping_by_relayer)...`);
+                    const pingRes = await this.sponsorPing(acc);
+                    if (pingRes.success) {
+                      console.log(`   ✅ Heartbeat autonomously renewed on-chain! Tx: ${pingRes.txHash}`);
+                    }
+                  } else {
+                    console.log(`   ℹ️ Heartbeat was renewed recently (${Number(elapsedSincePingNs / 1000000000n)}s ago), skipping duplicate ping.`);
+                  }
+                }
+                this.ownerActivityNonces.set(acc, maxNonce);
+              }
+            } catch (nonceErr) {
+              // Ignore transient RPC query errors
+            }
+          }
           
           // Autonomous Push Inheritance Check: triggers on silence without heir interaction
           if (state === 'Active' && !info.pending_policy && info.last_ping_ns && info.heartbeat_interval_ns) {
