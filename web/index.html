@@ -2616,6 +2616,10 @@
           fetchAccountNearBalance(nearAcc);
         } else if (isSol) {
           fetchAccountSolanaBalance(solAcc);
+        } else if (isEvm) {
+          fetchAccountEvmBalance(evmAcc);
+        } else if (isBtc) {
+          fetchAccountBtcBalance(btcAcc);
         }
 
         // Secondary badges
@@ -2902,6 +2906,51 @@
         }
       } catch (e) {
         console.warn('Solana balance query error:', e);
+      }
+    }
+
+    async function fetchAccountEvmBalance(address) {
+      if (!address) return;
+      try {
+        const evmRes = await fetch('https://ethereum-sepolia-rpc.publicnode.com', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            id: 1,
+            method: 'eth_getBalance',
+            params: [address, 'latest']
+          })
+        }).then(r => r.json());
+        if (evmRes?.result) {
+          const wei = BigInt(evmRes.result);
+          const ethVal = Number(wei) / 1e18;
+          const balEl = document.getElementById('headerAccountBalance');
+          if (balEl) {
+            balEl.innerText = `${ethVal.toFixed(4)} ETH`;
+            balEl.className = 'text-blue-300 border-l border-white/10 pl-2 font-normal hidden sm:inline whitespace-nowrap';
+          }
+        }
+      } catch (e) {
+        console.warn('EVM balance query error:', e);
+      }
+    }
+
+    async function fetchAccountBtcBalance(address) {
+      if (!address) return;
+      try {
+        const btcRes = await fetch(`https://mempool.space/testnet/api/address/${address}`).then(r => r.json());
+        if (btcRes?.chain_stats) {
+          const funded = (btcRes.chain_stats.funded_txo_sum || 0) - (btcRes.chain_stats.spent_txo_sum || 0);
+          const btcVal = funded / 1e8;
+          const balEl = document.getElementById('headerAccountBalance');
+          if (balEl) {
+            balEl.innerText = `${btcVal.toFixed(4)} BTC`;
+            balEl.className = 'text-amber-300 border-l border-white/10 pl-2 font-normal hidden sm:inline whitespace-nowrap';
+          }
+        }
+      } catch (e) {
+        console.warn('BTC balance query error:', e);
       }
     }
 
