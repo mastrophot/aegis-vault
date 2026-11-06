@@ -293,26 +293,60 @@
           </button>
           <div id="onchainPingOption" class="hidden"></div>
           
-          <div class="grid grid-cols-2 gap-2.5">
-            <div class="relative">
-              <select id="inactivitySelect" onchange="changeInactivityPeriod(this.value)" class="w-full appearance-none bg-white/[0.04] hover:bg-white/[0.08] text-white font-semibold text-xs sm:text-sm rounded-full pl-4 pr-8 py-3 border border-white/[0.08] focus:border-nearGreen outline-none transition cursor-pointer">
-                <option value="demo_120s" class="bg-[#0B0D12] text-amber-300 font-bold">⚡ 2m (Judge Demo)</option>
-                <option value="30" class="bg-[#0B0D12]">Every 30 Days</option>
-                <option value="90" selected class="bg-[#0B0D12]">Every 90 Days</option>
-                <option value="180" class="bg-[#0B0D12]">Every 180 Days</option>
-                <option value="365" class="bg-[#0B0D12]">Every 1 Year</option>
-              </select>
-              <svg class="w-4 h-4 text-[#8C929D] absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" /></svg>
+          <!-- Heartbeat & Grace Policy Schedule Configuration Block -->
+          <div class="mt-3 p-3.5 rounded-2xl bg-white/[0.03] border border-white/[0.08] space-y-3">
+            <div class="flex items-center justify-between text-xs">
+              <div class="flex items-center gap-1.5 text-white font-bold">
+                <svg class="w-3.5 h-3.5 text-nearGreen" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                <span>Trigger Schedule & Safety Buffer</span>
+              </div>
+              <span class="text-[10px] font-mono text-[#8C929D] bg-white/[0.04] px-2 py-0.5 rounded-full border border-white/[0.06]">Autonomous Policy</span>
             </div>
-            <div class="relative">
-              <select id="graceSelect" onchange="changeGracePeriod(this.value)" class="w-full appearance-none bg-white/[0.04] hover:bg-white/[0.08] text-white font-semibold text-xs sm:text-sm rounded-full pl-4 pr-8 py-3 border border-white/[0.08] focus:border-nearGreen outline-none transition cursor-pointer">
-                <option value="demo_30s" class="bg-[#0B0D12] text-amber-300 font-bold">⚡ 30s (Judge Demo)</option>
-                <option value="3" class="bg-[#0B0D12]">Grace: 3 Days</option>
-                <option value="7" selected class="bg-[#0B0D12]">Grace: 7 Days</option>
-                <option value="14" class="bg-[#0B0D12]">Grace: 14 Days</option>
-                <option value="30" class="bg-[#0B0D12]">Grace: 30 Days</option>
-              </select>
-              <svg class="w-4 h-4 text-[#8C929D] absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" /></svg>
+
+            <!-- Two Selectors with Labels -->
+            <div class="grid grid-cols-2 gap-2.5">
+              <div class="space-y-1">
+                <label class="block text-[10px] font-semibold text-[#8C929D] uppercase tracking-wider pl-1">1. Check-in Timer</label>
+                <div class="relative">
+                  <select id="inactivitySelect" onchange="changeInactivityPeriod(this.value)" class="w-full appearance-none bg-[#0B0D12] hover:bg-white/[0.06] text-white font-semibold text-xs rounded-xl pl-3 pr-7 py-2.5 border border-white/[0.08] focus:border-nearGreen outline-none transition cursor-pointer">
+                    <option value="demo_120s" class="bg-[#0B0D12] text-amber-300 font-bold">⚡ 2m (Judge Demo)</option>
+                    <option value="30" class="bg-[#0B0D12]">Every 30 Days</option>
+                    <option value="90" selected class="bg-[#0B0D12]">Every 90 Days</option>
+                    <option value="180" class="bg-[#0B0D12]">Every 180 Days</option>
+                    <option value="365" class="bg-[#0B0D12]">Every 1 Year</option>
+                  </select>
+                  <svg class="w-3.5 h-3.5 text-[#8C929D] absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" /></svg>
+                </div>
+              </div>
+              <div class="space-y-1">
+                <label class="block text-[10px] font-semibold text-[#8C929D] uppercase tracking-wider pl-1">2. Grace Buffer</label>
+                <div class="relative">
+                  <select id="graceSelect" onchange="changeGracePeriod(this.value)" class="w-full appearance-none bg-[#0B0D12] hover:bg-white/[0.06] text-white font-semibold text-xs rounded-xl pl-3 pr-7 py-2.5 border border-white/[0.08] focus:border-nearGreen outline-none transition cursor-pointer">
+                    <option value="demo_30s" class="bg-[#0B0D12] text-amber-300 font-bold">⚡ 30s (Judge Demo)</option>
+                    <option value="3" class="bg-[#0B0D12]">Grace: 3 Days</option>
+                    <option value="7" selected class="bg-[#0B0D12]">Grace: 7 Days</option>
+                    <option value="14" class="bg-[#0B0D12]">Grace: 14 Days</option>
+                    <option value="30" class="bg-[#0B0D12]">Grace: 30 Days</option>
+                  </select>
+                  <svg class="w-3.5 h-3.5 text-[#8C929D] absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" /></svg>
+                </div>
+              </div>
+            </div>
+
+            <!-- Clear Explanations -->
+            <div class="p-2.5 rounded-xl bg-black/40 border border-white/[0.05] space-y-1.5 text-[11px] leading-relaxed text-[#8C929D]">
+              <div class="flex items-start gap-1.5">
+                <span class="text-nearGreen font-bold shrink-0">•</span>
+                <span><strong class="text-white">Check-in:</strong> Inactivity interval before heartbeat expires. Owner pings or sends any on-chain tx to renew.</span>
+              </div>
+              <div class="flex items-start gap-1.5">
+                <span class="text-amber-400 font-bold shrink-0">•</span>
+                <span><strong class="text-white">Grace Window:</strong> Emergency buffer after expiration. Fires urgent Telegram/Email alerts before heirs can claim.</span>
+              </div>
+              <div class="flex items-start gap-1.5">
+                <span class="text-sky-400 font-bold shrink-0">•</span>
+                <span><strong class="text-white">72h Cooldown:</strong> Shortening intervals or changing destinations triggers an on-chain delay to block acceleration attacks.</span>
+              </div>
             </div>
           </div>
         </div>
@@ -979,7 +1013,7 @@
                     <span>Immutable On-Chain Delivery</span>
                   </div>
                   <p class="text-[#8C929D] text-[11px] mt-1 leading-snug">
-                    Encoded directly into Bitcoin OP_RETURN, EVM calldata & Solana memo upon execution. Cannot be altered or censored.
+                    Encoded directly into Bitcoin OP_RETURN, EVM calldata & Solana SPL memo upon execution. Cannot be altered or censored. <span class="text-amber-400/90 font-medium block mt-1">⚠️ Note: NEAR Protocol native transfers do not support transaction memos — heirs on NEAR receive assets directly via transfer action without memo text.</span>
                   </p>
                 </div>
               </div>
