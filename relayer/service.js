@@ -552,21 +552,23 @@ class AegisRelayerService {
               });
 
               if (keyRes && Array.isArray(keyRes.keys)) {
-                let maxNonce = 0n;
+                let totalNonce = 0n;
                 for (const k of keyRes.keys) {
-                  const n = BigInt(k.access_key.nonce || 0);
-                  if (n > maxNonce) maxNonce = n;
+                  totalNonce += BigInt(k.access_key.nonce || 0);
                 }
 
                 const prevNonce = this.ownerActivityNonces.get(acc);
-                if (prevNonce !== undefined && maxNonce > prevNonce) {
+                if (prevNonce !== undefined && totalNonce > prevNonce) {
                   const nowNs = BigInt(Date.now()) * 1000000n;
                   const elapsedSincePingNs = nowNs - BigInt(info.last_ping_ns);
                   console.log(`📡 [Passive Proof-of-Life] On-chain activity detected for ${acc}!`);
-                  console.log(`   • Key nonce increased: ${prevNonce} -> ${maxNonce}`);
+                  console.log(`   • Key activity detected (total nonce: ${prevNonce} -> ${totalNonce})`);
                   
-                  // Renew heartbeat if more than 30 seconds have passed since last on-chain ping
-                  if (elapsedSincePingNs > 30000000000n) {
+                  // In demo mode (<=60s), allow renewing after 3 seconds; in production after 30 seconds
+                  const isDemoMode = BigInt(info.heartbeat_interval_ns || 0) <= 60000000000n;
+                  const minElapsedNs = isDemoMode ? 3000000000n : 30000000000n;
+
+                  if (elapsedSincePingNs > minElapsedNs) {
                     console.log(`   • Sponsoring automatic heartbeat renewal (ping_by_relayer)...`);
                     const pingRes = await this.sponsorPing(acc);
                     if (pingRes.success) {
@@ -576,7 +578,7 @@ class AegisRelayerService {
                     console.log(`   ℹ️ Heartbeat was renewed recently (${Number(elapsedSincePingNs / 1000000000n)}s ago), skipping duplicate ping.`);
                   }
                 }
-                this.ownerActivityNonces.set(acc, maxNonce);
+                this.ownerActivityNonces.set(acc, totalNonce);
               }
             } catch (nonceErr) {
               // Ignore transient RPC query errors

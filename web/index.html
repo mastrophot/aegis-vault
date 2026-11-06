@@ -3371,9 +3371,21 @@
         if (outcome) {
           const banner = document.getElementById('bunkerBurnedBanner');
           if (banner) banner.classList.add('hidden');
+          const evacBanner = document.getElementById('evacuatedPolicyBanner');
+          if (evacBanner) evacBanner.classList.add('hidden');
+          const unconfigBanner = document.getElementById('unconfiguredBanner');
+          if (unconfigBanner) unconfigBanner.classList.remove('hidden');
 
           remainingSeconds = 0;
           clearAllAddresses();
+
+          inputIds.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) {
+              el.disabled = false;
+              el.value = '';
+            }
+          });
 
           const updatedInfo = await fetchLiveContractState();
           if (updatedInfo && typeof updatedInfo.epoch === 'number') {
@@ -4513,6 +4525,12 @@
         return;
       }
 
+      // Ensure all inputs are enabled when vault is active or unconfigured
+      inputIds.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.disabled = false;
+      });
+
       // If user has on-chain destinations in lastFetchedVaultInfo, populate from them!
       if (lastFetchedVaultInfo && hasConfiguredDestinations(lastFetchedVaultInfo)) {
         const pNear = document.getElementById('panicNearAddr');
@@ -4593,12 +4611,19 @@
     }
 
     function clearAllAddresses() {
-      userHasInteractedWithInputs = true;
-      isEditing = false;
+      userHasInteractedWithInputs = false;
+      isEditing = true;
       inputIds.forEach(id => {
         const el = document.getElementById(id);
-        if (el) el.value = '';
+        if (el) {
+          el.value = '';
+          el.disabled = false;
+        }
       });
+      const evacBanner = document.getElementById('evacuatedPolicyBanner');
+      if (evacBanner) evacBanner.classList.add('hidden');
+      const unconfigBanner = document.getElementById('unconfiguredBanner');
+      if (unconfigBanner) unconfigBanner.classList.remove('hidden');
       localStorage.removeItem('aegis_addresses');
       localStorage.removeItem('aegis_pending_addresses');
       localStorage.removeItem('aegis_cooldown_started');
