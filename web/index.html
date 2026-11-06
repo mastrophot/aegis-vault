@@ -3530,6 +3530,10 @@
         showToast(`Broadcasting check-in timer update (${val} days) to NEAR...`);
       }
       updateCountdownDisplay();
+      if (!lastFetchedVaultInfo || lastFetchedVaultInfo.state === 'Unconfigured') {
+        showToast(`Timer set to ${val === 'demo_60s' ? '60s' : val + ' days'}. Will be armed on-chain once you save policy.`);
+        return;
+      }
       dispatchNearTransaction('update_intervals', { heartbeat_interval_ns: hbNs, challenge_period_ns: cpNs });
     }
 
@@ -3549,6 +3553,10 @@
         cpNs = (BigInt(val) * 86400n * 1000000000n).toString();
         localStorage.setItem('aegis_grace_days', val);
         showToast(`Broadcasting grace period update (${val} days) to NEAR...`);
+      }
+      if (!lastFetchedVaultInfo || lastFetchedVaultInfo.state === 'Unconfigured') {
+        showToast(`Grace window set to ${val === 'demo_15s' ? '15s' : val + ' days'}. Will be armed on-chain once you save policy.`);
+        return;
       }
       dispatchNearTransaction('update_intervals', { heartbeat_interval_ns: null, challenge_period_ns: cpNs });
     }
@@ -4672,6 +4680,14 @@
         userHasInteractedWithInputs = false;
         isEditing = false;
         if (res !== undefined) {
+          const inactPref = localStorage.getItem('aegis_inactivity_days');
+          const gracePref = localStorage.getItem('aegis_grace_days');
+          if (inactPref === 'demo_60s' || gracePref === 'demo_15s') {
+            dispatchNearTransaction('update_intervals', {
+              heartbeat_interval_ns: inactPref === 'demo_60s' ? '60000000000' : null,
+              challenge_period_ns: '15000000000'
+            });
+          }
           showToast('Policy armed on-chain! Opening Safe Bunker Deposits...');
           setTimeout(() => switchTab('vault'), 700);
         }
