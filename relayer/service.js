@@ -145,6 +145,7 @@ class AegisRelayerService {
     const sweepId = `${vaultOwner}:${epoch}:${state}`;
     this.processedSweeps.add(sweepId);
     const destination = state === 'Evacuated' ? vault.backup : vault.heirs;
+    const actionLabel = state === 'Inheritance' ? 'Inheritance' : 'Evacuation';
     const derivationPath = `aegis/${vaultOwner}/${epoch}`;
 
     console.log(`   • Vault State:       ${state}`);
@@ -177,7 +178,7 @@ class AegisRelayerService {
           valueWei: ethers.parseEther('0.1'), // 0.1 ETH
           nonce: 0,
           chainId: 11155111, // Sepolia
-          memo: `Aegis Evacuation: ${vaultOwner} Epoch ${epoch}`
+          memo: `Aegis ${actionLabel}: ${vaultOwner} Epoch ${epoch}`
         });
 
         console.log(`   • Calling request_sweep_signature on ${this.contractId} with raw EVM payload...`);
@@ -360,7 +361,7 @@ class AegisRelayerService {
             fromPubkey: vaultAddrs.sol.address,
             toPubkey: destination.sol.trim(),
             lamports: liveLamports,
-            memo: `Aegis Evacuation: ${vaultOwner} Epoch ${epoch}`,
+            memo: `Aegis ${actionLabel}: ${vaultOwner} Epoch ${epoch}`,
             recentBlockhash
           });
 
