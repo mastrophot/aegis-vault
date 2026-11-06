@@ -270,6 +270,31 @@ impl LastKeyVault {
         ));
     }
 
+    /// Resets caller's vault back to clean Unconfigured state (clears all egress addresses)
+    pub fn reset_my_vault(&mut self) {
+        let caller = env::predecessor_account_id();
+        let vault = self.vaults.get_mut(&caller).expect("No vault found for account");
+        vault.backup = ChainAddresses::empty();
+        vault.heirs = ChainAddresses::empty();
+        vault.state = VaultState::Unconfigured;
+        vault.pending_policy = None;
+        env::log_str(&format!("VAULT_RESET: Vault for {} reset to Unconfigured", caller));
+    }
+
+    /// Admin reset of a vault to Unconfigured state
+    pub fn admin_reset_vault(&mut self, target_account: AccountId) {
+        let caller = env::predecessor_account_id();
+        let is_admin = caller == env::current_account_id()
+            || self.default_relayer.as_ref().map_or(false, |r| r == &caller);
+        require!(is_admin, "Unauthorized caller for admin_reset_vault");
+        let vault = self.vaults.get_mut(&target_account).expect("No vault found for target account");
+        vault.backup = ChainAddresses::empty();
+        vault.heirs = ChainAddresses::empty();
+        vault.state = VaultState::Unconfigured;
+        vault.pending_policy = None;
+        env::log_str(&format!("ADMIN_VAULT_RESET: Vault for {} reset to Unconfigured by {}", target_account, caller));
+    }
+
     /// Sweeps native NEAR tokens from the contract to the configured backup or heir destination account.
     /// Retains a safety reserve (0.5 NEAR) to maintain contract storage staking.
     pub fn sweep_near(&mut self, vault_owner: AccountId, destination: Option<AccountId>) -> Promise {
