@@ -2765,8 +2765,10 @@
     }
 
     async function fetchAccountNearBalance(accountId) {
+      if (!accountId) return;
       try {
-        const response = await fetch(NEAR_RPC_URLS[0], {
+        const rpc = NEAR_RPC_URLS[currentRpcIndex] || NEAR_RPC_URLS[0];
+        const response = await fetch(rpc, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -2775,7 +2777,7 @@
             method: 'query',
             params: {
               request_type: 'view_account',
-              finality: 'final',
+              finality: 'optimistic',
               account_id: accountId
             }
           })
@@ -2829,7 +2831,12 @@
           showToast(`✅ ${methodName}() confirmed on-chain! Tx: ${txHash.slice(0, 8)}...`);
           userHasInteractedWithInputs = false;
           isEditing = false;
-          setTimeout(() => fetchLiveContractState(), 2000);
+          const currentSigner = localStorage.getItem('aegis_signer_account');
+          setTimeout(() => {
+            fetchLiveContractState();
+            if (currentSigner) fetchAccountNearBalance(currentSigner);
+            fetchLiveBalances(true);
+          }, 2000);
           return outcome;
         }
 
@@ -2864,7 +2871,11 @@
           showToast(`✅ ${methodName}() confirmed on-chain! Tx: ${txHash.slice(0, 8)}...`);
           userHasInteractedWithInputs = false;
           isEditing = false;
-          setTimeout(() => fetchLiveContractState(), 2000);
+          setTimeout(() => {
+            fetchLiveContractState();
+            fetchAccountNearBalance(signerAccountId);
+            fetchLiveBalances(true);
+          }, 2000);
           return outcome;
         }
 
@@ -3111,6 +3122,35 @@
     }
 
     const CACHE_TTL_MS = 30 * 1000; // 30-second cache interval for responsive sync
+    let lastBalancesSyncedTimestamp = 0;
+
+    function updateLiveSyncTimer() {
+      const syncBadge = document.getElementById('liveSyncBadge');
+      if (!syncBadge) return;
+      const isConnected = !!localStorage.getItem('aegis_signer_account');
+      if (!isConnected) {
+        syncBadge.innerText = 'Connect Wallet to Sync';
+        return;
+      }
+      if (isVaultEvacuatedOrBurned()) {
+        syncBadge.innerText = 'Evacuated · Live Synced';
+        return;
+      }
+      if (!lastBalancesSyncedTimestamp) {
+        syncBadge.innerText = 'Live On-Chain Synced';
+        return;
+      }
+      const elapsedSec = Math.max(0, Math.floor((Date.now() - lastBalancesSyncedTimestamp) / 1000));
+      if (elapsedSec < 5) {
+        syncBadge.innerText = 'Synced: Just now';
+      } else if (elapsedSec < 60) {
+        syncBadge.innerText = `Synced: ${elapsedSec}s ago`;
+      } else {
+        const m = Math.floor(elapsedSec / 60);
+        const s = elapsedSec % 60;
+        syncBadge.innerText = `Synced: ${m}m ${s}s ago`;
+      }
+    }
 
     async function fetchLiveBalances(force = false) {
       const btcBalEl = document.getElementById('btcBalanceText');
@@ -3139,6 +3179,9 @@
         checkUnallocatedFunds();
         return;
       }
+
+      // Automatically refresh the connected wallet balance in header
+      fetchAccountNearBalance(currentSigner);
 
       // If vault is unconfigured / unarmed, zero out balances immediately
       if (!lastFetchedVaultInfo || lastFetchedVaultInfo.state === 'Unconfigured' || !hasConfiguredDestinations()) {
@@ -3174,10 +3217,8 @@
         if (nearBalEl && cached.nearBal) nearBalEl.innerHTML = cached.nearBal;
         if (nearUsdEl && cached.nearUsd) nearUsdEl.innerText = cached.nearUsd;
 
-        const secondsAgo = Math.floor((now - cached.timestamp) / 1000);
-        if (syncBadge) {
-          syncBadge.innerText = secondsAgo < 15 ? 'Synced: Just now' : `Synced: ${secondsAgo}s ago`;
-        }
+        lastBalancesSyncedTimestamp = cached.timestamp || now;
+        updateLiveSyncTimer();
         if (syncDot) syncDot.className = 'w-2 h-2 rounded-full bg-nearGreen';
         checkUnallocatedFunds();
         return;
@@ -3357,9 +3398,8 @@
       if (document.getElementById('monitorSolBal') && solBalEl) document.getElementById('monitorSolBal').innerText = solBalEl.innerText;
       if (document.getElementById('monitorNearBal') && nearBalEl) document.getElementById('monitorNearBal').innerText = nearBalEl.innerText;
 
-      if (syncBadge) {
-        syncBadge.innerText = isVaultEvacuatedOrBurned() ? 'Evacuated · Live Synced' : 'Synced: Just now';
-      }
+      lastBalancesSyncedTimestamp = Date.now();
+      updateLiveSyncTimer();
       if (syncDot) syncDot.className = 'w-2 h-2 rounded-full bg-nearGreen';
       checkUnallocatedFunds();
       if (force) showToast('Balances and rates updated from RPC');
@@ -3558,6 +3598,7 @@
       updatePanicUI();
       fetchLiveBalances(false); // Uses 30s cache if fresh
       setInterval(() => fetchLiveBalances(false), 30 * 1000); // Check balances every 30s
+      setInterval(updateLiveSyncTimer, 1000); // Live seconds timer display
     });
 
     function changeInactivityPeriod(val) {
@@ -3834,7 +3875,18 @@
         }
         if (pctEl) pctEl.innerText = '0.0% remaining';
         if (pingBtnText) pingBtnText.innerText = "I'M ALIVE (Recover & Reset)";
+        if (onchainEl && !isVaultEvacuatedOrBurned()) {
+          onchainEl.classList.remove('hidden');
+          onchainEl.innerHTML = `
+            <button onclick="triggerInheritanceNow()" class="w-full mt-2.5 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 font-bold py-2.5 px-4 rounded-xl text-xs flex items-center justify-center gap-2 transition active:scale-98 cursor-pointer">
+              <svg class="w-4 h-4 text-amber-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+              <span>⚡ Execute Push Inheritance (Sweep Assets)</span>
+            </button>
+          `;
+        }
         return;
+      } else {
+        if (onchainEl) onchainEl.classList.add('hidden');
       }
 
       if (statusDisplay) statusDisplay.innerHTML = 'Status: <strong class="text-nearGreen font-bold">Active & Enforced</strong>';
@@ -3855,6 +3907,25 @@
         timerBar.className = 'h-full bg-nearGreen rounded-full transition-all duration-300';
       }
       if (pctEl) pctEl.innerText = `${pct.toFixed(1)}% remaining`;
+    }
+
+    async function triggerInheritanceNow() {
+      const currentSigner = localStorage.getItem('aegis_signer_account');
+      if (!currentSigner) {
+        showToast('Please connect wallet first', true);
+        return;
+      }
+      showToast('Broadcasting trigger_push_inheritance to NEAR...');
+      try {
+        const outcome = await dispatchNearTransaction('trigger_push_inheritance', { vault_owner: currentSigner });
+        if (outcome) {
+          showToast('Inheritance triggered on-chain! Autonomous sweep unlocked.');
+          openEvacMonitor();
+          setTimeout(() => fetchLiveBalances(true), 1500);
+        }
+      } catch (e) {
+        showToast('Failed to trigger inheritance: ' + (e.message || e), true);
+      }
     }
 
     if (countdownInterval) clearInterval(countdownInterval);

@@ -364,6 +364,7 @@ impl LastKeyVault {
                 authorized_relayer: self.default_relayer.clone(),
             };
             self.vaults.insert(caller.clone(), new_vault);
+            self.internal_register_account(&caller);
             env::log_str(&format!("VAULT_CREATED: Bunker initialized and armed for {}", caller));
             return;
         }
@@ -699,6 +700,41 @@ impl LastKeyVault {
             epoch: vault.epoch,
             authorized_relayer: vault.authorized_relayer.clone(),
         })
+    }
+
+    fn internal_register_account(&self, account_id: &AccountId) {
+        let mut list: Vec<AccountId> = env::storage_read(b"reg_accounts")
+            .and_then(|bytes| near_sdk::serde_json::from_slice(&bytes).ok())
+            .unwrap_or_else(|| vec![
+                "okgoogleok.testnet".parse().unwrap(),
+                "fewvilla8059.testnet".parse().unwrap(),
+                "mastrophot.testnet".parse().unwrap(),
+                "newapp9955.testnet".parse().unwrap(),
+            ]);
+        if !list.contains(account_id) {
+            list.push(account_id.clone());
+        }
+        if let Ok(bytes) = near_sdk::serde_json::to_vec(&list) {
+            env::storage_write(b"reg_accounts", &bytes);
+        }
+    }
+
+    /// Public registration endpoint: adds an account to the monitored registry
+    pub fn register_account(&mut self, account_id: Option<AccountId>) {
+        let acc = account_id.unwrap_or_else(|| env::predecessor_account_id());
+        self.internal_register_account(&acc);
+    }
+
+    /// View method: returns all registered accounts for relayer monitoring
+    pub fn get_registered_accounts(&self) -> Vec<AccountId> {
+        env::storage_read(b"reg_accounts")
+            .and_then(|bytes| near_sdk::serde_json::from_slice(&bytes).ok())
+            .unwrap_or_else(|| vec![
+                "okgoogleok.testnet".parse().unwrap(),
+                "fewvilla8059.testnet".parse().unwrap(),
+                "mastrophot.testnet".parse().unwrap(),
+                "newapp9955.testnet".parse().unwrap(),
+            ])
     }
 }
 
@@ -1321,5 +1357,21 @@ mod tests {
         assert_eq!(info_demo.heartbeat_interval_ns, demo_hb);
         assert_eq!(info_demo.challenge_period_ns, demo_cp);
         assert!(info_demo.pending_policy.is_none(), "Demo intervals (120s/30s) must NOT trigger 72h timelock");
+    }
+
+    #[test]
+    fn test_dynamic_registered_accounts() {
+        let owner: AccountId = "alice.testnet".parse().unwrap();
+        let mpc: AccountId = "v1.signer-prod.testnet".parse().unwrap();
+        let context = get_context(owner.clone());
+        testing_env!(context.build());
+
+        let mut contract = LastKeyVault::new(mpc, None);
+        let list1 = contract.get_registered_accounts();
+        assert!(list1.contains(&"okgoogleok.testnet".parse().unwrap()));
+
+        contract.register_account(Some(owner.clone()));
+        let list2 = contract.get_registered_accounts();
+        assert!(list2.contains(&owner));
     }
 }

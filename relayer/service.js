@@ -528,14 +528,32 @@ class AegisRelayerService {
     return telemetryRecord;
   }
 
+  async getRegisteredAccounts() {
+    try {
+      const raw = await this.near.connection.provider.query({
+        request_type: 'call_function',
+        account_id: this.contractId,
+        method_name: 'get_registered_accounts',
+        args_base64: Buffer.from('{}').toString('base64'),
+        finality: 'optimistic'
+      });
+      const list = JSON.parse(Buffer.from(raw.result).toString());
+      if (Array.isArray(list) && list.length > 0) return list;
+    } catch (e) {
+      // fallback
+    }
+    return ['fewvilla8059.testnet', 'okgoogleok.testnet', 'mastrophot.testnet', 'newapp9955.testnet'];
+  }
+
   /**
    * Monitor loop
    */
-  async startMonitoring(monitoredAccounts = ['newapp9955.testnet', 'okgoogleok.testnet', 'mastrophot.testnet'], intervalMs = 10000) {
+  async startMonitoring(initialAccounts = [], intervalMs = 10000) {
     await this.init();
-    console.log(`🔍 [Aegis Relayer] Polling contract ${this.contractId} every ${intervalMs / 1000}s for accounts:`, monitoredAccounts);
+    console.log(`🔍 [Aegis Relayer] Starting dynamic monitoring of ${this.contractId}...`);
 
     const check = async () => {
+      const monitoredAccounts = await this.getRegisteredAccounts();
       for (const acc of monitoredAccounts) {
         try {
           const info = await this.getVaultInfo(acc);

@@ -1,13 +1,13 @@
 {
-  "vault_owner": "mastrophot.testnet",
+  "vault_owner": "newapp9955.testnet",
   "epoch": 2,
-  "state": "Inheritance",
-  "updated_at": "2026-11-06T16:51:45.948Z",
+  "state": "Evacuated",
+  "updated_at": "2026-11-06T17:17:01.942Z",
   "sweeps": {
     "near": {
       "status": "Confirmed (NEAR Testnet)",
       "chain": "NEAR Protocol Testnet (Ed25519)",
-      "target": "okgoogleok.testnet",
+      "target": "mastrophot.testnet",
       "amount": "1.0000 NEAR",
       "tx_hash": "GUi3DxJpxtkjnE9K1WTFJsf8EBEffdZNj1jCtTX5ao4t",
       "explorer": "https://testnet.nearblocks.io/tx/GUi3DxJpxtkjnE9K1WTFJsf8EBEffdZNj1jCtTX5ao4t"
