@@ -322,62 +322,90 @@ class AegisRelayerService {
     if (destination.sol && destination.sol.trim().length > 20) {
       console.log(`\n[Solana Sweep] Preparing Ed25519 sweep to ${destination.sol}...`);
       try {
-        const solSweep = this.engine.prepareSolanaSweep({
-          fromPubkey: vaultAddrs.sol.address,
-          toPubkey: destination.sol.trim(),
-          lamports: 1000000000n, // 1 SOL
-          memo: `Aegis Evacuation: ${vaultOwner} Epoch ${epoch}`
-        });
-
-        console.log(`   • Calling request_sweep_signature for Solana message...`);
-        const outcome = await this.account.functionCall({
-          contractId: this.contractId,
-          methodName: 'request_sweep_signature',
-          args: {
-            vault_owner: vaultOwner,
-            chain: 'SOL',
-            payload_hex: solSweep.rawPayloadHex,
-            target_epoch: epoch,
-            is_eddsa: true
-          },
-          gas: '280000000000000',
-          attachedDeposit: '50000000000000000000000'
-        });
-
-        const nearTxHash = outcome.transaction.hash;
-        console.log(`   ✅ NEAR MPC Signature Request Confirmed! Tx: ${nearTxHash}`);
-
-        let mpcSignature = null;
-        for (const out of outcome.receipts_outcome) {
-          if (out.outcome.status.SuccessValue) {
-            const raw = Buffer.from(out.outcome.status.SuccessValue, 'base64').toString('utf8');
-            try { mpcSignature = JSON.parse(raw); } catch (e) {}
-          }
+        const solConn = new web3.Connection(this.solanaRpcUrl, 'confirmed');
+        let liveLamports = 0n;
+        try {
+          const bal = await solConn.getBalance(new web3.PublicKey(vaultAddrs.sol.address));
+          liveLamports = BigInt(bal);
+          console.log(`   • Solana Bunker Balance: ${Number(liveLamports) / 1e9} SOL (${liveLamports} lamports)`);
+        } catch (balErr) {
+          console.warn(`   ⚠️ Could not fetch Solana balance: ${balErr.message}`);
         }
 
-        let solSig = 'sol_' + nearTxHash.slice(0, 16);
-        if (mpcSignature) {
-          const signedSol = this.engine.assembleSignedSolanaTx(solSweep.serializedMessage, vaultAddrs.sol.address, mpcSignature);
-          solSig = signedSol.signatureHex.slice(0, 32);
-          console.log(`   ✅ Solana Transaction Assembled! Sig: ${solSig}`);
+        if (liveLamports <= 5000n) {
+          console.log(`   ℹ️  Solana bunker has zero/insufficient balance (${liveLamports} lamports). Skipping sweep.`);
+          telemetryRecord.sweeps.sol = {
+            status: 'Skipped (Zero/Dust Balance)',
+            chain: 'Solana Devnet (Ed25519)',
+            target: destination.sol,
+            amount: `${(Number(liveLamports) / 1e9).toFixed(4)} SOL`
+          };
+        } else {
+          let recentBlockhash = null;
           try {
-            const conn = new web3.Connection('https://api.devnet.solana.com');
-            await conn.sendRawTransaction(Buffer.from(signedSol.txHex, 'hex'), { skipPreflight: true });
-            console.log(`   🚀 Solana Tx broadcasted to Devnet: ${solSig}`);
-          } catch (sErr) {
-            console.warn(`   ⚠️ Solana Broadcast Notice: ${sErr.message.slice(0, 80)}`);
+            const latest = await solConn.getLatestBlockhash('confirmed');
+            recentBlockhash = latest.blockhash;
+          } catch (bhErr) {
+            console.warn(`   ⚠️ Using fallback blockhash: ${bhErr.message}`);
           }
-        }
 
-        telemetryRecord.sweeps.sol = {
-          status: 'Confirmed (Devnet)',
-          chain: 'Solana Devnet (Ed25519)',
-          target: destination.sol,
-          amount: '1.0000 SOL',
-          signature: solSig,
-          explorer: `https://solscan.io/tx/${solSig}?cluster=devnet`,
-          near_mpc_tx: `https://testnet.nearblocks.io/tx/${nearTxHash}`
-        };
+          const solSweep = this.engine.prepareSolanaSweep({
+            fromPubkey: vaultAddrs.sol.address,
+            toPubkey: destination.sol.trim(),
+            lamports: liveLamports,
+            memo: `Aegis Evacuation: ${vaultOwner} Epoch ${epoch}`,
+            recentBlockhash
+          });
+
+          console.log(`   • Calling request_sweep_signature for Solana message...`);
+          const outcome = await this.account.functionCall({
+            contractId: this.contractId,
+            methodName: 'request_sweep_signature',
+            args: {
+              vault_owner: vaultOwner,
+              chain: 'SOL',
+              payload_hex: solSweep.rawPayloadHex,
+              target_epoch: epoch,
+              is_eddsa: true
+            },
+            gas: '280000000000000',
+            attachedDeposit: '50000000000000000000000'
+          });
+
+          const nearTxHash = outcome.transaction.hash;
+          console.log(`   ✅ NEAR MPC Signature Request Confirmed! Tx: ${nearTxHash}`);
+
+          let mpcSignature = null;
+          for (const out of outcome.receipts_outcome) {
+            if (out.outcome.status.SuccessValue) {
+              const raw = Buffer.from(out.outcome.status.SuccessValue, 'base64').toString('utf8');
+              try { mpcSignature = JSON.parse(raw); } catch (e) {}
+            }
+          }
+
+          let solSig = 'sol_' + nearTxHash.slice(0, 16);
+          if (mpcSignature) {
+            const signedSol = this.engine.assembleSignedSolanaTx(solSweep.serializedMessage, vaultAddrs.sol.address, mpcSignature);
+            solSig = signedSol.signatureHex.slice(0, 32);
+            console.log(`   ✅ Solana Transaction Assembled! Sig: ${solSig}`);
+            try {
+              await solConn.sendRawTransaction(Buffer.from(signedSol.txHex, 'hex'), { skipPreflight: true });
+              console.log(`   🚀 Solana Tx broadcasted to Devnet: ${solSig}`);
+            } catch (sErr) {
+              console.warn(`   ⚠️ Solana Broadcast Notice: ${sErr.message.slice(0, 80)}`);
+            }
+          }
+
+          telemetryRecord.sweeps.sol = {
+            status: 'Confirmed (Devnet)',
+            chain: 'Solana Devnet (Ed25519)',
+            target: destination.sol,
+            amount: `${(Number(liveLamports - 5000n) / 1e9).toFixed(4)} SOL`,
+            signature: solSig,
+            explorer: `https://solscan.io/tx/${solSig}?cluster=devnet`,
+            near_mpc_tx: `https://testnet.nearblocks.io/tx/${nearTxHash}`
+          };
+        }
       } catch (err) {
         console.error(`   ❌ Solana Sweep Error:`, err.message);
         telemetryRecord.sweeps.sol = {
