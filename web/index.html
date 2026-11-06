@@ -399,7 +399,7 @@
             <h4 class="text-sm font-extrabold text-red-200">Epoch Exhausted — Path Rotation Required</h4>
             <p class="text-xs text-textSilver mt-0.5">Active epoch keys were exposed on-chain during evacuation. Activate the next bunker to derive fresh uncompromised addresses.</p>
             <div class="mt-2 text-[11px] font-mono font-bold text-red-300 bg-red-900/40 border border-red-500/50 rounded-lg px-2.5 py-1 flex items-center gap-1.5">
-              <span>🛑 НЕ НАДСИЛАЙ КОШТИ НА ЦЮ АДРЕСУ: Ця епоха спалена. Якщо адреса збережена у Whitelist на біржах (Binance/OKX/Bybit) чи в гаманцях — негайно видали її!</span>
+              <span>🛑 DO NOT DEPOSIT TO THIS ADDRESS: Active epoch keys are burned. If this address is saved in your exchange whitelists (Binance/OKX/Bybit) or wallet contacts, delete it immediately!</span>
             </div>
           </div>
         </div>
@@ -451,7 +451,7 @@
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2">
         <div>
           <h3 class="text-base font-extrabold text-white">Multichain Bunker Deposit Addresses</h3>
-          <p class="text-xs text-[#8C929D] mt-0.5">Full deterministic addresses derived via NEAR MPC. <span class="text-amber-400/90 font-medium">⚠️ Одноразові адреси епохи: не зберігай у Whitelist на біржах.</span></p>
+          <p class="text-xs text-[#8C929D] mt-0.5">Full deterministic addresses derived via NEAR MPC. <span class="text-amber-400/90 font-medium">⚠️ One-Epoch Addresses: do not save permanently in exchange whitelists.</span></p>
         </div>
         <div class="flex items-center gap-2 self-start sm:self-auto">
           <button onclick="fetchLiveBalances(true)" class="px-3.5 py-1.5 rounded-full bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-xs font-mono text-textSilver hover:text-white transition flex items-center gap-2">
@@ -1345,7 +1345,7 @@
       <div class="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-left flex items-start gap-2.5">
         <svg class="w-4 h-4 text-amber-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
         <div class="text-[11px] text-amber-200/90 leading-tight">
-          <strong class="text-amber-300 font-bold">Одноразова епохальна адреса:</strong> Не зберігай у постійних білих списках (Whitelist) бірж! Після паніки чи спадкоємства ця епоха спалюється, а повторні депозити на неї не захищені контрактом.
+          <strong class="text-amber-300 font-bold">One-Epoch Address:</strong> Do not save permanently in exchange whitelists. Once Panic or Inheritance triggers, this epoch is burned and repeated deposits to it cannot be recovered.
         </div>
       </div>
 
@@ -1487,8 +1487,8 @@
         <div class="p-3.5 rounded-2xl bg-red-950/40 border border-red-500/40 text-xs font-sans text-red-200 flex items-start gap-2.5">
           <svg class="w-4 h-4 text-red-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
           <div>
-            <strong class="text-red-300 font-bold block mb-0.5">⚠️ ВАЖЛИВО: Видали старі бункерні адреси з бірж!</strong>
-            Адреси цієї епохи спалені/деактивовані. Якщо вони збережені у списках виведення (Whitelist) на Binance, Bybit, OKX чи в гаманцях — негайно видали їх. Нові депозити на спалену адресу не захищаються контрактом.
+            <strong class="text-red-300 font-bold block mb-0.5">⚠️ CRITICAL: Remove Old Bunker Addresses from Exchanges!</strong>
+            Keys for this epoch are permanently deactivated. If you saved these addresses in exchange whitelists (Binance, Bybit, OKX) or wallet address books, delete them immediately. New deposits to burned addresses cannot be recovered.
           </div>
         </div>
       </div>
