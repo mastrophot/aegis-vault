@@ -283,6 +283,17 @@
               <span id="timerPctDisplay">100.0% remaining</span>
             </div>
           </div>
+
+          <!-- Top Heartbeat 72h Timelock Notice -->
+          <div id="heartbeatTimelockNotice" class="hidden mt-2 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/25 text-amber-300 font-mono text-xs flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0"></span>
+              <span id="heartbeatTimelockText" class="font-bold">72h Policy Timelock Active</span>
+            </div>
+            <button onclick="document.getElementById('cooldownAlertBanner')?.scrollIntoView({ behavior: 'smooth' })" class="text-[11px] text-amber-400 hover:text-white underline font-semibold cursor-pointer">
+              Review / Revert ↓
+            </button>
+          </div>
         </div>
 
         <!-- Controls: Ping alive & Config -->
@@ -2049,6 +2060,17 @@
               : 'Security Timelock Elapsed — Ready to Apply On-Chain!';
           }
         }
+
+        // Top Heartbeat Timelock Notice
+        const hbNotice = document.getElementById('heartbeatTimelockNotice');
+        const hbText = document.getElementById('heartbeatTimelockText');
+        if (hbNotice && hbText) {
+          hbNotice.classList.remove('hidden');
+          hbText.innerText = secLeft > 0
+            ? `72h Timelock Active (${hoursLeft}h ${minsLeft}m left)`
+            : '72h Timelock Elapsed (Ready to Apply)';
+        }
+
         cancelBtns.forEach(b => b.classList.remove('hidden'));
         saveBtns.forEach(b => b.classList.add('hidden'));
 
@@ -2059,6 +2081,8 @@
         }
       } else {
         if (cooldownAlert) cooldownAlert.classList.add('hidden');
+        const hbNotice = document.getElementById('heartbeatTimelockNotice');
+        if (hbNotice) hbNotice.classList.add('hidden');
         cancelBtns.forEach(b => b.classList.add('hidden'));
         applyBtns.forEach(b => b.classList.add('hidden'));
         saveBtns.forEach(b => {
@@ -2764,6 +2788,8 @@
         pingBtn.className = 'w-full bg-purple-600 hover:bg-purple-500 text-white font-extrabold py-3.5 px-6 near-pill-btn text-sm sm:text-base tracking-wide transition shadow-sm active:scale-98 flex items-center justify-center gap-2';
       }
       if (pingBtnText) pingBtnText.innerText = 'Connect Wallet to Arm Vault';
+      const hbNoticeReset = document.getElementById('heartbeatTimelockNotice');
+      if (hbNoticeReset) hbNoticeReset.classList.add('hidden');
 
       // Reset Header Account and Balance
       const headName = document.getElementById('headerAccountName');
@@ -3941,6 +3967,25 @@
         timerBar.className = 'h-full bg-nearGreen rounded-full transition-all duration-300';
       }
       if (pctEl) pctEl.innerText = `${pct.toFixed(1)}% remaining`;
+
+      // Sync Top Heartbeat 72h Timelock Notice
+      const hbNotice = document.getElementById('heartbeatTimelockNotice');
+      const hbText = document.getElementById('heartbeatTimelockText');
+      if (hbNotice && hbText) {
+        if (lastFetchedVaultInfo && lastFetchedVaultInfo.pending_policy) {
+          const effectiveNs = BigInt(lastFetchedVaultInfo.pending_policy.effective_at_ns);
+          const nowNs = BigInt(lastFetchedVaultInfo.current_time_ns || (Date.now() * 1000000));
+          const secLeft = Number(effectiveNs > nowNs ? (effectiveNs - nowNs) / 1000000000n : 0n);
+          const hoursLeft = Math.floor(secLeft / 3600);
+          const minsLeft = Math.floor((secLeft % 3600) / 60);
+          hbNotice.classList.remove('hidden');
+          hbText.innerText = secLeft > 0
+            ? `72h Timelock Active (${hoursLeft}h ${minsLeft}m left)`
+            : '72h Timelock Elapsed (Ready to Apply)';
+        } else {
+          hbNotice.classList.add('hidden');
+        }
+      }
     }
 
     async function triggerInheritanceNow() {
