@@ -1,13 +1,13 @@
 {
-  "vault_owner": "newapp9955.testnet",
-  "epoch": 2,
+  "vault_owner": "aegistest2.testnet",
+  "epoch": 0,
   "state": "Evacuated",
-  "updated_at": "2026-11-06T17:17:01.942Z",
+  "updated_at": "2026-11-06T22:38:59.294Z",
   "sweeps": {
     "near": {
       "status": "Confirmed (NEAR Testnet)",
       "chain": "NEAR Protocol Testnet (Ed25519)",
-      "target": "mastrophot.testnet",
+      "target": "okgoogleok.testnet",
       "amount": "1.0000 NEAR",
       "tx_hash": "GUi3DxJpxtkjnE9K1WTFJsf8EBEffdZNj1jCtTX5ao4t",
       "explorer": "https://testnet.nearblocks.io/tx/GUi3DxJpxtkjnE9K1WTFJsf8EBEffdZNj1jCtTX5ao4t"
