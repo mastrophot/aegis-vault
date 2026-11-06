@@ -1663,10 +1663,15 @@
         userHasInteractedWithInputs = false;
         inputIds.forEach(id => {
           const el = document.getElementById(id);
-          if (el) el.value = '';
+          if (el) {
+            el.value = '';
+            el.disabled = false;
+          }
         });
         const activeBanner = document.getElementById('activePolicyBanner');
         if (activeBanner) activeBanner.classList.add('hidden');
+        const evacuatedBanner = document.getElementById('evacuatedPolicyBanner');
+        if (evacuatedBanner) evacuatedBanner.classList.add('hidden');
         const unconfigBanner = document.getElementById('unconfiguredBanner');
         if (unconfigBanner) unconfigBanner.classList.remove('hidden');
         const burnedBanner = document.getElementById('bunkerBurnedBanner');
@@ -1723,13 +1728,14 @@
         currentEpochIndex = epoch;
         remainingSeconds = 0;
 
-        // NEVER wipe inputs if user has typed or pasted an address!
-        if (!userHasInteractedWithInputs) {
-          inputIds.forEach(id => {
-            const el = document.getElementById(id);
-            if (el && !el.value) el.value = '';
-          });
-        }
+        // Ensure all destination inputs are enabled and ready for user input
+        inputIds.forEach(id => {
+          const el = document.getElementById(id);
+          if (el) {
+            el.disabled = false;
+            if (!userHasInteractedWithInputs && !el.value) el.value = '';
+          }
+        });
 
         const activeBanner = document.getElementById('activePolicyBanner');
         if (activeBanner) activeBanner.classList.add('hidden');
@@ -1737,6 +1743,8 @@
         if (unconfigBanner) unconfigBanner.classList.remove('hidden');
         const burnedBanner = document.getElementById('bunkerBurnedBanner');
         if (burnedBanner) burnedBanner.classList.add('hidden');
+        const evacuatedBanner = document.getElementById('evacuatedPolicyBanner');
+        if (evacuatedBanner) evacuatedBanner.classList.add('hidden');
         const unarmedBanner = document.getElementById('bunkerUnarmedBanner');
         if (unarmedBanner) unarmedBanner.classList.remove('hidden');
         const unallocDep = document.getElementById('unallocatedDepositAlert');
