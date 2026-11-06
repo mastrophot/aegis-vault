@@ -2450,8 +2450,14 @@
         const solAddress = resp.publicKey ? resp.publicKey.toString() : provider.publicKey.toString();
         localStorage.setItem('aegis_connected_sol', solAddress);
 
+        // Auto-fill Solana destination fields in Tab 1 if empty
+        const pSol = document.getElementById('panicSolAddr');
+        if (pSol && !pSol.value.trim()) pSol.value = solAddress;
+
         closeMultichainWalletModal();
         updateMultichainConnectedUI();
+        await fetchAccountSolanaBalance(solAddress);
+        renderBunkerAddresses();
         showToast(`Solana connected: ${solAddress.slice(0, 5)}...${solAddress.slice(-4)}`);
       } catch (err) {
         console.error('[Aegis] Solana connection error:', err);
@@ -2588,14 +2594,28 @@
         // Primary display
         const primaryAcc = nearAcc || evmAcc || solAcc || btcAcc;
         const isNear = Boolean(nearAcc && !nearAcc.startsWith('0x'));
+        const isSol = Boolean(!nearAcc && solAcc);
+        const isEvm = Boolean(!nearAcc && !solAcc && evmAcc);
+
         if (nameEl) {
           nameEl.innerText = primaryAcc.length > 20 ? primaryAcc.slice(0, 8) + '...' + primaryAcc.slice(-6) : primaryAcc;
           nameEl.title = primaryAcc;
-          nameEl.className = isNear ? 'font-bold text-nearGreen hidden sm:inline whitespace-nowrap' : 'font-bold text-blue-400 hidden sm:inline whitespace-nowrap';
+          nameEl.className = isNear
+            ? 'font-bold text-nearGreen hidden sm:inline whitespace-nowrap'
+            : (isSol ? 'font-bold text-purple-400 hidden sm:inline whitespace-nowrap' : 'font-bold text-blue-400 hidden sm:inline whitespace-nowrap');
         }
         if (nameMobEl) {
           nameMobEl.innerText = primaryAcc.slice(0, 6) + '...';
-          nameMobEl.className = isNear ? 'font-bold text-nearGreen sm:hidden whitespace-nowrap' : 'font-bold text-blue-400 sm:hidden whitespace-nowrap';
+          nameMobEl.className = isNear
+            ? 'font-bold text-nearGreen sm:hidden whitespace-nowrap'
+            : (isSol ? 'font-bold text-purple-400 sm:hidden whitespace-nowrap' : 'font-bold text-blue-400 sm:hidden whitespace-nowrap');
+        }
+
+        // Live balance update for header
+        if (isNear) {
+          fetchAccountNearBalance(nearAcc);
+        } else if (isSol) {
+          fetchAccountSolanaBalance(solAcc);
         }
 
         // Secondary badges
@@ -2849,10 +2869,39 @@
           const frac = (yocto % 1000000000000000000000000n) / 10000000000000000000000n;
           const formatted = `${whole}.${frac.toString().padStart(2, '0').slice(0, 2)}`;
           const balEl = document.getElementById('headerAccountBalance');
-          if (balEl) balEl.innerText = `${formatted} NEAR`;
+          if (balEl) {
+            balEl.innerText = `${formatted} NEAR`;
+            balEl.className = 'text-[#A6B0C3] border-l border-white/10 pl-2 font-normal hidden sm:inline whitespace-nowrap';
+          }
         }
       } catch (e) {
         console.warn('Balance check error:', e);
+      }
+    }
+
+    async function fetchAccountSolanaBalance(address) {
+      if (!address) return;
+      try {
+        const solRes = await fetch('https://api.devnet.solana.com', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            id: 1,
+            method: 'getBalance',
+            params: [address]
+          })
+        }).then(r => r.json());
+        if (solRes?.result?.value !== undefined) {
+          const solVal = solRes.result.value / 1e9;
+          const balEl = document.getElementById('headerAccountBalance');
+          if (balEl) {
+            balEl.innerText = `${solVal.toFixed(2)} SOL`;
+            balEl.className = 'text-purple-300 border-l border-white/10 pl-2 font-normal hidden sm:inline whitespace-nowrap';
+          }
+        }
+      } catch (e) {
+        console.warn('Solana balance query error:', e);
       }
     }
 
