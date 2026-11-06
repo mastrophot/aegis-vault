@@ -22,7 +22,7 @@
 
 * **Zero Custody (100% Non-Custodial)**: No private keys ever touch a server. Multichain deposit addresses (Bitcoin Native SegWit, EVM, and Solana) are mathematically derived from NEAR MPC's root public key via deterministic derivation paths (`aegis/{epoch}`).
 * **Proof-of-Life Heartbeat (`ping()`)**: The vault owner maintains active status by sending a periodic lightweight on-chain ping (e.g., every 90 days).
-* **Two-Stage Inheritance Protocol**: If the inactivity timer expires, heirs can open a challenge claim window. If the owner is alive, they cancel the claim with 1 click. If unchallenged within the grace period, the contract transitions to `Inheritance` state and authorizes push fund evacuation to designated heir addresses.
+* **Autonomous Push Inheritance Protocol**: If the inactivity timer expires and the safety grace window elapses without owner check-in, the contract autonomously transitions to `Inheritance` state. The decentralized relayer sweeps assets directly to heirs without heirs having to sign, claim, or pay gas.
 * **Emergency Panic Button (Instant Evacuation)**: Under immediate threat, the owner triggers `panic()` (with 3-second hold buffer or 1-click armed mode). The vault immediately locks, bumps the derivation epoch to burn old addresses, and authorizes evacuation of 100% of all multichain assets directly to pre-configured cold backup wallets.
 * **Anti-Hacking Policy Timelock**: First-time initialization activates immediately to allow zero-friction onboarding and instant testing. Any subsequent modifications to egress destination addresses (`backup` or `heirs`) enforce a strict 72-hour on-chain cooldown. If the owner's NEAR account is compromised, the rogue proposal can be cancelled during the window before it becomes effective.
 * **Cryptographic Anti-Blind-Signing & Structural Payload Verification**:
@@ -124,6 +124,54 @@ npx serve web
 | **Solana Blockhash Expiry** | JIT finalized blockhash refresh immediately prior to MPC signature request | [`relayer/sweep_relayer.js`](relayer/sweep_relayer.js#L585-L600) |
 | **EVM Nonce Stall** | Continuous nonce fault isolation skips broken/honeypot tokens without gaps | [`relayer/sweep_relayer.js`](relayer/sweep_relayer.js#L260-L290) |
 | **Unauthorized Policy Takeover** | 72-hour timelock on destination updates with instant owner cancellation | [`contracts/vault/src/lib.rs`](contracts/vault/src/lib.rs#L210-L245) |
+
+---
+
+## 🛡️ Security Architecture: Control Plane vs. Asset Plane Isolation
+
+Aegis implements strict **Dual-Circuit Isolation** to protect cold bunker funds against hot-wallet compromise:
+
+```
+┌────────────────────────────────────────────────────────┐
+│           ASSET PLANE (Daily Hot Wallets)              │
+│  - Phantom (Solana) · MetaMask (EVM) · UniSat (Bitcoin)│
+│  - Exposed to everyday DeFi, dApp approvals, mints     │
+│  - High risk of phishing drainers and permit exploits   │
+└──────────────────────────┬─────────────────────────────┘
+                           │ ❌ Hot wallet compromise CANNOT alter Vault Policy
+                           ▼
+┌────────────────────────────────────────────────────────┐
+│         CONTROL PLANE (Isolated NEAR Controller)       │
+│  - Dedicated cold/semi-cold governor account           │
+│  - Controls Dead-Man's Switch Heartbeat & Destinations │
+│  - Protected by 72-Hour Timelock on any policy change  │
+└────────────────────────────────────────────────────────┘
+```
+
+> **Why this matters for user safety:**  
+> If an owner falls victim to a phishing drainer on their daily Phantom or MetaMask, the attacker drains only the hot funds currently in that wallet. The attacker **CANNOT** compromise Aegis Vault, cancel inheritance timers, or redirect evacuation funds to their own addresses. Vault management is strictly isolated on the NEAR Control Plane.
+
+---
+
+## 🗺️ Roadmap: Production Chain Abstraction (Phase 2)
+
+For mainnet deployment, Aegis will expand from isolated dual-circuit control to fully seamless **Zero-Backend Gasless Chain Abstraction**, allowing external chain users to govern vaults without managing NEAR gas:
+
+1. **In-Contract Foreign Signature Verification (`ed25519_verify` / `ecrecover`):**
+   * Change vault owner mapping to `LookupMap<String, Vault>` supporting Base58 Solana public keys and EVM `0x...` addresses.
+   * Users sign off-chain EIP-712 / Solana `signMessage` payloads with sequential nonces.
+   * Host functions (`near_sdk::env::ed25519_verify` and `near_sdk::env::ecrecover`) verify caller authenticity directly on-chain within 1–2 TGas.
+
+2. **Native Implicit Accounts & NEP-366 Meta-Transactions:**
+   * **Solana Equivalence:** A 32-byte Ed25519 public key in Phantom is mathematically identical to a NEAR Implicit Account ID.
+   * **EVM Equivalence:** Integration with NEP-518 address mappings.
+   * Users sign standard `DelegateAction` messages; public relayers submit `SignedDelegate` transactions, sponsoring execution fees.
+
+3. **Zero-Backend Public Infrastructure:**
+   * Instead of maintaining custodial or custom backend servers, static frontends connect directly to decentralized public RPC relay networks (Pagoda Relayer, FastNEAR, Lava Network) for permissionless, trustless gas sponsorship.
+
+4. **Biometric Passkey / WebAuthn Control Plane:**
+   * Hardware-enclave device authentication (Touch ID, Face ID, YubiKey) generating WebAuthn signatures verified directly by NEAR smart contracts.
 
 ---
 
