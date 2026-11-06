@@ -441,7 +441,9 @@ impl LastKeyVault {
     }
 
     /// Update heartbeat interval and challenge (grace) period for caller's bunker.
-    /// Strictly blocked if a 72-hour policy cooldown is active to prevent acceleration attacks.
+    /// Strictly blocked if a 72-hour policy cooldown is active.
+    /// Lengthening intervals is instant. Shortening intervals on an active, configured bunker
+    /// triggers a 72-hour policy cooldown to prevent premature inheritance acceleration attacks!
     #[payable]
     pub fn update_intervals(
         &mut self,
@@ -455,16 +457,37 @@ impl LastKeyVault {
             vault.pending_policy.is_none(),
             "Cannot update intervals during active 72h policy cooldown"
         );
-        if let Some(hb) = heartbeat_interval_ns {
-            require!(hb.0 >= 15_000_000_000, "Heartbeat interval must be at least 15 seconds");
-            vault.heartbeat_interval_ns = hb.0;
+        let new_hb = heartbeat_interval_ns.map(|v| v.0).unwrap_or(vault.heartbeat_interval_ns);
+        let new_cp = challenge_period_ns.map(|v| v.0).unwrap_or(vault.challenge_period_ns);
+        require!(new_hb >= 15_000_000_000, "Heartbeat interval must be at least 15 seconds");
+        require!(new_cp >= 15_000_000_000, "Challenge period must be at least 15 seconds");
+
+        let old_total = vault.heartbeat_interval_ns.saturating_add(vault.challenge_period_ns);
+        let new_total = new_hb.saturating_add(new_cp);
+        let is_shortening = new_total < old_total;
+        let is_configured = !vault.backup.is_empty() || !vault.heirs.is_empty();
+
+        if is_configured && is_shortening {
+            // Apply new intervals, but arm 72h cooldown to block premature trigger_push_inheritance
+            vault.heartbeat_interval_ns = new_hb;
+            vault.challenge_period_ns = new_cp;
+            vault.last_ping_ns = env::block_timestamp();
+            let effective_at_ns = env::block_timestamp() + vault.policy_timelock_ns;
+            vault.pending_policy = Some(PendingPolicy {
+                backup: vault.backup.clone(),
+                heirs: vault.heirs.clone(),
+                effective_at_ns,
+            });
+            env::log_str(&format!(
+                "INTERVALS_SHORTENED_TIMELOCK: Intervals shortened for {}. 72h cooldown armed to prevent acceleration attacks.",
+                caller
+            ));
+        } else {
+            vault.heartbeat_interval_ns = new_hb;
+            vault.challenge_period_ns = new_cp;
+            vault.last_ping_ns = env::block_timestamp();
+            env::log_str(&format!("INTERVALS_UPDATED: Intervals updated for {}", caller));
         }
-        if let Some(cp) = challenge_period_ns {
-            require!(cp.0 >= 15_000_000_000, "Challenge period must be at least 15 seconds");
-            vault.challenge_period_ns = cp.0;
-        }
-        vault.last_ping_ns = env::block_timestamp();
-        env::log_str(&format!("INTERVALS_UPDATED: Intervals updated for {}", caller));
     }
 
     /// Set or revoke authorized relayer for caller's bunker
@@ -1244,5 +1267,47 @@ mod tests {
             c.panic();
         }));
         assert!(panic_res.is_err(), "Panic must fail during active policy timelock");
+    }
+
+    #[test]
+    fn test_update_intervals_shortening_timelock_defense() {
+        let owner: AccountId = "bob.testnet".parse().unwrap();
+        let mpc: AccountId = "v1.signer-prod.testnet".parse().unwrap();
+        let context = get_context(owner.clone());
+        testing_env!(context.build());
+
+        let mut contract = LastKeyVault::new(mpc, None);
+
+        // Arm vault with initial addresses and default 90-day intervals
+        let mut backup = ChainAddresses::empty();
+        backup.near = Some("bob-backup.testnet".parse().unwrap());
+        let mut heirs = ChainAddresses::empty();
+        heirs.near = Some("bob-heir.testnet".parse().unwrap());
+        contract.propose_policy(backup, heirs);
+
+        let info = contract.get_vault_info(Some(owner.clone())).unwrap();
+        assert_eq!(info.heartbeat_interval_ns, DEFAULT_HEARTBEAT_INTERVAL_NS);
+        assert!(info.pending_policy.is_none());
+
+        // 1. Lengthening interval (e.g. from 90 days to 180 days) is instant
+        let longer_hb = DEFAULT_HEARTBEAT_INTERVAL_NS * 2;
+        contract.update_intervals(Some(U64(longer_hb)), None);
+        let info_longer = contract.get_vault_info(Some(owner.clone())).unwrap();
+        assert_eq!(info_longer.heartbeat_interval_ns, longer_hb);
+        assert!(info_longer.pending_policy.is_none(), "Lengthening intervals must NOT trigger timelock");
+
+        // 2. Shortening interval on active, configured vault MUST trigger 72h cooldown to stop acceleration attack
+        let short_hb = 15_000_000_000; // 15 seconds
+        let short_cp = 15_000_000_000; // 15 seconds
+        contract.update_intervals(Some(U64(short_hb)), Some(U64(short_cp)));
+        let info_shortened = contract.get_vault_info(Some(owner.clone())).unwrap();
+        assert!(info_shortened.pending_policy.is_some(), "Shortening intervals MUST trigger 72h timelock");
+
+        // 3. Premature trigger_push_inheritance MUST revert while 72h timelock is active!
+        let inheritance_res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let mut c = contract;
+            c.trigger_push_inheritance(owner.clone());
+        }));
+        assert!(inheritance_res.is_err(), "Premature inheritance must fail while policy cooldown is pending");
     }
 }

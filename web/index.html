@@ -398,6 +398,9 @@
           <div>
             <h4 class="text-sm font-extrabold text-red-200">Epoch Exhausted — Path Rotation Required</h4>
             <p class="text-xs text-textSilver mt-0.5">Active epoch keys were exposed on-chain during evacuation. Activate the next bunker to derive fresh uncompromised addresses.</p>
+            <div class="mt-2 text-[11px] font-mono font-bold text-red-300 bg-red-900/40 border border-red-500/50 rounded-lg px-2.5 py-1 flex items-center gap-1.5">
+              <span>🛑 НЕ НАДСИЛАЙ КОШТИ НА ЦЮ АДРЕСУ: Ця епоха спалена. Якщо адреса збережена у Whitelist на біржах (Binance/OKX/Bybit) чи в гаманцях — негайно видали її!</span>
+            </div>
           </div>
         </div>
         <div class="flex items-center gap-2">
@@ -448,7 +451,7 @@
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2">
         <div>
           <h3 class="text-base font-extrabold text-white">Multichain Bunker Deposit Addresses</h3>
-          <p class="text-xs text-[#8C929D] mt-0.5">Full deterministic addresses derived via NEAR MPC. Deposit funds safely anytime.</p>
+          <p class="text-xs text-[#8C929D] mt-0.5">Full deterministic addresses derived via NEAR MPC. <span class="text-amber-400/90 font-medium">⚠️ Одноразові адреси епохи: не зберігай у Whitelist на біржах.</span></p>
         </div>
         <div class="flex items-center gap-2 self-start sm:self-auto">
           <button onclick="fetchLiveBalances(true)" class="px-3.5 py-1.5 rounded-full bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-xs font-mono text-textSilver hover:text-white transition flex items-center gap-2">
@@ -1339,6 +1342,13 @@
         <span id="qrAddressText">...</span>
       </div>
 
+      <div class="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-left flex items-start gap-2.5">
+        <svg class="w-4 h-4 text-amber-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+        <div class="text-[11px] text-amber-200/90 leading-tight">
+          <strong class="text-amber-300 font-bold">Одноразова епохальна адреса:</strong> Не зберігай у постійних білих списках (Whitelist) бірж! Після паніки чи спадкоємства ця епоха спалюється, а повторні депозити на неї не захищені контрактом.
+        </div>
+      </div>
+
       <button onclick="copyCurrentQr()" class="w-full bg-nearGreen hover:bg-nearGreenHover text-nearBlack font-extrabold py-3.5 near-pill-btn text-xs sm:text-sm transition shadow-near-glow">
         Copy Address & Close
       </button>
@@ -1471,6 +1481,15 @@
         <div class="p-3.5 rounded-2xl bg-nearBlack border border-nearBorder text-xs font-sans text-textSilver flex items-center gap-2.5">
           <svg class="w-4 h-4 text-nearGreen shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
           <span><strong>Fault Isolation active:</strong> Honeypots and reverting scam tokens are simulated via free <code>eth_call</code> and safely skipped without halting valid asset delivery.</span>
+        </div>
+
+        <!-- 6. Burned Address Whitelist Warning -->
+        <div class="p-3.5 rounded-2xl bg-red-950/40 border border-red-500/40 text-xs font-sans text-red-200 flex items-start gap-2.5">
+          <svg class="w-4 h-4 text-red-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+          <div>
+            <strong class="text-red-300 font-bold block mb-0.5">⚠️ ВАЖЛИВО: Видали старі бункерні адреси з бірж!</strong>
+            Адреси цієї епохи спалені/деактивовані. Якщо вони збережені у списках виведення (Whitelist) на Binance, Bybit, OKX чи в гаманцях — негайно видали їх. Нові депозити на спалену адресу не захищаються контрактом.
+          </div>
         </div>
       </div>
 
@@ -3862,7 +3881,7 @@
         return;
       }
       navigator.clipboard.writeText(text);
-      showToast('Deposit address copied to clipboard');
+      showToast('Deposit address copied! ⚠️ Do NOT save permanently in exchange whitelist (epoch burns after evacuation).');
     }
 
     // Ping Main Button Handler (Smart Connected / Disconnected / Evacuated / Unconfigured)
@@ -3950,7 +3969,7 @@
 
     function copyCurrentQr() {
       navigator.clipboard.writeText(currentQrAddr);
-      showToast('Address copied to clipboard');
+      showToast('Address copied! ⚠️ Do NOT whitelist on exchanges (epoch burns after evacuation).');
       closeQr();
     }
 
