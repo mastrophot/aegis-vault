@@ -745,7 +745,7 @@
         </div>
 
         <!-- Initial Unconfigured Banner (Hidden if addresses exist) -->
-        <div id="unconfiguredBanner" class="p-4 rounded-xl bg-amber-950/20 border border-amber-500/30 text-xs flex items-center gap-3 text-amber-200">
+        <div id="unconfiguredBanner" class="hidden p-4 rounded-xl bg-amber-950/20 border border-amber-500/30 text-xs items-center gap-3 text-amber-200">
           <svg class="w-4 h-4 text-amber-400 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
           <span>No destination addresses entered yet. Enter your backup and family wallets below, then click <strong>Save Policy</strong>. Initial setup activates immediately without timelock.</span>
         </div>
@@ -1652,6 +1652,21 @@
       return lastFetchedVaultInfo.state === 'Evacuated' || lastFetchedVaultInfo.state === 'Inheritance';
     }
 
+    function shouldShowUnconfiguredBanner(info = lastFetchedVaultInfo) {
+      const currentSigner = localStorage.getItem('aegis_signer_account');
+      if (!currentSigner) return false;
+      if (isVaultEvacuatedOrBurned()) return false;
+      if (hasConfiguredDestinations(info)) return false;
+      if (info && info.pending_policy) return false;
+      if (userHasInteractedWithInputs || isEditing) return false;
+      const hasAnyInput = inputIds.some(id => {
+        const el = document.getElementById(id);
+        return el && el.value && el.value.trim().length > 0;
+      });
+      if (hasAnyInput) return false;
+      return true;
+    }
+
     // Live On-Chain State Fetcher via NEAR JSON-RPC (FastNEAR with Failover)
     async function fetchLiveContractState() {
       const currentSigner = localStorage.getItem('aegis_signer_account');
@@ -1721,7 +1736,7 @@
         const evacuatedBanner = document.getElementById('evacuatedPolicyBanner');
         if (evacuatedBanner) evacuatedBanner.classList.add('hidden');
         const unconfigBanner = document.getElementById('unconfiguredBanner');
-        if (unconfigBanner) unconfigBanner.classList.remove('hidden');
+        if (unconfigBanner) { unconfigBanner.classList.add('hidden'); unconfigBanner.classList.remove('flex'); }
         const burnedBanner = document.getElementById('bunkerBurnedBanner');
         if (burnedBanner) burnedBanner.classList.add('hidden');
         const unarmedBanner = document.getElementById('bunkerUnarmedBanner');
@@ -1788,7 +1803,7 @@
         const activeBanner = document.getElementById('activePolicyBanner');
         if (activeBanner) activeBanner.classList.add('hidden');
         const unconfigBanner = document.getElementById('unconfiguredBanner');
-        if (unconfigBanner) unconfigBanner.classList.remove('hidden');
+        if (unconfigBanner) { unconfigBanner.classList.add('hidden'); unconfigBanner.classList.remove('flex'); }
         const burnedBanner = document.getElementById('bunkerBurnedBanner');
         if (burnedBanner) burnedBanner.classList.add('hidden');
         const evacuatedBanner = document.getElementById('evacuatedPolicyBanner');
@@ -2019,7 +2034,10 @@
       } else {
         if (activeBanner) activeBanner.classList.add('hidden');
         if (evacuatedBanner) evacuatedBanner.classList.add('hidden');
-        if (unconfiguredBanner) unconfiguredBanner.classList.remove('hidden');
+        if (unconfiguredBanner) {
+          if (shouldShowUnconfiguredBanner(info)) { unconfiguredBanner.classList.remove('hidden'); unconfiguredBanner.classList.add('flex'); }
+          else { unconfiguredBanner.classList.add('hidden'); unconfiguredBanner.classList.remove('flex'); }
+        }
         if (tabRescue) {
           tabRescue.innerText = `1. Rescue & Inheritance (Destinations)`;
         }
@@ -2099,8 +2117,8 @@
         });
 
         if (unconfiguredBanner) {
-          if (isConfigured) unconfiguredBanner.classList.add('hidden');
-          else unconfiguredBanner.classList.remove('hidden');
+          if (shouldShowUnconfiguredBanner(lastFetchedVaultInfo)) { unconfiguredBanner.classList.remove('hidden'); unconfiguredBanner.classList.add('flex'); }
+          else { unconfiguredBanner.classList.add('hidden'); unconfiguredBanner.classList.remove('flex'); }
         }
         if (badge) {
           badge.innerText = isConfigured ? 'Active & Enforced' : 'Unconfigured';
@@ -4842,8 +4860,8 @@
         const hasAnyEntered = inputIds.some(id => document.getElementById(id)?.value?.trim());
         const banner = document.getElementById('unconfiguredBanner');
         if (banner) {
-          if (hasAnyEntered) banner.classList.add('hidden');
-          else banner.classList.remove('hidden');
+          if (shouldShowUnconfiguredBanner(lastFetchedVaultInfo)) { banner.classList.remove('hidden'); banner.classList.add('flex'); }
+          else { banner.classList.add('hidden'); banner.classList.remove('flex'); }
         }
         return;
       }
@@ -4862,8 +4880,8 @@
       updateMemoByteCounter(saved.heirFinalMemo || '');
       const banner = document.getElementById('unconfiguredBanner');
       if (banner) {
-        if (hasAny) banner.classList.add('hidden');
-        else banner.classList.remove('hidden');
+        if (shouldShowUnconfiguredBanner(lastFetchedVaultInfo)) { banner.classList.remove('hidden'); banner.classList.add('flex'); }
+        else { banner.classList.add('hidden'); banner.classList.remove('flex'); }
       }
 
       const badge = document.getElementById('addressStatusBadge');
@@ -5085,7 +5103,7 @@
             userHasInteractedWithInputs = true;
             isEditing = true;
             const banner = document.getElementById('unconfiguredBanner');
-            if (banner && el.value.trim().length > 0) banner.classList.add('hidden');
+            if (banner) { banner.classList.add('hidden'); banner.classList.remove('flex'); }
             updateSaveButtonState(lastFetchedVaultInfo);
           };
           ['focus', 'input', 'paste', 'change', 'keyup'].forEach(evt => {
