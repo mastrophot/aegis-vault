@@ -466,7 +466,7 @@ impl LastKeyVault {
         let new_total = new_hb.saturating_add(new_cp);
         let is_shortening = new_total < old_total;
         let is_configured = !vault.backup.is_empty() || !vault.heirs.is_empty();
-        let is_demo_mode = new_hb <= 60_000_000_000;
+        let is_demo_mode = new_hb <= 300_000_000_000;
 
         if is_configured && is_shortening && !is_demo_mode {
             // Apply new intervals, but arm 72h cooldown to block premature trigger_push_inheritance
@@ -1277,14 +1277,14 @@ mod tests {
         let context = get_context(owner.clone());
         testing_env!(context.build());
 
-        let mut contract = LastKeyVault::new(mpc, None);
+        let mut contract = LastKeyVault::new(mpc.clone(), None);
 
         // Arm vault with initial addresses and default 90-day intervals
         let mut backup = ChainAddresses::empty();
         backup.near = Some("bob-backup.testnet".parse().unwrap());
         let mut heirs = ChainAddresses::empty();
         heirs.near = Some("bob-heir.testnet".parse().unwrap());
-        contract.propose_policy(backup, heirs);
+        contract.propose_policy(backup.clone(), heirs.clone());
 
         let info = contract.get_vault_info(Some(owner.clone())).unwrap();
         assert_eq!(info.heartbeat_interval_ns, DEFAULT_HEARTBEAT_INTERVAL_NS);
@@ -1310,5 +1310,16 @@ mod tests {
             c.trigger_push_inheritance(owner.clone());
         }));
         assert!(inheritance_res.is_err(), "Premature inheritance must fail while policy cooldown is pending");
+
+        // 4. Demo mode shortening (<= 300s, e.g. 120s) must NOT trigger 72h cooldown
+        let demo_hb = 120_000_000_000; // 2 minutes
+        let demo_cp = 30_000_000_000;  // 30 seconds
+        let mut contract_demo = LastKeyVault::new(mpc, None);
+        contract_demo.propose_policy(backup, heirs);
+        contract_demo.update_intervals(Some(U64(demo_hb)), Some(U64(demo_cp)));
+        let info_demo = contract_demo.get_vault_info(Some(owner)).unwrap();
+        assert_eq!(info_demo.heartbeat_interval_ns, demo_hb);
+        assert_eq!(info_demo.challenge_period_ns, demo_cp);
+        assert!(info_demo.pending_policy.is_none(), "Demo intervals (120s/30s) must NOT trigger 72h timelock");
     }
 }

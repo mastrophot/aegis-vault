@@ -564,8 +564,8 @@ class AegisRelayerService {
                   console.log(`📡 [Passive Proof-of-Life] On-chain activity detected for ${acc}!`);
                   console.log(`   • Key activity detected (total nonce: ${prevNonce} -> ${totalNonce})`);
                   
-                  // In demo mode (<=60s), allow renewing after 3 seconds; in production after 30 seconds
-                  const isDemoMode = BigInt(info.heartbeat_interval_ns || 0) <= 60000000000n;
+                  // In demo mode (<=300s / 5m), allow renewing after 3 seconds; in production after 30 seconds
+                  const isDemoMode = BigInt(info.heartbeat_interval_ns || 0) <= 300000000000n;
                   const minElapsedNs = isDemoMode ? 3000000000n : 30000000000n;
 
                   if (elapsedSincePingNs > minElapsedNs) {

@@ -1,16 +1,16 @@
 {
-  "vault_owner": "okgoogleok.testnet",
-  "epoch": 1,
+  "vault_owner": "mastrophot.testnet",
+  "epoch": 2,
   "state": "Inheritance",
-  "updated_at": "2026-11-06T11:59:13.762Z",
+  "updated_at": "2026-11-06T16:51:45.948Z",
   "sweeps": {
     "near": {
       "status": "Confirmed (NEAR Testnet)",
       "chain": "NEAR Protocol Testnet (Ed25519)",
-      "target": "mastrophot.testnet",
-      "amount": "7.9950 NEAR",
-      "tx_hash": "AFKyez8E3BSeTpagFFzJcjS9WE5HfFU18bjQUwHbtzKQ",
-      "explorer": "https://testnet.nearblocks.io/tx/AFKyez8E3BSeTpagFFzJcjS9WE5HfFU18bjQUwHbtzKQ"
+      "target": "okgoogleok.testnet",
+      "amount": "1.0000 NEAR",
+      "tx_hash": "GUi3DxJpxtkjnE9K1WTFJsf8EBEffdZNj1jCtTX5ao4t",
+      "explorer": "https://testnet.nearblocks.io/tx/GUi3DxJpxtkjnE9K1WTFJsf8EBEffdZNj1jCtTX5ao4t"
     }
   }
 }
