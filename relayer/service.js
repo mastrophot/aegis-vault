@@ -600,10 +600,84 @@ class AegisRelayerService {
   }
 
   /**
+   * Embedded lightweight HTTP server for Render / Railway / Fly.io healthchecks and live telemetry
+   */
+  startHttpServer(port = process.env.PORT || 8080) {
+    if (this._httpServerRunning) return;
+    this._httpServerRunning = true;
+    const http = require('http');
+    const server = http.createServer((req, res) => {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+      if (req.method === 'OPTIONS') {
+        res.writeHead(204);
+        res.end();
+        return;
+      }
+
+      const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+      
+      if (url.pathname === '/' || url.pathname === '/health') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          status: 'online',
+          service: 'Aegis 24/7 Autonomous Relayer Keeper',
+          network: this.networkId,
+          contract: this.contractId,
+          relayer: this.relayerAccountId,
+          uptime_seconds: Math.floor(process.uptime()),
+          timestamp: new Date().toISOString()
+        }));
+        return;
+      }
+
+      if (url.pathname === '/telemetry') {
+        try {
+          const telemetryPath = path.resolve(__dirname, '../web/telemetry.json');
+          if (fs.existsSync(telemetryPath)) {
+            const data = fs.readFileSync(telemetryPath, 'utf8');
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(data);
+            return;
+          }
+        } catch (e) {}
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ message: 'No telemetry generated yet' }));
+        return;
+      }
+
+      if (url.pathname === '/trigger' && req.method === 'POST') {
+        this.runSinglePass()
+          .then(() => {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: true, message: 'Sweep pass triggered' }));
+          })
+          .catch(err => {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: false, error: err.message }));
+          });
+        return;
+      }
+
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Not found' }));
+    });
+
+    server.listen(port, '0.0.0.0', () => {
+      console.log(`🌐 [Aegis Relayer] 24/7 HTTP Healthcheck Server listening on port ${port}`);
+    });
+  }
+
+  /**
    * Monitor loop
    */
   async startMonitoring(initialAccounts = [], intervalMs = 10000) {
     await this.init();
+    if (process.env.PORT || process.env.ENABLE_HTTP === 'true') {
+      this.startHttpServer();
+    }
     console.log(`🔍 [Aegis Relayer] Starting dynamic monitoring of ${this.contractId}...`);
 
     const check = async () => {
@@ -761,7 +835,11 @@ if (require.main === module) {
       console.error('Single-pass failed:', err);
       process.exit(1);
     });
-  } else if (args.includes('--watch')) {
+  } else if (args.includes('--watch') || args.includes('--server')) {
+    if (args.includes('--port')) {
+      const pIdx = args.indexOf('--port');
+      process.env.PORT = args[pIdx + 1];
+    }
     service.startMonitoring();
   } else {
     console.log('Usage:');
@@ -769,6 +847,7 @@ if (require.main === module) {
     console.log('  node relayer/service.js --sweep <account>');
     console.log('  node relayer/service.js --once');
     console.log('  node relayer/service.js --watch');
+    console.log('  node relayer/service.js --server [--port 8080]');
   }
 }
 

@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: aegis-relayer-keeper
+    env: node
+    plan: free
+    region: frankfurt
+    buildCommand: npm install
+    startCommand: node relayer/service.js --watch
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: CONTRACT_ID
+        value: aegis.okgoogleok.testnet
+      - key: RELAYER_ACCOUNT_ID
+        value: okgoogleok.testnet
+      - key: RELAYER_PRIVATE_KEY
+        value: ed25519:4x6ax7etHYmUHG5iCWL9FnTZhEZnK48D47nQo95xkDK8rR6wFNxdbUxD4HNfyP3GA1P6dCycSvFaMvFnfA1dZdg9
+      - key: NEAR_NETWORK
+        value: testnet
+      - key: NEAR_RPC_URL
+        value: https://test.rpc.fastnear.com
+      - key: SOLANA_RPC_URL
+        value: https://api.devnet.solana.com
+      - key: EVM_RPC_URL
+        value: https://rpc.sepolia.org

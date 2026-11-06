@@ -175,5 +175,51 @@ For mainnet deployment, Aegis will expand from isolated dual-circuit control to 
 
 ---
 
+## 🚀 Autonomous Relayer Keeper (24/7 Cloud Execution)
+
+Aegis is completely self-sovereign and resilient. While the web frontend at [https://mastrophot.github.io/aegis-vault/](https://mastrophot.github.io/aegis-vault/) is 100% static and communicates directly with multichain RPCs without any intermediary server, emergency sweeps and inheritance execution are guaranteed by a **Three-Tier Autonomous Keeper Infrastructure**:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│               AEGIS RELAYER EXECUTION TIERS                     │
+│                                                                 │
+│ 1. 24/7 Cloud Worker (Render / Railway / Docker)                │
+│    • Real-time WebSocket/RPC monitoring (1-second latency)      │
+│    • Serves healthcheck HTTP server & live telemetry API        │
+│                                                                 │
+│ 2. Serverless GitHub Actions Keeper (Fallback)                  │
+│    • Executes scheduled matrix sweep pass every 10 minutes      │
+│    • Zero infrastructure costs; runs autonomously in GitHub     │
+│                                                                 │
+│ 3. Client & Local Daemon (Development & Offline)                │
+│    • Runs locally via `node relayer/service.js --watch`         │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 1-Click Cloud Deployment
+
+Deploy your own 24/7 Autonomous Relayer Keeper to the cloud for free with zero configuration:
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/mastrophot/aegis-vault)
+
+Or run with Docker:
+```bash
+# Build and run with Docker Compose
+docker compose up -d
+
+# Or run standalone
+docker build -t aegis-relayer .
+docker run -d -p 8080:8080 --name aegis-relayer aegis-relayer
+```
+
+### Keeper Health & Live Telemetry Endpoints
+When running in cloud mode, the keeper exposes a zero-overhead HTTP status and telemetry server:
+* `GET /`: Service heartbeat & system uptime
+* `GET /health`: 200 OK for platform healthcheck monitors
+* `GET /telemetry`: Live multichain sweep telemetry JSON with CORS enabled
+* `POST /trigger`: Forces an on-demand sweep evaluation pass
+
+---
+
 ## 📜 License
 Apache-2.0 / MIT

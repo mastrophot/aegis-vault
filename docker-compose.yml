@@ -1,0 +1,17 @@
+services:
+  aegis-relayer:
+    build: .
+    container_name: aegis-relayer-keeper
+    restart: always
+    ports:
+      - "8080:8080"
+    environment:
+      - NODE_ENV=production
+      - PORT=8080
+      - CONTRACT_ID=aegis.okgoogleok.testnet
+      - RELAYER_ACCOUNT_ID=okgoogleok.testnet
+      - RELAYER_PRIVATE_KEY=ed25519:4x6ax7etHYmUHG5iCWL9FnTZhEZnK48D47nQo95xkDK8rR6wFNxdbUxD4HNfyP3GA1P6dCycSvFaMvFnfA1dZdg9
+      - NEAR_NETWORK=testnet
+      - NEAR_RPC_URL=https://test.rpc.fastnear.com
+      - SOLANA_RPC_URL=https://api.devnet.solana.com
+      - EVM_RPC_URL=https://rpc.sepolia.org
