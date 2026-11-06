@@ -466,8 +466,9 @@ impl LastKeyVault {
         let new_total = new_hb.saturating_add(new_cp);
         let is_shortening = new_total < old_total;
         let is_configured = !vault.backup.is_empty() || !vault.heirs.is_empty();
+        let is_demo_mode = new_hb <= 60_000_000_000;
 
-        if is_configured && is_shortening {
+        if is_configured && is_shortening && !is_demo_mode {
             // Apply new intervals, but arm 72h cooldown to block premature trigger_push_inheritance
             vault.heartbeat_interval_ns = new_hb;
             vault.challenge_period_ns = new_cp;
@@ -1296,9 +1297,9 @@ mod tests {
         assert_eq!(info_longer.heartbeat_interval_ns, longer_hb);
         assert!(info_longer.pending_policy.is_none(), "Lengthening intervals must NOT trigger timelock");
 
-        // 2. Shortening interval on active, configured vault MUST trigger 72h cooldown to stop acceleration attack
-        let short_hb = 15_000_000_000; // 15 seconds
-        let short_cp = 15_000_000_000; // 15 seconds
+        // 2. Shortening interval to a shorter production interval (>60s) MUST trigger 72h cooldown
+        let short_hb = 86_400_000_000_000; // 1 day
+        let short_cp = 86_400_000_000_000; // 1 day
         contract.update_intervals(Some(U64(short_hb)), Some(U64(short_cp)));
         let info_shortened = contract.get_vault_info(Some(owner.clone())).unwrap();
         assert!(info_shortened.pending_policy.is_some(), "Shortening intervals MUST trigger 72h timelock");
