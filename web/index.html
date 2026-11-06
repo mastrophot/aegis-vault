@@ -1693,23 +1693,26 @@
       }
 
       if (!info || info.state === 'Unconfigured') {
-        lastFetchedVaultInfo = {
+        const epoch = (info && typeof info.epoch === 'number') ? info.epoch : 0;
+        lastFetchedVaultInfo = info || {
           state: 'Unconfigured',
-          epoch: 0,
+          epoch: epoch,
           backup: { btc: '', evm: '', sol: '', near: null },
           heirs: { btc: '', evm: '', sol: '', near: null },
           pending_policy: null,
           last_ping_ns: 0,
           heartbeat_interval_ns: 7776000000000000
         };
-        currentEpochIndex = 0;
+        currentEpochIndex = epoch;
         remainingSeconds = 0;
-        userHasInteractedWithInputs = false;
 
-        inputIds.forEach(id => {
-          const el = document.getElementById(id);
-          if (el) el.value = '';
-        });
+        // NEVER wipe inputs if user has typed or pasted an address!
+        if (!userHasInteractedWithInputs) {
+          inputIds.forEach(id => {
+            const el = document.getElementById(id);
+            if (el && !el.value) el.value = '';
+          });
+        }
 
         const activeBanner = document.getElementById('activePolicyBanner');
         if (activeBanner) activeBanner.classList.add('hidden');
@@ -1831,12 +1834,11 @@
           }
         });
       } else if (info.state === 'Unconfigured') {
-        localStorage.removeItem('aegis_addresses');
         inputIds.forEach(id => {
           const el = document.getElementById(id);
           if (el) {
             el.disabled = false;
-            if (!userHasInteractedWithInputs) el.value = '';
+            if (!userHasInteractedWithInputs && !el.value) el.value = '';
           }
         });
       } else {
@@ -1850,10 +1852,10 @@
           const pEvm = document.getElementById('panicEvmAddr');
           const pSol = document.getElementById('panicSolAddr');
           if (!userHasInteractedWithInputs) {
-            if (pNear) pNear.value = info.backup.near || '';
-            if (pBtc) pBtc.value = info.backup.btc || '';
-            if (pEvm) pEvm.value = info.backup.evm || '';
-            if (pSol) pSol.value = info.backup.sol || '';
+            if (pNear && !pNear.value) pNear.value = info.backup.near || '';
+            if (pBtc && !pBtc.value) pBtc.value = info.backup.btc || '';
+            if (pEvm && !pEvm.value) pEvm.value = info.backup.evm || '';
+            if (pSol && !pSol.value) pSol.value = info.backup.sol || '';
           }
           if (info.backup.btc || info.backup.evm || info.backup.sol || info.backup.near) hasActiveAddresses = true;
         }
@@ -1863,10 +1865,10 @@
           const hEvm = document.getElementById('heirEvmAddr');
           const hSol = document.getElementById('heirSolAddr');
           if (!userHasInteractedWithInputs) {
-            if (hNear) hNear.value = info.heirs.near || '';
-            if (hBtc) hBtc.value = info.heirs.btc || '';
-            if (hEvm) hEvm.value = info.heirs.evm || '';
-            if (hSol) hSol.value = info.heirs.sol || '';
+            if (hNear && !hNear.value) hNear.value = info.heirs.near || '';
+            if (hBtc && !hBtc.value) hBtc.value = info.heirs.btc || '';
+            if (hEvm && !hEvm.value) hEvm.value = info.heirs.evm || '';
+            if (hSol && !hSol.value) hSol.value = info.heirs.sol || '';
           }
           if (info.heirs.btc || info.heirs.evm || info.heirs.sol || info.heirs.near) hasActiveAddresses = true;
         }
@@ -4416,14 +4418,20 @@
         return;
       }
 
-      // If vault is Unconfigured, keep inputs pristine empty!
+      // If vault is Unconfigured, keep inputs empty unless user has typed or pasted
       if (lastFetchedVaultInfo && lastFetchedVaultInfo.state === 'Unconfigured') {
-        inputIds.forEach(id => {
-          const el = document.getElementById(id);
-          if (el) el.value = '';
-        });
+        if (!userHasInteractedWithInputs) {
+          inputIds.forEach(id => {
+            const el = document.getElementById(id);
+            if (el && !el.value) el.value = '';
+          });
+        }
+        const hasAnyEntered = inputIds.some(id => document.getElementById(id)?.value?.trim());
         const banner = document.getElementById('unconfiguredBanner');
-        if (banner) banner.classList.remove('hidden');
+        if (banner) {
+          if (hasAnyEntered) banner.classList.add('hidden');
+          else banner.classList.remove('hidden');
+        }
         return;
       }
 
@@ -4636,20 +4644,19 @@
         if (e.key === 'Escape') closeMultichainWalletModal();
       });
 
-      // Protect user inputs from being overwritten while typing
+      // Protect user inputs from being overwritten while typing or pasting
       inputIds.forEach(id => {
         const el = document.getElementById(id);
         if (el) {
-          el.addEventListener('focus', () => {
-            userHasInteractedWithInputs = true;
-            isEditing = true;
-          });
-          el.addEventListener('input', () => {
+          const markUserActive = () => {
             userHasInteractedWithInputs = true;
             isEditing = true;
             const banner = document.getElementById('unconfiguredBanner');
             if (banner && el.value.trim().length > 0) banner.classList.add('hidden');
             updateSaveButtonState(lastFetchedVaultInfo);
+          };
+          ['focus', 'input', 'paste', 'change', 'keyup'].forEach(evt => {
+            el.addEventListener(evt, markUserActive);
           });
         }
       });
