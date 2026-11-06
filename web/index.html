@@ -3473,12 +3473,19 @@
 
     function changeInactivityPeriod(val) {
       let hbNs;
+      let cpNs = null;
       if (val === 'demo_60s') {
         MAX_SECONDS = 60;
         remainingSeconds = 60;
         hbNs = '60000000000'; // 60 seconds
+        cpNs = '15000000000'; // 15 seconds Grace Window for fast Judge Demo
         localStorage.setItem('aegis_inactivity_days', 'demo_60s');
-        showToast('⚡ Judge Demo Mode: 60s Heartbeat Activated!');
+        localStorage.setItem('aegis_grace_days', 'demo_15s');
+        const sel1 = document.getElementById('graceSelect');
+        const sel2 = document.getElementById('modalGraceSelect');
+        if (sel1) sel1.value = 'demo_15s';
+        if (sel2) sel2.value = 'demo_15s';
+        showToast('⚡ Judge Demo Mode: 60s Heartbeat + 15s Grace Window Activated!');
       } else {
         inactivityDays = parseInt(val);
         MAX_SECONDS = inactivityDays * 24 * 3600;
@@ -3488,7 +3495,7 @@
         showToast(`Broadcasting check-in timer update (${val} days) to NEAR...`);
       }
       updateCountdownDisplay();
-      dispatchNearTransaction('update_intervals', { heartbeat_interval_ns: hbNs, challenge_period_ns: null });
+      dispatchNearTransaction('update_intervals', { heartbeat_interval_ns: hbNs, challenge_period_ns: cpNs });
     }
 
     function changeGracePeriod(val) {
@@ -4579,9 +4586,13 @@
         localStorage.setItem('aegis_addresses_' + currentSigner, JSON.stringify(data));
       }
       localStorage.removeItem('aegis_addresses');
-      dispatchNearTransaction('propose_policy', policyPayload).then(() => {
+      dispatchNearTransaction('propose_policy', policyPayload).then((res) => {
         userHasInteractedWithInputs = false;
         isEditing = false;
+        if (res !== undefined) {
+          showToast('Policy armed on-chain! Opening Safe Bunker Deposits...');
+          setTimeout(() => switchTab('vault'), 700);
+        }
       }).catch(err => {
         console.error('Policy proposal dispatch error:', err);
       });
