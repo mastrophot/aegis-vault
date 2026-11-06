@@ -1944,6 +1944,11 @@
             if (hSol && !hSol.value) hSol.value = info.heirs.sol || '';
           }
           if (info.heirs.btc || info.heirs.evm || info.heirs.sol || info.heirs.near) hasActiveAddresses = true;
+          const hMemo = document.getElementById('heirFinalMemo');
+          if (!userHasInteractedWithInputs && hMemo && !hMemo.value && info.heir_memo) {
+            hMemo.value = info.heir_memo;
+            updateMemoByteCounter(hMemo.value);
+          }
         }
       }
 
@@ -4985,7 +4990,8 @@
           evm: data.heirEvmAddr || '',
           sol: data.heirSolAddr || '',
           near: data.heirNearAddr ? data.heirNearAddr : null
-        }
+        },
+        memo: data.heirFinalMemo && data.heirFinalMemo.trim() ? data.heirFinalMemo.trim() : null
       };
 
       // Save policy scoped to connected account

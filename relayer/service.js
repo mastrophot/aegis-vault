@@ -146,6 +146,24 @@ class AegisRelayerService {
     this.processedSweeps.add(sweepId);
     const destination = state === 'Evacuated' ? vault.backup : vault.heirs;
     const actionLabel = state === 'Inheritance' ? 'Inheritance' : 'Evacuation';
+    let sweepMemo = `Aegis ${actionLabel}: ${vaultOwner} Epoch ${epoch}`;
+
+    if (state === 'Inheritance') {
+      try {
+        const customMemo = await this.account.viewFunction({
+          contractId: this.contractId,
+          methodName: 'get_heir_memo',
+          args: { account_id: vaultOwner }
+        });
+        if (customMemo && customMemo.trim()) {
+          sweepMemo = customMemo.trim();
+          console.log(`   📜 Custom heir testament memo found: "${sweepMemo}"`);
+        }
+      } catch (memoErr) {
+        console.warn(`   ⚠️ Could not fetch custom heir memo: ${memoErr.message}`);
+      }
+    }
+
     const derivationPath = `aegis/${vaultOwner}/${epoch}`;
 
     console.log(`   • Vault State:       ${state}`);
@@ -178,7 +196,7 @@ class AegisRelayerService {
           valueWei: ethers.parseEther('0.1'), // 0.1 ETH
           nonce: 0,
           chainId: 11155111, // Sepolia
-          memo: `Aegis ${actionLabel}: ${vaultOwner} Epoch ${epoch}`
+          memo: sweepMemo
         });
 
         console.log(`   • Calling request_sweep_signature on ${this.contractId} with raw EVM payload...`);
@@ -361,7 +379,7 @@ class AegisRelayerService {
             fromPubkey: vaultAddrs.sol.address,
             toPubkey: destination.sol.trim(),
             lamports: liveLamports,
-            memo: `Aegis ${actionLabel}: ${vaultOwner} Epoch ${epoch}`,
+            memo: sweepMemo,
             recentBlockhash
           });
 

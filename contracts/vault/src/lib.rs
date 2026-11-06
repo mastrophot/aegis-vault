@@ -129,6 +129,7 @@ pub struct VaultInfo {
     pub current_time_ns: u64,
     pub epoch: u32,
     pub authorized_relayer: Option<AccountId>,
+    pub heir_memo: Option<String>,
 }
 
 #[near(contract_state)]
@@ -343,11 +344,25 @@ impl LastKeyVault {
 
     /// Propose updating backup or heir addresses for caller's bunker.
     /// Enforces a 72-hour timelock on changes, or activates immediately on initial setup (pristine/empty destinations).
+    /// Optionally updates digital testament memo for heirs.
     #[payable]
-    pub fn propose_policy(&mut self, backup: ChainAddresses, heirs: ChainAddresses) {
+    pub fn propose_policy(&mut self, backup: ChainAddresses, heirs: ChainAddresses, memo: Option<String>) {
         let caller = env::predecessor_account_id();
         let is_empty_submission = backup.is_empty() && heirs.is_empty();
         require!(!is_empty_submission, "At least one backup or heir destination must be provided");
+
+        if let Some(ref m) = memo {
+            let trimmed = m.trim();
+            let key = format!("memo:{}", caller);
+            if trimmed.is_empty() {
+                env::storage_remove(key.as_bytes());
+                env::log_str(&format!("HEIR_MEMO_CLEARED: Testament note removed for {}", caller));
+            } else {
+                require!(trimmed.len() <= 128, "Digital testament exceeds 128 bytes");
+                env::storage_write(key.as_bytes(), trimmed.as_bytes());
+                env::log_str(&format!("HEIR_MEMO_SAVED: Testament note updated for {}", caller));
+            }
+        }
 
         if !self.vaults.contains_key(&caller) {
             // Initial setup for new user
@@ -699,7 +714,30 @@ impl LastKeyVault {
             current_time_ns: env::block_timestamp(),
             epoch: vault.epoch,
             authorized_relayer: vault.authorized_relayer.clone(),
+            heir_memo: self.get_heir_memo(target.clone()),
         })
+    }
+
+    /// Sets or clears the custom testament memo broadcast to heirs during an inheritance sweep.
+    #[payable]
+    pub fn set_heir_memo(&mut self, memo: String) {
+        let caller = env::predecessor_account_id();
+        let trimmed = memo.trim();
+        let key = format!("memo:{}", caller);
+        if trimmed.is_empty() {
+            env::storage_remove(key.as_bytes());
+            env::log_str(&format!("HEIR_MEMO_CLEARED: Testament note removed for {}", caller));
+        } else {
+            require!(trimmed.len() <= 128, "Digital testament exceeds 128 bytes");
+            env::storage_write(key.as_bytes(), trimmed.as_bytes());
+            env::log_str(&format!("HEIR_MEMO_SAVED: Testament note updated for {}", caller));
+        }
+    }
+
+    /// Views the custom testament memo configured by the vault owner.
+    pub fn get_heir_memo(&self, account_id: AccountId) -> Option<String> {
+        let key = format!("memo:{}", account_id);
+        env::storage_read(key.as_bytes()).map(|bytes| String::from_utf8(bytes).unwrap_or_default())
     }
 
     fn internal_register_account(&self, account_id: &AccountId) {
@@ -916,7 +954,7 @@ mod tests {
         assert!(contract.get_vault_info(Some(bob.clone())).is_none());
 
         // Alice initializes policy
-        contract.propose_policy(backup.clone(), heirs.clone());
+        contract.propose_policy(backup.clone(), heirs.clone(), None);
         let alice_info = contract.get_vault_info(Some(alice.clone())).expect("Alice vault should exist");
         assert_eq!(alice_info.state, VaultState::Active);
         assert_eq!(alice_info.owner, alice);
@@ -928,7 +966,7 @@ mod tests {
         // Bob initializes his own policy
         testing_env!(context.predecessor_account_id(bob.clone()).build());
         let (bob_backup, bob_heirs) = sample_addresses();
-        contract.propose_policy(bob_backup, bob_heirs);
+        contract.propose_policy(bob_backup, bob_heirs, None);
 
         let bob_info = contract.get_vault_info(Some(bob.clone())).expect("Bob vault should exist");
         assert_eq!(bob_info.owner, bob);
@@ -965,7 +1003,7 @@ mod tests {
         let challenge_ns = 7 * 24 * 3600 * 1_000_000_000;
 
         let mut contract = LastKeyVault::new(mpc, None);
-        contract.propose_policy(backup, heirs);
+        contract.propose_policy(backup, heirs, None);
 
         // 1. Advance time before full inactivity (heartbeat + challenge) -> trigger_push_inheritance MUST fail
         testing_env!(context
@@ -995,7 +1033,7 @@ mod tests {
             sol: "SolanaMod55555555555555555555555555555555".to_string(),
             near: None,
         };
-        contract.propose_policy(new_backup, ChainAddresses::empty());
+        contract.propose_policy(new_backup, ChainAddresses::empty(), None);
         assert!(contract.get_vault_info(Some(owner.clone())).unwrap().pending_policy.is_some());
 
         // 4. Even if past inactivity time, trigger_push_inheritance MUST fail while pending policy is active!
@@ -1038,7 +1076,7 @@ mod tests {
         testing_env!(context.block_timestamp(t0).build());
 
         let mut contract = LastKeyVault::new(mpc, None);
-        contract.propose_policy(backup, heirs);
+        contract.propose_policy(backup, heirs, None);
 
         let new_backup = ChainAddresses {
             btc: "tb1qnewbackup".to_string(),
@@ -1054,7 +1092,7 @@ mod tests {
         };
 
         // Owner proposes update
-        contract.propose_policy(new_backup.clone(), new_heirs.clone());
+        contract.propose_policy(new_backup.clone(), new_heirs.clone(), None);
         assert!(contract.get_vault_info(Some(owner.clone())).unwrap().pending_policy.is_some());
 
         // Cancel policy
@@ -1062,7 +1100,7 @@ mod tests {
         assert!(contract.get_vault_info(Some(owner.clone())).unwrap().pending_policy.is_none());
 
         // Owner proposes again and applies after timelock
-        contract.propose_policy(new_backup.clone(), new_heirs.clone());
+        contract.propose_policy(new_backup.clone(), new_heirs.clone(), None);
 
         testing_env!(context.block_timestamp(t0 + DEFAULT_POLICY_TIMELOCK_NS + 1).build());
         contract.apply_policy();
@@ -1083,7 +1121,7 @@ mod tests {
         testing_env!(context.attached_deposit(NearToken::from_yoctonear(1)).build());
 
         let mut contract = LastKeyVault::new(mpc, Some(relayer.clone()));
-        contract.propose_policy(backup, heirs);
+        contract.propose_policy(backup, heirs, None);
 
         // Cannot request sweep while Active
         let res1 = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -1126,7 +1164,7 @@ mod tests {
 
         // Proposing empty policy panics
         let empty_policy_res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            contract.propose_policy(ChainAddresses::empty(), ChainAddresses::empty());
+            contract.propose_policy(ChainAddresses::empty(), ChainAddresses::empty(), None);
         }));
         assert!(empty_policy_res.is_err());
     }
@@ -1159,7 +1197,7 @@ mod tests {
         testing_env!(context.build());
 
         let mut contract = LastKeyVault::new(mpc, Some(relayer.clone()));
-        contract.propose_policy(backup, heirs);
+        contract.propose_policy(backup, heirs, None);
 
         let initial_info = contract.get_vault_info(Some(alice.clone())).unwrap();
         assert_eq!(initial_info.state, VaultState::Active);
@@ -1265,7 +1303,7 @@ mod tests {
         let mut initial_heirs = ChainAddresses::empty();
         initial_heirs.near = Some("alice-heir.testnet".parse().unwrap());
 
-        contract.propose_policy(initial_backup.clone(), initial_heirs.clone());
+        contract.propose_policy(initial_backup.clone(), initial_heirs.clone(), None);
         let info = contract.get_vault_info(Some(owner.clone())).unwrap();
         assert_eq!(info.state, VaultState::Active);
         assert!(info.pending_policy.is_none());
@@ -1280,7 +1318,7 @@ mod tests {
         let mut additive_heirs = initial_heirs.clone();
         additive_heirs.evm = "0x2222222222222222222222222222222222222222".to_string();
 
-        contract.propose_policy(additive_backup.clone(), additive_heirs.clone());
+        contract.propose_policy(additive_backup.clone(), additive_heirs.clone(), None);
 
         // MUST activate immediately without 72h timelock!
         let updated_info = contract.get_vault_info(Some(owner.clone())).unwrap();
@@ -1294,7 +1332,7 @@ mod tests {
         let mut replacing_backup = additive_backup.clone();
         replacing_backup.near = Some("new-evil-backup.testnet".parse().unwrap()); // CHANGING existing NEAR!
 
-        contract.propose_policy(replacing_backup.clone(), additive_heirs.clone());
+        contract.propose_policy(replacing_backup.clone(), additive_heirs.clone(), None);
         let replacing_info = contract.get_vault_info(Some(owner.clone())).unwrap();
         assert!(replacing_info.pending_policy.is_some(), "Modifying existing address MUST trigger timelock");
 
@@ -1320,7 +1358,7 @@ mod tests {
         backup.near = Some("bob-backup.testnet".parse().unwrap());
         let mut heirs = ChainAddresses::empty();
         heirs.near = Some("bob-heir.testnet".parse().unwrap());
-        contract.propose_policy(backup.clone(), heirs.clone());
+        contract.propose_policy(backup.clone(), heirs.clone(), None);
 
         let info = contract.get_vault_info(Some(owner.clone())).unwrap();
         assert_eq!(info.heartbeat_interval_ns, DEFAULT_HEARTBEAT_INTERVAL_NS);
@@ -1351,7 +1389,7 @@ mod tests {
         let demo_hb = 120_000_000_000; // 2 minutes
         let demo_cp = 30_000_000_000;  // 30 seconds
         let mut contract_demo = LastKeyVault::new(mpc, None);
-        contract_demo.propose_policy(backup, heirs);
+        contract_demo.propose_policy(backup, heirs, None);
         contract_demo.update_intervals(Some(U64(demo_hb)), Some(U64(demo_cp)));
         let info_demo = contract_demo.get_vault_info(Some(owner)).unwrap();
         assert_eq!(info_demo.heartbeat_interval_ns, demo_hb);
@@ -1373,5 +1411,32 @@ mod tests {
         contract.register_account(Some(owner.clone()));
         let list2 = contract.get_registered_accounts();
         assert!(list2.contains(&owner));
+    }
+
+    #[test]
+    fn test_heir_memo_and_testament() {
+        let owner: AccountId = "alice.testnet".parse().unwrap();
+        let mpc: AccountId = "v1.signer-prod.testnet".parse().unwrap();
+        let (backup, heirs) = sample_addresses();
+        let context = get_context(owner.clone());
+        testing_env!(context.build());
+
+        let mut contract = LastKeyVault::new(mpc, None);
+        // Initially no memo
+        assert_eq!(contract.get_heir_memo(owner.clone()), None);
+
+        // Propose policy with memo
+        contract.propose_policy(backup.clone(), heirs.clone(), Some("test test".to_string()));
+        assert_eq!(contract.get_heir_memo(owner.clone()), Some("test test".to_string()));
+        let info = contract.get_vault_info(Some(owner.clone())).unwrap();
+        assert_eq!(info.heir_memo, Some("test test".to_string()));
+
+        // Update memo directly via set_heir_memo
+        contract.set_heir_memo("take care of each other".to_string());
+        assert_eq!(contract.get_heir_memo(owner.clone()), Some("take care of each other".to_string()));
+
+        // Clear memo
+        contract.set_heir_memo("".to_string());
+        assert_eq!(contract.get_heir_memo(owner), None);
     }
 }
