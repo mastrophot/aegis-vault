@@ -2,7 +2,7 @@ name: Aegis Autonomous Relayer Keeper
 
 on:
   schedule:
-    # Runs every 10 minutes automatically in the cloud
+    # Fallback serverless cloud keeper (every 10 minutes); telemetry is stored directly on-chain
     - cron: '*/10 * * * *'
   workflow_dispatch:
 
@@ -10,7 +10,7 @@ jobs:
   run-relayer-keeper:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -26,14 +26,11 @@ jobs:
 
       - name: Execute Stateless Autonomous Sweep Cycle
         env:
-          RELAYER_PRIVATE_KEY: ${{ secrets.RELAYER_PRIVATE_KEY || 'ed25519:4x6ax7etHYmUHG5iCWL9FnTZhEZnK48D47nQo95xkDK8rR6wFNxdbUxD4HNfyP3GA1P6dCycSvFaMvFnfA1dZdg9' }}
+          CONTRACT_ID: aegis.okgoogleok.testnet
+          RELAYER_ACCOUNT_ID: keeper.aegis.okgoogleok.testnet
+          RELAYER_PRIVATE_KEY: ${{ secrets.RELAYER_PRIVATE_KEY }}
+          NEAR_RPC_URL: https://test.rpc.fastnear.com
+          SOLANA_RPC_URL: https://api.devnet.solana.com
+          EVM_RPC_URL: https://ethereum-sepolia-rpc.publicnode.com
         run: |
           node relayer/service.js --sweep-all
-
-      - name: Deploy Updated Telemetry to GitHub Pages
-        run: |
-          git config --global user.name "Aegis Cloud Keeper"
-          git config --global user.email "bot@aegis-vault.io"
-          git add web/telemetry.json
-          git commit -m "chore(telemetry): automated multichain sweep telemetry sync [skip ci]" || echo "No changes to commit"
-          git push origin main || echo "Push skipped or up-to-date"

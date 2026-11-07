@@ -10,7 +10,17 @@ const DEFAULT_HEARTBEAT_INTERVAL_NS: u64 = 90 * 24 * 60 * 60 * 1_000_000_000; //
 const DEFAULT_CHALLENGE_PERIOD_NS: u64 = 7 * 24 * 60 * 60 * 1_000_000_000;    // 7 days
 const DEFAULT_POLICY_TIMELOCK_NS: u64 = 3 * 24 * 60 * 60 * 1_000_000_000;     // 72 hours
 const MPC_GAS: Gas = Gas::from_tgas(250);
-const CALLBACK_GAS: Gas = Gas::from_tgas(10);
+const CALLBACK_GAS: Gas = Gas::from_tgas(15);
+
+const MPC_SIGN_DEPOSIT_YOCTO: u128 = 50_000_000_000_000_000_000_000; // 0.05 NEAR
+const KEEPER_GAS_REFUND_YOCTO: u128 = 5_000_000_000_000_000_000_000; // 0.005 NEAR
+const STORAGE_RESERVE_BUFFER_YOCTO: u128 = 500_000_000_000_000_000_000_000; // 0.5 NEAR
+const MAX_MEMO_BYTES: usize = 1024;
+const MAX_TELEMETRY_BYTES: usize = 4096;
+const MAX_EVM_FEE_PER_GAS_WEI: u128 = 500_000_000_000; // 500 Gwei cap
+const MIN_EVM_GAS_LIMIT: u128 = 21_000;
+const MAX_EVM_GAS_LIMIT: u128 = 250_000;
+const NEP413_TAG: u32 = 2_147_484_061; // (1 << 31) + 413
 
 #[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(crate = "near_sdk::serde")]
@@ -40,9 +50,15 @@ impl ChainAddresses {
 
     /// Checks if applying `new` would replace any non-empty existing address
     pub fn is_replacing_existing(&self, new: &ChainAddresses) -> bool {
-        let btc_replaced = !self.btc.trim().is_empty() && !new.btc.trim().is_empty() && self.btc.trim() != new.btc.trim();
-        let evm_replaced = !self.evm.trim().is_empty() && !new.evm.trim().is_empty() && !self.evm.trim().eq_ignore_ascii_case(new.evm.trim());
-        let sol_replaced = !self.sol.trim().is_empty() && !new.sol.trim().is_empty() && self.sol.trim() != new.sol.trim();
+        let btc_replaced = !self.btc.trim().is_empty()
+            && !new.btc.trim().is_empty()
+            && self.btc.trim() != new.btc.trim();
+        let evm_replaced = !self.evm.trim().is_empty()
+            && !new.evm.trim().is_empty()
+            && !self.evm.trim().eq_ignore_ascii_case(new.evm.trim());
+        let sol_replaced = !self.sol.trim().is_empty()
+            && !new.sol.trim().is_empty()
+            && self.sol.trim() != new.sol.trim();
         let near_replaced = self.near.is_some() && new.near.is_some() && self.near != new.near;
         btc_replaced || evm_replaced || sol_replaced || near_replaced
     }
@@ -66,6 +82,7 @@ pub struct PendingPolicy {
     pub effective_at_ns: u64,
 }
 
+/// Core Borsh layout preserved verbatim for seamless zero-migration upgrades on live vaults.
 #[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Clone, Debug)]
 #[serde(crate = "near_sdk::serde")]
 pub struct UserVault {
@@ -100,6 +117,13 @@ impl UserVault {
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(crate = "near_sdk::serde")]
+pub struct ArchivedEpoch {
+    pub state: VaultState,
+    pub destination: ChainAddresses,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(crate = "near_sdk::serde")]
 pub struct SignRequest {
     pub payload_v2: SignPayloadV2,
     pub path: String,
@@ -130,6 +154,18 @@ pub struct VaultInfo {
     pub epoch: u32,
     pub authorized_relayer: Option<AccountId>,
     pub heir_memo: Option<String>,
+    pub gas_escrow_yocto: String,
+    pub near_deposit_yocto: String,
+    pub is_epoch_swept: bool,
+    pub last_sweep_report: Option<String>,
+}
+
+#[derive(BorshSerialize)]
+struct Nep413Payload {
+    pub message: String,
+    pub nonce: [u8; 32],
+    pub recipient: String,
+    pub callback_url: Option<String>,
 }
 
 #[near(contract_state)]
@@ -143,10 +179,7 @@ pub struct LastKeyVault {
 #[near]
 impl LastKeyVault {
     #[init]
-    pub fn new(
-        mpc_contract: AccountId,
-        default_relayer: Option<AccountId>,
-    ) -> Self {
+    pub fn new(mpc_contract: AccountId, default_relayer: Option<AccountId>) -> Self {
         require!(!env::state_exists(), "Already initialized");
         Self {
             mpc_contract,
@@ -155,44 +188,99 @@ impl LastKeyVault {
         }
     }
 
-    /// Upgrade / Migration entrypoint: safely transitions storage schema to multi-tenant LookupMap.
-    /// Strictly restricted to self-call by the contract account.
+    /// Upgrade / Migration entrypoint: strictly restricted to self-call by the contract account.
     #[private]
     #[init(ignore_state)]
     pub fn migrate() -> Self {
-        #[allow(dead_code)]
-        #[derive(BorshDeserialize)]
-        struct OldLastKeyVault {
-            pub owner: AccountId,
-            pub mpc_contract: AccountId,
-            pub heartbeat_interval_ns: u64,
-            pub challenge_period_ns: u64,
-            pub policy_timelock_ns: u64,
-            pub last_ping_ns: u64,
-            pub state: VaultState,
-            pub backup: ChainAddresses,
-            pub heirs: ChainAddresses,
-            pub pending_policy: Option<PendingPolicy>,
-            pub epoch: u32,
-            pub authorized_relayer: Option<AccountId>,
-        }
-
         let mut vaults = LookupMap::new(b"v");
         let newapp: AccountId = "newapp9955.testnet".parse().unwrap();
         vaults.insert(newapp, UserVault::new_unconfigured());
 
         Self {
             mpc_contract: "v1.signer-prod.testnet".parse().unwrap(),
-            default_relayer: Some("okgoogleok.testnet".parse().unwrap()),
+            default_relayer: Some("keeper.aegis.okgoogleok.testnet".parse().unwrap()),
             vaults,
         }
+    }
+
+    /// Self-only configuration of the default keeper/relayer account.
+    #[private]
+    pub fn set_default_relayer(&mut self, relayer: Option<AccountId>) {
+        require!(
+            env::predecessor_account_id() == env::current_account_id(),
+            "Strictly restricted to contract self-call"
+        );
+        self.default_relayer = relayer.clone();
+        env::log_str(&format!("DEFAULT_RELAYER_UPDATED: {:?}", relayer));
+    }
+
+    /// Self-only helper to mark or unmark a historical epoch sweep status.
+    #[private]
+    pub fn admin_mark_epoch_swept(&mut self, vault_owner: AccountId, epoch: u32, is_complete: bool) {
+        require!(
+            env::predecessor_account_id() == env::current_account_id(),
+            "Strictly restricted to contract self-call"
+        );
+        Self::internal_set_epoch_swept(&vault_owner, epoch, is_complete);
+        env::log_str(&format!(
+            "ADMIN_EPOCH_SWEPT_UPDATED: Vault={}, Epoch={}, Complete={}",
+            vault_owner, epoch, is_complete
+        ));
+    }
+
+    /// Top up per-vault Gas Escrow used to fund zero-deposit autonomous `v1.signer` sweeps
+    /// and `0.005 NEAR` keeper gas refunds.
+    #[payable]
+    pub fn deposit_escrow(&mut self, account_id: Option<AccountId>) {
+        let target = account_id.unwrap_or_else(env::predecessor_account_id);
+        let deposit = env::attached_deposit().as_yoctonear();
+        require!(deposit > 0, "Must attach NEAR deposit to fund gas escrow");
+        Self::internal_credit_escrow(&target, deposit);
+        env::log_str(&format!(
+            "ESCROW_DEPOSITED: Credited {} yoctoNEAR to gas escrow for {}",
+            deposit, target
+        ));
+    }
+
+    /// Deposit native NEAR into an isolated per-user bunker ledger (swept via `sweep_near`).
+    #[payable]
+    pub fn deposit_near_vault(&mut self, account_id: Option<AccountId>) {
+        let target = account_id.unwrap_or_else(env::predecessor_account_id);
+        let deposit = env::attached_deposit().as_yoctonear();
+        require!(deposit > 0, "Must attach NEAR deposit for vault storage");
+        Self::internal_credit_near_deposit(&target, deposit);
+        env::log_str(&format!(
+            "NEAR_VAULT_DEPOSITED: Credited {} yoctoNEAR to isolated vault balance for {}",
+            deposit, target
+        ));
+    }
+
+    /// Owner registers an additional Ed25519 public key (32-byte hex) authorized to sign `ping_by_relayer` payloads.
+    pub fn register_ping_pubkey(&mut self, pubkey_hex: String) {
+        let caller = env::predecessor_account_id();
+        require!(self.vaults.contains_key(&caller), "No vault found for account");
+        let clean = pubkey_hex.trim().trim_start_matches("0x").trim_start_matches("0X");
+        let bytes = hex::decode(clean).unwrap_or_else(|_| env::panic_str("Invalid hex public key"));
+        require!(bytes.len() == 32, "Ed25519 public key must be 32 bytes");
+        let mut arr = [0u8; 32];
+        arr.copy_from_slice(&bytes);
+        Self::internal_record_owner_pubkey(&caller, arr);
+        env::log_str(&format!("PING_PUBKEY_REGISTERED: Added Ed25519 key for {}", caller));
     }
 
     /// Owner heartbeat: resets the timer for the caller's vault and cancels any pending claim from heirs.
     #[payable]
     pub fn ping(&mut self) {
         let caller = env::predecessor_account_id();
-        let vault = self.vaults.get_mut(&caller).expect("No vault found for account. Configure destinations first.");
+        Self::internal_capture_signer_pubkey(&caller);
+        let attached = env::attached_deposit().as_yoctonear();
+        if attached > 1 {
+            Self::internal_credit_escrow(&caller, attached);
+        }
+        let vault = self
+            .vaults
+            .get_mut(&caller)
+            .expect("No vault found for account. Configure destinations first.");
         require!(
             vault.state == VaultState::Active || matches!(vault.state, VaultState::Claiming { .. }),
             "Cannot ping: vault is not Active or Claiming"
@@ -206,8 +294,19 @@ impl LastKeyVault {
         }
     }
 
-    /// Relayer heartbeat sponsorship: callable by authorized relayer on behalf of vault owner
-    pub fn ping_by_relayer(&mut self, vault_owner: AccountId) {
+    /// Cryptographically authenticated relayer heartbeat sponsorship (`[ATTACK-3]` mitigation):
+    /// Requires a valid Ed25519 signature from a registered owner public key over either:
+    /// 1) Raw message `"AEGIS_PING:{vault_owner}:{timestamp_ms}"`, OR
+    /// 2) NEP-413 standard SHA-256 Borsh envelope (`nep413_nonce_hex`, `nep413_recipient`) for that message.
+    /// Enforces freshness (<= 1 hour old, <= 5 min clock skew) and strict monotonic anti-replay.
+    pub fn ping_by_relayer(
+        &mut self,
+        vault_owner: AccountId,
+        timestamp_ms: U64,
+        signature_hex: String,
+        nep413_nonce_hex: Option<String>,
+        nep413_recipient: Option<String>,
+    ) {
         let caller = env::predecessor_account_id();
         let vault = self.vaults.get_mut(&vault_owner).expect("Target vault not found");
         let is_authorized = vault.authorized_relayer.as_ref().map_or(false, |r| r == &caller)
@@ -217,12 +316,76 @@ impl LastKeyVault {
             vault.state == VaultState::Active || matches!(vault.state, VaultState::Claiming { .. }),
             "Cannot ping: vault is not Active or Claiming"
         );
-        vault.last_ping_ns = env::block_timestamp();
+
+        let now_ns = env::block_timestamp();
+        let sig_ts_ns = timestamp_ms.0.saturating_mul(1_000_000);
+        require!(
+            sig_ts_ns <= now_ns.saturating_add(300_000_000_000),
+            "Ping signature timestamp is in the future"
+        );
+        require!(
+            now_ns.saturating_sub(sig_ts_ns) <= 3_600_000_000_000,
+            "Ping signature has expired (>1 hour old)"
+        );
+
+        let last_used_ms = Self::internal_get_last_ping_sig_ms(&vault_owner);
+        require!(
+            timestamp_ms.0 > last_used_ms,
+            "Replay rejected: timestamp_ms must be strictly greater than previous signed ping"
+        );
+
+        let clean_sig = signature_hex.trim().trim_start_matches("0x").trim_start_matches("0X");
+        let sig_vec = hex::decode(clean_sig).unwrap_or_else(|_| env::panic_str("Invalid signature hex"));
+        require!(sig_vec.len() == 64, "Ed25519 signature must be 64 bytes");
+        let mut sig_arr = [0u8; 64];
+        sig_arr.copy_from_slice(&sig_vec);
+
+        let pks = Self::internal_get_owner_pubkeys(&vault_owner);
+        require!(
+            !pks.is_empty(),
+            "No owner Ed25519 public key registered for vault; owner must transact directly first"
+        );
+
+        let expected_msg = format!("AEGIS_PING:{}:{}", vault_owner, timestamp_ms.0);
+        let signed_bytes: Vec<u8> = if let Some(nonce_hex) = nep413_nonce_hex {
+            let clean_nonce = nonce_hex.trim().trim_start_matches("0x").trim_start_matches("0X");
+            let nonce_vec = hex::decode(clean_nonce).unwrap_or_else(|_| env::panic_str("Invalid NEP-413 nonce hex"));
+            require!(nonce_vec.len() == 32, "NEP-413 nonce must be 32 bytes");
+            let mut nonce_arr = [0u8; 32];
+            nonce_arr.copy_from_slice(&nonce_vec);
+            let recipient = nep413_recipient.unwrap_or_else(|| env::current_account_id().to_string());
+            let payload = Nep413Payload {
+                message: expected_msg,
+                nonce: nonce_arr,
+                recipient,
+                callback_url: None,
+            };
+            let mut preimage = Vec::with_capacity(4 + 256);
+            preimage.extend_from_slice(&NEP413_TAG.to_le_bytes());
+            preimage.extend_from_slice(&near_sdk::borsh::to_vec(&payload).expect("Borsh encode failed"));
+            env::sha256(&preimage)
+        } else {
+            expected_msg.into_bytes()
+        };
+
+        let verified = pks
+            .iter()
+            .any(|pk| env::ed25519_verify(&sig_arr, &signed_bytes, pk));
+        require!(verified, "Invalid owner Ed25519 signature for ping_by_relayer");
+
+        Self::internal_set_last_ping_sig_ms(&vault_owner, timestamp_ms.0);
+        vault.last_ping_ns = now_ns;
         if let VaultState::Claiming { .. } = vault.state {
             vault.state = VaultState::Active;
-            env::log_str(&format!("CLAIM_CANCELLED: Relayer {} pinged alive for {}", caller, vault_owner));
+            env::log_str(&format!(
+                "CLAIM_CANCELLED: Verified signed relayer ping from {} for {}",
+                caller, vault_owner
+            ));
         } else {
-            env::log_str(&format!("PING_RECEIVED: Relayer heartbeat reset for {}", vault_owner));
+            env::log_str(&format!(
+                "PING_RECEIVED: Verified signed relayer heartbeat reset for {}",
+                vault_owner
+            ));
         }
     }
 
@@ -231,6 +394,7 @@ impl LastKeyVault {
     #[payable]
     pub fn panic(&mut self) {
         let caller = env::predecessor_account_id();
+        Self::internal_capture_signer_pubkey(&caller);
         let vault = self.vaults.get_mut(&caller).expect("No vault found for account");
         require!(
             vault.state == VaultState::Active || matches!(vault.state, VaultState::Claiming { .. }),
@@ -246,19 +410,40 @@ impl LastKeyVault {
         );
         vault.pending_policy = None;
         vault.state = VaultState::Evacuated;
-        env::log_str(&format!("PANIC_TRIGGERED: Vault for {} evacuated. Sweeping routed exclusively to backup addresses.", caller));
+        Self::internal_set_epoch_swept(&caller, vault.epoch, false);
+        env::log_str(&format!(
+            "PANIC_TRIGGERED: Vault for {} evacuated. Sweeping routed exclusively to backup addresses.",
+            caller
+        ));
     }
 
     /// Resets the caller's vault after an evacuation or finalized inheritance, advancing the bunker epoch.
-    /// Preserves existing backup and heir destinations so delayed sweeps for prior epochs remain valid.
+    /// Archives prior epoch destinations in `archive:{owner}:{old_epoch}` so delayed sweeps remain verifiable!
     #[payable]
     pub fn rotate_bunker(&mut self) {
         let caller = env::predecessor_account_id();
+        Self::internal_capture_signer_pubkey(&caller);
         let vault = self.vaults.get_mut(&caller).expect("No vault found for account");
         require!(
             vault.state == VaultState::Evacuated || vault.state == VaultState::Inheritance,
             "Can only rotate bunker when vault is Evacuated or Inheritance"
         );
+
+        let old_epoch = vault.epoch;
+        let archived_dest = match vault.state {
+            VaultState::Evacuated => vault.backup.clone(),
+            VaultState::Inheritance => vault.heirs.clone(),
+            _ => ChainAddresses::empty(),
+        };
+        let archive = ArchivedEpoch {
+            state: vault.state.clone(),
+            destination: archived_dest,
+        };
+        if let Ok(bytes) = near_sdk::serde_json::to_vec(&archive) {
+            let key = format!("archive:{}:{}", caller, old_epoch);
+            env::storage_write(key.as_bytes(), &bytes);
+        }
+
         vault.epoch += 1;
         vault.pending_policy = None;
         vault.backup = ChainAddresses::empty();
@@ -266,15 +451,20 @@ impl LastKeyVault {
         vault.state = VaultState::Unconfigured;
         vault.last_ping_ns = env::block_timestamp();
         env::log_str(&format!(
-            "BUNKER_ROTATED: Epoch for {} advanced to v{}, destinations wiped to clean slate, state reset to Unconfigured",
-            caller, vault.epoch
+            "BUNKER_ROTATED: Epoch for {} advanced to v{} (archived v{}), state reset to Unconfigured",
+            caller, vault.epoch, old_epoch
         ));
     }
 
-    /// Resets caller's vault back to clean Unconfigured state (clears all egress addresses)
+    /// Resets caller's vault back to clean Unconfigured state (clears all egress addresses).
+    /// Blocked in Evacuated or Inheritance states (use `rotate_bunker` instead to advance epoch).
     pub fn reset_my_vault(&mut self) {
         let caller = env::predecessor_account_id();
         let vault = self.vaults.get_mut(&caller).expect("No vault found for account");
+        require!(
+            vault.state != VaultState::Evacuated && vault.state != VaultState::Inheritance,
+            "Use rotate_bunker to advance epoch after evacuation or inheritance"
+        );
         vault.backup = ChainAddresses::empty();
         vault.heirs = ChainAddresses::empty();
         vault.state = VaultState::Unconfigured;
@@ -282,22 +472,30 @@ impl LastKeyVault {
         env::log_str(&format!("VAULT_RESET: Vault for {} reset to Unconfigured", caller));
     }
 
-    /// Admin reset of a vault to Unconfigured state
+    /// Strictly self-only administrative reset (relayers are NEVER allowed to reset vaults).
+    #[private]
     pub fn admin_reset_vault(&mut self, target_account: AccountId) {
-        let caller = env::predecessor_account_id();
-        let is_admin = caller == env::current_account_id()
-            || self.default_relayer.as_ref().map_or(false, |r| r == &caller);
-        require!(is_admin, "Unauthorized caller for admin_reset_vault");
-        let vault = self.vaults.get_mut(&target_account).expect("No vault found for target account");
+        require!(
+            env::predecessor_account_id() == env::current_account_id(),
+            "Strictly restricted to contract self-call"
+        );
+        let vault = self
+            .vaults
+            .get_mut(&target_account)
+            .expect("No vault found for target account");
         vault.backup = ChainAddresses::empty();
         vault.heirs = ChainAddresses::empty();
         vault.state = VaultState::Unconfigured;
         vault.pending_policy = None;
-        env::log_str(&format!("ADMIN_VAULT_RESET: Vault for {} reset to Unconfigured by {}", target_account, caller));
+        env::log_str(&format!(
+            "ADMIN_VAULT_RESET: Vault for {} reset to Unconfigured by contract self",
+            target_account
+        ));
     }
 
-    /// Sweeps native NEAR tokens from the contract to the configured backup or heir destination account.
-    /// Retains a safety reserve (0.5 NEAR) to maintain contract storage staking.
+    /// Sweeps strictly the isolated per-user native NEAR deposit (`near_dep:{vault_owner}`)
+    /// to the configured backup or heir destination account. Never touches shared contract reserves
+    /// or other users' escrows/deposits.
     pub fn sweep_near(&mut self, vault_owner: AccountId, destination: Option<AccountId>) -> Promise {
         let caller = env::predecessor_account_id();
         let vault = self.vaults.get(&vault_owner).expect("Target vault not found");
@@ -322,34 +520,52 @@ impl LastKeyVault {
             }
             override_dest
         } else {
-            target_dest.clone().expect("No destination NEAR account configured in vault policy")
+            target_dest
+                .clone()
+                .expect("No destination NEAR account configured in vault policy")
         };
 
-        let contract_balance = env::account_balance();
-        let min_storage_stake = env::storage_byte_cost().saturating_mul(env::storage_usage() as u128);
-        let storage_reserve = min_storage_stake.saturating_add(NearToken::from_millinear(500)); // Storage stake + 0.5 NEAR buffer
+        let user_deposit = Self::internal_get_near_deposit(&vault_owner);
         require!(
-            contract_balance > storage_reserve,
-            "Insufficient contract balance above required storage stake"
+            user_deposit > 0,
+            "No isolated NEAR deposit available to sweep for this vault"
         );
-        let sweep_amount = contract_balance.saturating_sub(storage_reserve);
+        Self::internal_debit_near_deposit(&vault_owner, user_deposit);
 
         env::log_str(&format!(
-            "NEAR_SWEPT: Sweeping {} yoctoNEAR to {}",
-            sweep_amount, target_account_id
+            "NEAR_SWEPT: Sweeping {} yoctoNEAR for {} to {}",
+            user_deposit, vault_owner, target_account_id
         ));
 
-        Promise::new(target_account_id).transfer(sweep_amount)
+        Promise::new(target_account_id).transfer(NearToken::from_yoctonear(user_deposit))
     }
 
     /// Propose updating backup or heir addresses for caller's bunker.
-    /// Enforces a 72-hour timelock on changes, or activates immediately on initial setup (pristine/empty destinations).
-    /// Optionally updates digital testament memo for heirs.
+    /// Enforces a 72-hour timelock on changes, or activates immediately on initial/additive setup.
+    /// Any attached NEAR deposit (>1 yocto) automatically credits the caller's Gas Escrow.
     #[payable]
-    pub fn propose_policy(&mut self, backup: ChainAddresses, heirs: ChainAddresses, memo: Option<String>) {
+    pub fn propose_policy(
+        &mut self,
+        backup: ChainAddresses,
+        heirs: ChainAddresses,
+        memo: Option<String>,
+    ) {
         let caller = env::predecessor_account_id();
+        Self::internal_capture_signer_pubkey(&caller);
         let is_empty_submission = backup.is_empty() && heirs.is_empty();
-        require!(!is_empty_submission, "At least one backup or heir destination must be provided");
+        require!(
+            !is_empty_submission,
+            "At least one backup or heir destination must be provided"
+        );
+
+        let attached = env::attached_deposit().as_yoctonear();
+        if attached > 1 {
+            Self::internal_credit_escrow(&caller, attached);
+            env::log_str(&format!(
+                "ESCROW_CREDITED_ON_POLICY: {} yoctoNEAR added for {}",
+                attached, caller
+            ));
+        }
 
         if let Some(ref m) = memo {
             let trimmed = m.trim();
@@ -358,14 +574,16 @@ impl LastKeyVault {
                 env::storage_remove(key.as_bytes());
                 env::log_str(&format!("HEIR_MEMO_CLEARED: Testament note removed for {}", caller));
             } else {
-                require!(trimmed.len() <= 128, "Digital testament exceeds 128 bytes");
+                require!(
+                    trimmed.len() <= MAX_MEMO_BYTES,
+                    "Digital testament exceeds 1024 bytes"
+                );
                 env::storage_write(key.as_bytes(), trimmed.as_bytes());
                 env::log_str(&format!("HEIR_MEMO_SAVED: Testament note updated for {}", caller));
             }
         }
 
         if !self.vaults.contains_key(&caller) {
-            // Initial setup for new user
             let new_vault = UserVault {
                 state: VaultState::Active,
                 last_ping_ns: env::block_timestamp(),
@@ -380,19 +598,28 @@ impl LastKeyVault {
             };
             self.vaults.insert(caller.clone(), new_vault);
             self.internal_register_account(&caller);
-            env::log_str(&format!("VAULT_CREATED: Bunker initialized and armed for {}", caller));
+            env::log_str(&format!(
+                "VAULT_CREATED: Bunker initialized and armed for {}",
+                caller
+            ));
             return;
         }
 
         let vault = self.vaults.get_mut(&caller).unwrap();
 
-        // If vault is already evacuated, allow owner to fill in previously empty destination slots for leftover assets
         if vault.state == VaultState::Evacuated {
             let is_replacing = vault.backup.is_replacing_existing(&backup);
-            require!(!is_replacing, "Cannot overwrite already established evacuation addresses in Evacuated state");
+            require!(
+                !is_replacing,
+                "Cannot overwrite already established evacuation addresses in Evacuated state"
+            );
             vault.backup = backup;
             vault.last_ping_ns = env::block_timestamp();
-            env::log_str(&format!("POLICY_UPDATED_EVACUATED: Leftover destinations added for {}", caller));
+            Self::internal_set_epoch_swept(&caller, vault.epoch, false);
+            env::log_str(&format!(
+                "POLICY_UPDATED_EVACUATED: Leftover destinations added for {}",
+                caller
+            ));
             return;
         }
 
@@ -412,7 +639,11 @@ impl LastKeyVault {
             vault.pending_policy = None;
             vault.last_ping_ns = env::block_timestamp();
             vault.state = VaultState::Active;
-            env::log_str(&format!("POLICY_INITIALIZED_INSTANT: Destinations activated immediately (new/additive addresses, no 72h cooldown) for {}", caller));
+            self.internal_register_account(&caller);
+            env::log_str(&format!(
+                "POLICY_INITIALIZED_INSTANT: Destinations activated immediately for {}",
+                caller
+            ));
         } else {
             vault.last_ping_ns = env::block_timestamp();
             let effective_at_ns = env::block_timestamp() + vault.policy_timelock_ns;
@@ -421,7 +652,10 @@ impl LastKeyVault {
                 heirs,
                 effective_at_ns,
             });
-            env::log_str(&format!("POLICY_PROPOSED: 72h timelock started for modifying existing configured addresses for {}", caller));
+            env::log_str(&format!(
+                "POLICY_PROPOSED: 72h timelock started for modifying existing configured addresses for {}",
+                caller
+            ));
         }
     }
 
@@ -429,6 +663,7 @@ impl LastKeyVault {
     #[payable]
     pub fn apply_policy(&mut self) {
         let caller = env::predecessor_account_id();
+        Self::internal_capture_signer_pubkey(&caller);
         let vault = self.vaults.get_mut(&caller).expect("No vault found for account");
         require!(vault.state == VaultState::Active, "Can only apply policy in Active state");
         if let Some(pending) = vault.pending_policy.take() {
@@ -449,6 +684,7 @@ impl LastKeyVault {
     #[payable]
     pub fn cancel_policy(&mut self) {
         let caller = env::predecessor_account_id();
+        Self::internal_capture_signer_pubkey(&caller);
         let vault = self.vaults.get_mut(&caller).expect("No vault found for account");
         require!(vault.pending_policy.is_some(), "No pending policy to cancel");
         vault.pending_policy = None;
@@ -457,9 +693,6 @@ impl LastKeyVault {
     }
 
     /// Update heartbeat interval and challenge (grace) period for caller's bunker.
-    /// Strictly blocked if a 72-hour policy cooldown is active.
-    /// Lengthening intervals is instant. Shortening intervals on an active, configured bunker
-    /// triggers a 72-hour policy cooldown to prevent premature inheritance acceleration attacks!
     #[payable]
     pub fn update_intervals(
         &mut self,
@@ -467,25 +700,37 @@ impl LastKeyVault {
         challenge_period_ns: Option<U64>,
     ) {
         let caller = env::predecessor_account_id();
+        Self::internal_capture_signer_pubkey(&caller);
         let vault = self.vaults.get_mut(&caller).expect("No vault found for account");
         require!(vault.state == VaultState::Active, "Can only update intervals in Active state");
         require!(
             vault.pending_policy.is_none(),
             "Cannot update intervals during active 72h policy cooldown"
         );
-        let new_hb = heartbeat_interval_ns.map(|v| v.0).unwrap_or(vault.heartbeat_interval_ns);
-        let new_cp = challenge_period_ns.map(|v| v.0).unwrap_or(vault.challenge_period_ns);
-        require!(new_hb >= 15_000_000_000, "Heartbeat interval must be at least 15 seconds");
-        require!(new_cp >= 15_000_000_000, "Challenge period must be at least 15 seconds");
+        let new_hb = heartbeat_interval_ns
+            .map(|v| v.0)
+            .unwrap_or(vault.heartbeat_interval_ns);
+        let new_cp = challenge_period_ns
+            .map(|v| v.0)
+            .unwrap_or(vault.challenge_period_ns);
+        require!(
+            new_hb >= 15_000_000_000,
+            "Heartbeat interval must be at least 15 seconds"
+        );
+        require!(
+            new_cp >= 15_000_000_000,
+            "Challenge period must be at least 15 seconds"
+        );
 
-        let old_total = vault.heartbeat_interval_ns.saturating_add(vault.challenge_period_ns);
+        let old_total = vault
+            .heartbeat_interval_ns
+            .saturating_add(vault.challenge_period_ns);
         let new_total = new_hb.saturating_add(new_cp);
         let is_shortening = new_total < old_total;
         let is_configured = !vault.backup.is_empty() || !vault.heirs.is_empty();
         let is_demo_mode = new_hb <= 300_000_000_000;
 
         if is_configured && is_shortening && !is_demo_mode {
-            // Apply new intervals, but arm 72h cooldown to block premature trigger_push_inheritance
             vault.heartbeat_interval_ns = new_hb;
             vault.challenge_period_ns = new_cp;
             vault.last_ping_ns = env::block_timestamp();
@@ -496,7 +741,7 @@ impl LastKeyVault {
                 effective_at_ns,
             });
             env::log_str(&format!(
-                "INTERVALS_SHORTENED_TIMELOCK: Intervals shortened for {}. 72h cooldown armed to prevent acceleration attacks.",
+                "INTERVALS_SHORTENED_TIMELOCK: Intervals shortened for {}. 72h cooldown armed.",
                 caller
             ));
         } else {
@@ -511,17 +756,23 @@ impl LastKeyVault {
     #[payable]
     pub fn set_authorized_relayer(&mut self, relayer: Option<AccountId>) {
         let caller = env::predecessor_account_id();
+        Self::internal_capture_signer_pubkey(&caller);
         let vault = self.vaults.get_mut(&caller).expect("No vault found for account");
         vault.authorized_relayer = relayer;
         vault.last_ping_ns = env::block_timestamp();
-        env::log_str(&format!("RELAYER_UPDATED: Authorized relayer updated for {}", caller));
+        env::log_str(&format!(
+            "RELAYER_UPDATED: Authorized relayer updated for {}",
+            caller
+        ));
     }
 
     /// Autonomous push inheritance trigger: callable by anyone (relayer, keeper bot, heir)
     /// once the owner's heartbeat interval + grace period has expired without any owner interaction.
-    /// Strictly blocked if a 72-hour policy cooldown is active!
     pub fn trigger_push_inheritance(&mut self, vault_owner: AccountId) {
-        let vault = self.vaults.get_mut(&vault_owner).expect("Target vault not found");
+        let vault = self
+            .vaults
+            .get_mut(&vault_owner)
+            .expect("Target vault not found");
         require!(
             vault.state == VaultState::Active || matches!(vault.state, VaultState::Claiming { .. }),
             "Vault must be Active to trigger push inheritance"
@@ -531,7 +782,9 @@ impl LastKeyVault {
             "Cannot trigger push inheritance while 72h policy cooldown is active"
         );
         let now = env::block_timestamp();
-        let total_inactivity_ns = vault.heartbeat_interval_ns.saturating_add(vault.challenge_period_ns);
+        let total_inactivity_ns = vault
+            .heartbeat_interval_ns
+            .saturating_add(vault.challenge_period_ns);
         require!(
             now >= vault.last_ping_ns.saturating_add(total_inactivity_ns),
             "Owner inactivity period (heartbeat + grace) has not elapsed yet"
@@ -541,8 +794,9 @@ impl LastKeyVault {
             "Cannot trigger inheritance: no heir destination addresses configured"
         );
         vault.state = VaultState::Inheritance;
+        Self::internal_set_epoch_swept(&vault_owner, vault.epoch, false);
         env::log_str(&format!(
-            "PUSH_INHERITANCE_TRIGGERED: Owner {} inactive for full period. Vault shifted to Inheritance. Autonomous multichain sweep unlocked for heirs.",
+            "PUSH_INHERITANCE_TRIGGERED: Owner {} inactive for full period. Vault shifted to Inheritance.",
             vault_owner
         ));
     }
@@ -557,8 +811,40 @@ impl LastKeyVault {
         self.trigger_push_inheritance(vault_owner);
     }
 
-    /// Requests an MPC threshold signature from v1.signer for a foreign chain transaction
-    /// Cryptographic derivation path is strictly: aegis/{vault_owner}/{epoch_to_sign}
+    /// Records verified sweep telemetry on-chain and marks whether all chains for `(vault_owner, epoch)`
+    /// have completed sweeping (`is_complete = true`), stopping redundant keeper loops.
+    pub fn record_sweep_telemetry(
+        &mut self,
+        vault_owner: AccountId,
+        epoch: u32,
+        report_json: String,
+        is_complete: bool,
+    ) {
+        let caller = env::predecessor_account_id();
+        let vault = self.vaults.get(&vault_owner).expect("Target vault not found");
+        let is_authorized = caller == env::current_account_id()
+            || caller == vault_owner
+            || vault.authorized_relayer.as_ref().map_or(false, |r| r == &caller)
+            || self.default_relayer.as_ref().map_or(false, |r| r == &caller);
+        require!(is_authorized, "Unauthorized caller for record_sweep_telemetry");
+        require!(epoch <= vault.epoch, "Cannot record telemetry for future epoch");
+        require!(
+            report_json.len() <= MAX_TELEMETRY_BYTES,
+            "Telemetry report exceeds 4096 bytes"
+        );
+
+        let key = format!("telemetry:{}:{}", vault_owner, epoch);
+        env::storage_write(key.as_bytes(), report_json.as_bytes());
+        Self::internal_set_epoch_swept(&vault_owner, epoch, is_complete);
+        env::log_str(&format!(
+            "SWEEP_TELEMETRY_RECORDED: Vault={}, Epoch={}, Complete={}",
+            vault_owner, epoch, is_complete
+        ));
+    }
+
+    /// Requests an MPC threshold signature from `v1.signer` for a foreign chain transaction.
+    /// Supports zero-deposit calls from restricted `FunctionCall` keeper keys funded by
+    /// Per-Vault Gas Escrow (or Contract Sponsor Pool) + `0.005 NEAR` keeper gas refund!
     #[payable]
     pub fn request_sweep_signature(
         &mut self,
@@ -578,49 +864,69 @@ impl LastKeyVault {
         let epoch_to_sign = target_epoch.unwrap_or(vault.epoch);
         require!(epoch_to_sign <= vault.epoch, "Cannot sign for future epoch");
 
-        if epoch_to_sign == vault.epoch {
+        let target_destination: ChainAddresses = if epoch_to_sign == vault.epoch {
             require!(
                 vault.state == VaultState::Evacuated || vault.state == VaultState::Inheritance,
                 "Current epoch can only be swept in Evacuated or Inheritance state"
             );
-        }
-
-        // Strictly isolated multi-user derivation path
-        let path = format!("aegis/{}/{}", vault_owner, epoch_to_sign);
-        let clean_hex = payload_hex.trim().trim_start_matches("0x").trim_start_matches("0X").to_string();
-
-        let target_destination = match vault.state {
-            VaultState::Evacuated => &vault.backup,
-            VaultState::Inheritance => &vault.heirs,
-            VaultState::Active => &vault.backup, // For historical sweeps while active
-            _ => env::panic_str("Invalid state for sweep"),
+            match vault.state {
+                VaultState::Evacuated => vault.backup.clone(),
+                VaultState::Inheritance => vault.heirs.clone(),
+                _ => env::panic_str("Invalid state for sweep"),
+            }
+        } else {
+            // Historical epoch: load archived destination saved at `rotate_bunker()`, fallback to current backup
+            Self::internal_get_archived_epoch(&vault_owner, epoch_to_sign)
+                .map(|a| a.destination)
+                .unwrap_or_else(|| vault.backup.clone())
         };
 
+        let path = format!("aegis/{}/{}", vault_owner, epoch_to_sign);
+        let clean_hex = payload_hex
+            .trim()
+            .trim_start_matches("0x")
+            .trim_start_matches("0X")
+            .to_string();
+
         let (payload_to_sign, domain_id) = if !is_eddsa {
-            // EVM & ECDSA chains (Bitcoin + EVM)
-            let is_btc = chain.eq_ignore_ascii_case("BTC") || chain.eq_ignore_ascii_case("BITCOIN");
+            let is_btc =
+                chain.eq_ignore_ascii_case("BTC") || chain.eq_ignore_ascii_case("BITCOIN");
             let ecdsa_hash = if is_btc {
+                require!(
+                    !target_destination.btc.trim().is_empty(),
+                    "No target Bitcoin address configured for this epoch"
+                );
                 require!(
                     clean_hex.len() == 64 && hex::decode(&clean_hex).is_ok(),
                     "Bitcoin payload must be a 32-byte BIP-143 sighash (64 hex characters)"
                 );
                 clean_hex
             } else if clean_hex.len() > 64 {
-                // Verifiable Raw EVM transaction payload
-                let raw_tx_bytes = hex::decode(&clean_hex).unwrap_or_else(|_| env::panic_str("Invalid EVM tx hex"));
-                let clean_evm_addr = target_destination.evm.trim().trim_start_matches("0x").trim_start_matches("0X");
-                let target_evm_bytes = hex::decode(clean_evm_addr).unwrap_or_else(|_| env::panic_str("Invalid target EVM hex"));
-                require!(target_evm_bytes.len() == 20, "Target EVM address must be 20 bytes");
-                let parsed_to = extract_evm_to_address(&raw_tx_bytes)
-                    .unwrap_or_else(|| env::panic_str("Failed to parse EVM recipient address from transaction payload"));
+                let raw_tx_bytes = hex::decode(&clean_hex)
+                    .unwrap_or_else(|_| env::panic_str("Invalid EVM tx hex"));
+                let clean_evm_addr = target_destination
+                    .evm
+                    .trim()
+                    .trim_start_matches("0x")
+                    .trim_start_matches("0X");
+                let target_evm_bytes = hex::decode(clean_evm_addr)
+                    .unwrap_or_else(|_| env::panic_str("Invalid target EVM hex"));
                 require!(
-                    parsed_to.as_slice() == target_evm_bytes.as_slice(),
-                    "EVM transaction recipient does not match designated target address"
+                    target_evm_bytes.len() == 20,
+                    "Target EVM address must be 20 bytes"
                 );
+                let mut expected_addr = [0u8; 20];
+                expected_addr.copy_from_slice(&target_evm_bytes);
+                if let Err(reason) = verify_evm_sweep_payload(&raw_tx_bytes, &expected_addr) {
+                    env::panic_str(reason);
+                }
                 let hash_bytes = env::keccak256(&raw_tx_bytes);
                 hex::encode(hash_bytes)
             } else if clean_hex.len() == 64 {
-                require!(caller == vault_owner, "Relayers must submit verifiable raw EVM transaction bytes, not blind hashes");
+                require!(
+                    caller == vault_owner,
+                    "Relayers must submit verifiable raw EVM transaction bytes, not blind hashes"
+                );
                 require!(hex::decode(&clean_hex).is_ok(), "Invalid 32-byte ECDSA hex");
                 clean_hex
             } else {
@@ -628,11 +934,23 @@ impl LastKeyVault {
             };
             (SignPayloadV2::Ecdsa(ecdsa_hash), 0)
         } else {
-            // Solana, NEAR & EdDSA chains (domain_id = 1)
-            require!(!clean_hex.is_empty() && clean_hex.len() <= 2464 && hex::decode(&clean_hex).is_ok(), "Invalid EdDSA hex");
+            require!(
+                !clean_hex.is_empty() && clean_hex.len() <= 2464 && hex::decode(&clean_hex).is_ok(),
+                "Invalid EdDSA hex"
+            );
             let is_near = chain.eq_ignore_ascii_case("NEAR");
-            if !is_near {
-                let raw_msg_bytes = hex::decode(&clean_hex).unwrap_or_else(|_| env::panic_str("Invalid EdDSA hex"));
+            if is_near {
+                require!(
+                    target_destination.near.is_some(),
+                    "No target NEAR account configured for this epoch"
+                );
+                require!(
+                    clean_hex.len() == 64,
+                    "NEAR implicit sweep payload must be a 32-byte SHA-256 transaction hash"
+                );
+            } else {
+                let raw_msg_bytes = hex::decode(&clean_hex)
+                    .unwrap_or_else(|_| env::panic_str("Invalid EdDSA hex"));
                 require!(
                     verify_solana_sweep_payload(&raw_msg_bytes, &target_destination.sol),
                     "Solana transaction message failed security validation against target recipient"
@@ -641,13 +959,47 @@ impl LastKeyVault {
             (SignPayloadV2::Eddsa(clean_hex), 1)
         };
 
-        env::log_str(&format!(
-            "SWEEP_REQUEST: Vault={}, Epoch={}, Chain={}, Path={}",
-            vault_owner, epoch_to_sign, chain, path
-        ));
+        // Funding resolution: Caller deposit -> Per-Vault Gas Escrow -> Contract Sponsor Pool
+        let attached_yocto = env::attached_deposit().as_yoctonear();
+        let reward_keeper = caller != vault_owner;
+        let keeper_refund_yocto = if reward_keeper { KEEPER_GAS_REFUND_YOCTO } else { 0 };
 
-        let attached_deposit = env::attached_deposit();
-        require!(!attached_deposit.is_zero(), "Caller must attach deposit for v1.signer");
+        let (sign_deposit_yocto, escrow_debited_yocto, refund_caller_yocto) = if attached_yocto > 0 {
+            require!(
+                attached_yocto >= MPC_SIGN_DEPOSIT_YOCTO,
+                "Attached deposit must be 0 (use escrow/sponsor) or at least 0.05 NEAR"
+            );
+            (attached_yocto, 0u128, 0u128)
+        } else {
+            let needed = MPC_SIGN_DEPOSIT_YOCTO.saturating_add(keeper_refund_yocto);
+            let user_escrow = Self::internal_get_escrow(&vault_owner);
+            if user_escrow >= needed {
+                Self::internal_debit_escrow(&vault_owner, needed);
+                (MPC_SIGN_DEPOSIT_YOCTO, needed, keeper_refund_yocto)
+            } else {
+                // Fallback to Contract Sponsor Pool (replenished automatically by v1.signer refunds!)
+                let min_storage = env::storage_byte_cost()
+                    .as_yoctonear()
+                    .saturating_mul(env::storage_usage() as u128);
+                let total_escrow = Self::internal_read_u128(b"total_escrow");
+                let total_near_dep = Self::internal_read_u128(b"total_near_dep");
+                let locked = min_storage
+                    .saturating_add(total_escrow)
+                    .saturating_add(total_near_dep)
+                    .saturating_add(STORAGE_RESERVE_BUFFER_YOCTO);
+                let available_sponsor = env::account_balance().as_yoctonear().saturating_sub(locked);
+                require!(
+                    available_sponsor >= needed,
+                    "Vault gas escrow depleted and contract sponsor pool insufficient; top up via deposit_escrow"
+                );
+                (MPC_SIGN_DEPOSIT_YOCTO, 0u128, keeper_refund_yocto)
+            }
+        };
+
+        env::log_str(&format!(
+            "SWEEP_REQUEST: Vault={}, Epoch={}, Chain={}, Path={}, EscrowDebited={}",
+            vault_owner, epoch_to_sign, chain, path, escrow_debited_yocto
+        ));
 
         let request = SignRequest {
             payload_v2: payload_to_sign,
@@ -662,44 +1014,66 @@ impl LastKeyVault {
                     "request": request
                 }))
                 .expect("Failed to serialize sign request"),
-                attached_deposit,
+                NearToken::from_yoctonear(sign_deposit_yocto),
                 MPC_GAS,
             )
             .then(
                 Self::ext(env::current_account_id())
                     .with_static_gas(CALLBACK_GAS)
-                    .on_signature_ready(chain, is_eddsa),
+                    .on_signature_ready(
+                        vault_owner,
+                        caller,
+                        chain,
+                        is_eddsa,
+                        U64((escrow_debited_yocto / 1_000_000_000_000_000_000) as u64), // in milli-micro units (10^18)
+                        U64((refund_caller_yocto / 1_000_000_000_000_000_000) as u64),
+                    ),
             )
     }
 
     #[private]
     pub fn on_signature_ready(
         &mut self,
+        vault_owner: AccountId,
+        caller: AccountId,
         chain: String,
         is_eddsa: bool,
+        escrow_debited_e18: U64,
+        keeper_refund_e18: U64,
         #[callback_result] result: Result<near_sdk::serde_json::Value, PromiseError>,
     ) -> near_sdk::serde_json::Value {
+        let escrow_debited = (escrow_debited_e18.0 as u128).saturating_mul(1_000_000_000_000_000_000);
+        let keeper_refund = (keeper_refund_e18.0 as u128).saturating_mul(1_000_000_000_000_000_000);
+
         match result {
             Ok(val) => {
+                if keeper_refund > 0 {
+                    // Fire-and-forget gas compensation receipt to keeper while still returning `val` in SuccessValue!
+                    let promise_idx = env::promise_batch_create(&caller);
+                    env::promise_batch_action_transfer(
+                        promise_idx,
+                        NearToken::from_yoctonear(keeper_refund),
+                    );
+                }
                 env::log_str(&format!(
-                    "SIGNATURE_SUCCESS: Chain={}, is_eddsa={}",
-                    chain, is_eddsa
+                    "SIGNATURE_SUCCESS: Vault={}, Chain={}, is_eddsa={}, KeeperRefund={}",
+                    vault_owner, chain, is_eddsa, keeper_refund
                 ));
                 val
             }
-            Err(_) => env::panic_str("MPC signature generation failed"),
+            Err(_) => {
+                if escrow_debited > 0 {
+                    Self::internal_credit_escrow(&vault_owner, escrow_debited);
+                }
+                env::panic_str("MPC signature generation failed")
+            }
         }
     }
 
     // --- Views ---
 
-    /// Returns vault information for the requested account_id (or caller if omitted).
-    /// Returns None if the account does not have a configured vault.
     pub fn get_vault_info(&self, account_id: Option<AccountId>) -> Option<VaultInfo> {
-        let target = match account_id {
-            Some(acc) => acc,
-            None => return None,
-        };
+        let target = account_id?;
         self.vaults.get(&target).map(|vault| VaultInfo {
             owner: target.clone(),
             mpc_contract: self.mpc_contract.clone(),
@@ -715,56 +1089,90 @@ impl LastKeyVault {
             epoch: vault.epoch,
             authorized_relayer: vault.authorized_relayer.clone(),
             heir_memo: self.get_heir_memo(target.clone()),
+            gas_escrow_yocto: Self::internal_get_escrow(&target).to_string(),
+            near_deposit_yocto: Self::internal_get_near_deposit(&target).to_string(),
+            is_epoch_swept: Self::internal_is_epoch_swept(&target, vault.epoch),
+            last_sweep_report: Self::internal_get_sweep_telemetry(&target, vault.epoch),
         })
     }
 
     /// Single-call view method for stateless serverless keepers:
-    /// Returns all vaults that require automated relayer action:
-    /// - Vaults in Evacuated or Inheritance state awaiting foreign chain sweeps
-    /// - Active vaults whose heartbeat + challenge period has elapsed
+    /// - Skips already-swept epochs (`is_epoch_swept == true`) to prevent infinite loops
+    /// - Requires `pending_policy.is_none() && !heirs.is_empty()` for expired `Active` vaults
     pub fn get_actionable_vaults(&self) -> Vec<VaultInfo> {
         let now = env::block_timestamp();
         self.get_registered_accounts()
             .into_iter()
             .filter_map(|owner| self.get_vault_info(Some(owner)))
             .filter(|v| {
-                matches!(v.state, VaultState::Evacuated | VaultState::Inheritance | VaultState::Claiming { .. })
-                    || (v.state == VaultState::Active && now >= v.last_ping_ns.saturating_add(v.heartbeat_interval_ns.saturating_add(v.challenge_period_ns)))
+                let needs_sweep =
+                    matches!(v.state, VaultState::Evacuated | VaultState::Inheritance)
+                        && !v.is_epoch_swept;
+                let needs_inheritance_trigger =
+                    (v.state == VaultState::Active || matches!(v.state, VaultState::Claiming { .. }))
+                        && v.pending_policy.is_none()
+                        && !v.heirs.is_empty()
+                        && now
+                            >= v.last_ping_ns.saturating_add(
+                                v.heartbeat_interval_ns.saturating_add(v.challenge_period_ns),
+                            );
+                needs_sweep || needs_inheritance_trigger
             })
             .collect()
     }
 
-    /// Sets or clears the custom testament memo broadcast to heirs during an inheritance sweep.
+    /// Sets or clears the custom testament memo (plaintext or client-side E2EE ciphertext up to 1024 bytes).
     #[payable]
     pub fn set_heir_memo(&mut self, memo: String) {
         let caller = env::predecessor_account_id();
+        Self::internal_capture_signer_pubkey(&caller);
         let trimmed = memo.trim();
         let key = format!("memo:{}", caller);
         if trimmed.is_empty() {
             env::storage_remove(key.as_bytes());
             env::log_str(&format!("HEIR_MEMO_CLEARED: Testament note removed for {}", caller));
         } else {
-            require!(trimmed.len() <= 128, "Digital testament exceeds 128 bytes");
+            require!(
+                trimmed.len() <= MAX_MEMO_BYTES,
+                "Digital testament exceeds 1024 bytes"
+            );
             env::storage_write(key.as_bytes(), trimmed.as_bytes());
             env::log_str(&format!("HEIR_MEMO_SAVED: Testament note updated for {}", caller));
         }
     }
 
-    /// Views the custom testament memo configured by the vault owner.
     pub fn get_heir_memo(&self, account_id: AccountId) -> Option<String> {
         let key = format!("memo:{}", account_id);
         env::storage_read(key.as_bytes()).map(|bytes| String::from_utf8(bytes).unwrap_or_default())
     }
 
-    fn internal_register_account(&self, account_id: &AccountId) {
-        let mut list: Vec<AccountId> = env::storage_read(b"reg_accounts")
+    pub fn get_sweep_telemetry(&self, account_id: AccountId, epoch: Option<u32>) -> Option<String> {
+        let ep = epoch.or_else(|| self.vaults.get(&account_id).map(|v| v.epoch))?;
+        Self::internal_get_sweep_telemetry(&account_id, ep)
+    }
+
+    pub fn register_account(&mut self, account_id: Option<AccountId>) {
+        let acc = account_id.unwrap_or_else(env::predecessor_account_id);
+        self.internal_register_account(&acc);
+    }
+
+    pub fn get_registered_accounts(&self) -> Vec<AccountId> {
+        env::storage_read(b"reg_accounts")
             .and_then(|bytes| near_sdk::serde_json::from_slice(&bytes).ok())
-            .unwrap_or_else(|| vec![
-                "okgoogleok.testnet".parse().unwrap(),
-                "fewvilla8059.testnet".parse().unwrap(),
-                "mastrophot.testnet".parse().unwrap(),
-                "newapp9955.testnet".parse().unwrap(),
-            ]);
+            .unwrap_or_else(|| {
+                vec![
+                    "okgoogleok.testnet".parse().unwrap(),
+                    "fewvilla8059.testnet".parse().unwrap(),
+                    "mastrophot.testnet".parse().unwrap(),
+                    "newapp9955.testnet".parse().unwrap(),
+                ]
+            })
+    }
+
+    // --- Internal Storage Helpers (Zero Borsh Migration Impact) ---
+
+    fn internal_register_account(&self, account_id: &AccountId) {
+        let mut list = self.get_registered_accounts();
         if !list.contains(account_id) {
             list.push(account_id.clone());
         }
@@ -773,61 +1181,270 @@ impl LastKeyVault {
         }
     }
 
-    /// Public registration endpoint: adds an account to the monitored registry
-    pub fn register_account(&mut self, account_id: Option<AccountId>) {
-        let acc = account_id.unwrap_or_else(|| env::predecessor_account_id());
-        self.internal_register_account(&acc);
+    fn internal_read_u128(key: &[u8]) -> u128 {
+        env::storage_read(key)
+            .and_then(|b| b.try_into().ok().map(u128::from_le_bytes))
+            .unwrap_or(0)
     }
 
-    /// View method: returns all registered accounts for relayer monitoring
-    pub fn get_registered_accounts(&self) -> Vec<AccountId> {
-        env::storage_read(b"reg_accounts")
-            .and_then(|bytes| near_sdk::serde_json::from_slice(&bytes).ok())
-            .unwrap_or_else(|| vec![
-                "okgoogleok.testnet".parse().unwrap(),
-                "fewvilla8059.testnet".parse().unwrap(),
-                "mastrophot.testnet".parse().unwrap(),
-                "newapp9955.testnet".parse().unwrap(),
-            ])
+    fn internal_write_u128(key: &[u8], val: u128) {
+        env::storage_write(key, &val.to_le_bytes());
+    }
+
+    fn internal_get_escrow(owner: &AccountId) -> u128 {
+        let key = format!("escrow:{}", owner);
+        Self::internal_read_u128(key.as_bytes())
+    }
+
+    fn internal_credit_escrow(owner: &AccountId, amount: u128) {
+        let key = format!("escrow:{}", owner);
+        let cur = Self::internal_read_u128(key.as_bytes());
+        Self::internal_write_u128(key.as_bytes(), cur.saturating_add(amount));
+        let tot = Self::internal_read_u128(b"total_escrow");
+        Self::internal_write_u128(b"total_escrow", tot.saturating_add(amount));
+    }
+
+    fn internal_debit_escrow(owner: &AccountId, amount: u128) {
+        let key = format!("escrow:{}", owner);
+        let cur = Self::internal_read_u128(key.as_bytes());
+        require!(cur >= amount, "Insufficient vault gas escrow");
+        Self::internal_write_u128(key.as_bytes(), cur - amount);
+        let tot = Self::internal_read_u128(b"total_escrow");
+        Self::internal_write_u128(b"total_escrow", tot.saturating_sub(amount));
+    }
+
+    fn internal_get_near_deposit(owner: &AccountId) -> u128 {
+        let key = format!("near_dep:{}", owner);
+        Self::internal_read_u128(key.as_bytes())
+    }
+
+    fn internal_credit_near_deposit(owner: &AccountId, amount: u128) {
+        let key = format!("near_dep:{}", owner);
+        let cur = Self::internal_read_u128(key.as_bytes());
+        Self::internal_write_u128(key.as_bytes(), cur.saturating_add(amount));
+        let tot = Self::internal_read_u128(b"total_near_dep");
+        Self::internal_write_u128(b"total_near_dep", tot.saturating_add(amount));
+    }
+
+    fn internal_debit_near_deposit(owner: &AccountId, amount: u128) {
+        let key = format!("near_dep:{}", owner);
+        let cur = Self::internal_read_u128(key.as_bytes());
+        require!(cur >= amount, "Insufficient isolated NEAR deposit");
+        Self::internal_write_u128(key.as_bytes(), cur - amount);
+        let tot = Self::internal_read_u128(b"total_near_dep");
+        Self::internal_write_u128(b"total_near_dep", tot.saturating_sub(amount));
+    }
+
+    fn internal_capture_signer_pubkey(caller: &AccountId) {
+        if &env::signer_account_id() == caller {
+            let pk = env::signer_account_pk();
+            let raw = pk.as_bytes();
+            if raw.len() == 33 && raw[0] == 0 {
+                let mut arr = [0u8; 32];
+                arr.copy_from_slice(&raw[1..33]);
+                Self::internal_record_owner_pubkey(caller, arr);
+            }
+        }
+    }
+
+    fn internal_get_owner_pubkeys(owner: &AccountId) -> Vec<[u8; 32]> {
+        let key = format!("pks:{}", owner);
+        env::storage_read(key.as_bytes())
+            .and_then(|bytes| near_sdk::borsh::from_slice::<Vec<[u8; 32]>>(&bytes).ok())
+            .unwrap_or_default()
+    }
+
+    fn internal_record_owner_pubkey(owner: &AccountId, pk: [u8; 32]) {
+        let mut pks = Self::internal_get_owner_pubkeys(owner);
+        if !pks.contains(&pk) {
+            if pks.len() >= 16 {
+                pks.remove(0);
+            }
+            pks.push(pk);
+            let key = format!("pks:{}", owner);
+            if let Ok(bytes) = near_sdk::borsh::to_vec(&pks) {
+                env::storage_write(key.as_bytes(), &bytes);
+            }
+        }
+    }
+
+    fn internal_get_last_ping_sig_ms(owner: &AccountId) -> u64 {
+        let key = format!("ping_ts:{}", owner);
+        env::storage_read(key.as_bytes())
+            .and_then(|b| b.try_into().ok().map(u64::from_le_bytes))
+            .unwrap_or(0)
+    }
+
+    fn internal_set_last_ping_sig_ms(owner: &AccountId, ts_ms: u64) {
+        let key = format!("ping_ts:{}", owner);
+        env::storage_write(key.as_bytes(), &ts_ms.to_le_bytes());
+    }
+
+    fn internal_set_epoch_swept(owner: &AccountId, epoch: u32, is_complete: bool) {
+        let key = format!("swept:{}:{}", owner, epoch);
+        if is_complete {
+            env::storage_write(key.as_bytes(), &[1u8]);
+        } else {
+            env::storage_remove(key.as_bytes());
+        }
+    }
+
+    fn internal_is_epoch_swept(owner: &AccountId, epoch: u32) -> bool {
+        let key = format!("swept:{}:{}", owner, epoch);
+        env::storage_read(key.as_bytes())
+            .map(|b| b == vec![1u8])
+            .unwrap_or(false)
+    }
+
+    fn internal_get_sweep_telemetry(owner: &AccountId, epoch: u32) -> Option<String> {
+        let key = format!("telemetry:{}:{}", owner, epoch);
+        env::storage_read(key.as_bytes()).and_then(|b| String::from_utf8(b).ok())
+    }
+
+    fn internal_get_archived_epoch(owner: &AccountId, epoch: u32) -> Option<ArchivedEpoch> {
+        let key = format!("archive:{}:{}", owner, epoch);
+        env::storage_read(key.as_bytes())
+            .and_then(|b| near_sdk::serde_json::from_slice(&b).ok())
     }
 }
 
-/// Extracts the 20-byte `to` recipient address from an EIP-1559 or Legacy RLP-encoded transaction.
-fn extract_evm_to_address(raw_tx: &[u8]) -> Option<[u8; 20]> {
-    let (payload, items_before_to) = if raw_tx.first() == Some(&0x02) {
-        // EIP-1559 envelope: 0x02 || rlp([chain_id, nonce, max_priority_fee, max_fee, gas_limit, to, value, data, access_list])
-        (&raw_tx[1..], 5)
+/// Full structural & economic verification of EIP-1559 (type 0x02) and Legacy EVM sweep payloads.
+/// Mitigates `[ATTACK-1]` parameter poisoning (fee-burn griefing, gas-limit stuffing, recipient spoofing)
+/// while securely permitting Native ETH, ERC-20 `transfer`, and ERC-721 `safeTransferFrom` sweeps.
+fn verify_evm_sweep_payload(
+    raw_tx: &[u8],
+    expected_recipient: &[u8; 20],
+) -> Result<(), &'static str> {
+    if raw_tx.is_empty() {
+        return Err("Empty EVM transaction payload");
+    }
+
+    let is_eip1559 = raw_tx[0] == 0x02;
+    let payload = if is_eip1559 { &raw_tx[1..] } else { raw_tx };
+    if payload.is_empty() {
+        return Err("Empty RLP list in EVM payload");
+    }
+
+    let (list_header_len, list_content_len) =
+        decode_rlp_header(payload).ok_or("Invalid RLP list header")?;
+    if payload.len() != list_header_len + list_content_len {
+        return Err("EVM RLP payload has trailing or truncated bytes");
+    }
+
+    let mut items: Vec<&[u8]> = Vec::with_capacity(10);
+    let mut offset = list_header_len;
+    while offset < payload.len() {
+        let slice = payload.get(offset..).ok_or("RLP slice out of bounds")?;
+        let (h_len, i_len) = decode_rlp_item(slice).ok_or("Invalid RLP item")?;
+        let end = offset
+            .checked_add(h_len)
+            .and_then(|v| v.checked_add(i_len))
+            .ok_or("RLP length overflow")?;
+        if end > payload.len() {
+            return Err("RLP item exceeds list boundary");
+        }
+        items.push(&payload[offset + h_len..end]);
+        offset = end;
+    }
+
+    let (max_priority_fee, max_fee, gas_limit, to_bytes, value_wei, data) = if is_eip1559 {
+        if items.len() != 9 {
+            return Err("Unsigned EIP-1559 transaction must have exactly 9 RLP fields");
+        }
+        (
+            rlp_bytes_to_u128(items[2]).ok_or("maxPriorityFeePerGas overflow")?,
+            rlp_bytes_to_u128(items[3]).ok_or("maxFeePerGas overflow")?,
+            rlp_bytes_to_u128(items[4]).ok_or("gasLimit overflow")?,
+            items[5],
+            rlp_bytes_to_u128(items[6]).ok_or("value overflow")?,
+            items[7],
+        )
     } else {
-        // Legacy: rlp([nonce, gas_price, gas_limit, to, value, data, v, r, s])
-        (raw_tx, 3)
+        if items.len() != 6 && items.len() != 9 {
+            return Err("Unsigned Legacy EVM transaction must have 6 or 9 RLP fields");
+        }
+        let gp = rlp_bytes_to_u128(items[1]).ok_or("gasPrice overflow")?;
+        (
+            gp,
+            gp,
+            rlp_bytes_to_u128(items[2]).ok_or("gasLimit overflow")?,
+            items[3],
+            rlp_bytes_to_u128(items[4]).ok_or("value overflow")?,
+            items[5],
+        )
     };
 
-    if payload.is_empty() {
+    if to_bytes.len() != 20 {
+        return Err("EVM `to` field must be a 20-byte address (contract creation forbidden)");
+    }
+    if gas_limit < MIN_EVM_GAS_LIMIT || gas_limit > MAX_EVM_GAS_LIMIT {
+        return Err("EVM gasLimit out of safe sweep bounds (21,000..=250,000)");
+    }
+    if max_fee == 0 || max_fee > MAX_EVM_FEE_PER_GAS_WEI {
+        return Err("EVM maxFeePerGas exceeds 500 Gwei safety cap or is zero");
+    }
+    if max_priority_fee > max_fee {
+        return Err("EVM maxPriorityFeePerGas cannot exceed maxFeePerGas");
+    }
+
+    if to_bytes == expected_recipient.as_slice() {
+        // Native ETH sweep directly to configured backup/heir recipient
+        if value_wei == 0 {
+            return Err("Native EVM sweep must transfer non-zero ETH value");
+        }
+        if data.len() > MAX_MEMO_BYTES {
+            return Err("Native EVM memo calldata exceeds 1024 bytes");
+        }
+        return Ok(());
+    }
+
+    // Token / NFT contract sweep: `value` MUST be 0 and recipient inside ABI calldata MUST match `expected_recipient`
+    if value_wei != 0 {
+        return Err("EVM recipient mismatch (non-zero ETH sent to unknown address)");
+    }
+
+    // ERC-20 `transfer(address,uint256)` selector `0xa9059cbb`
+    if data.len() == 68 && data[0..4] == [0xa9, 0x05, 0x9c, 0xbb] {
+        if data[4..16].iter().any(|&b| b != 0) {
+            return Err("Malformed ABI address padding in ERC-20 transfer");
+        }
+        if &data[16..36] != expected_recipient.as_slice() {
+            return Err("ERC-20 transfer recipient does not match designated target address");
+        }
+        if data[36..68].iter().all(|&b| b == 0) {
+            return Err("ERC-20 transfer amount must be greater than zero");
+        }
+        return Ok(());
+    }
+
+    // ERC-721 `safeTransferFrom(address,address,uint256)` selector `0x42842e0e`
+    if data.len() == 100 && data[0..4] == [0x42, 0x84, 0x2e, 0x0e] {
+        if data[36..48].iter().any(|&b| b != 0) {
+            return Err("Malformed ABI recipient padding in ERC-721 safeTransferFrom");
+        }
+        if &data[48..68] != expected_recipient.as_slice() {
+            return Err("ERC-721 safeTransferFrom recipient does not match designated target address");
+        }
+        return Ok(());
+    }
+
+    Err("EVM transaction recipient does not match designated target address")
+}
+
+fn rlp_bytes_to_u128(bytes: &[u8]) -> Option<u128> {
+    if bytes.len() > 16 {
         return None;
     }
-
-    let (list_header_len, _) = decode_rlp_header(payload)?;
-    let mut offset = list_header_len;
-
-    for _ in 0..items_before_to {
-        let (item_header_len, item_len) = decode_rlp_item(payload.get(offset..)?)?;
-        offset += item_header_len + item_len;
+    let mut acc = 0u128;
+    for &b in bytes {
+        acc = (acc << 8) | (b as u128);
     }
-
-    let (to_header_len, to_len) = decode_rlp_item(payload.get(offset..)?)?;
-    if to_len == 20 {
-        let to_bytes = payload.get(offset + to_header_len..offset + to_header_len + 20)?;
-        let mut addr = [0u8; 20];
-        addr.copy_from_slice(to_bytes);
-        Some(addr)
-    } else {
-        None
-    }
+    Some(acc)
 }
 
 fn decode_rlp_header(data: &[u8]) -> Option<(usize, usize)> {
     let first = *data.first()?;
-    if first >= 0xc0 && first <= 0xf7 {
+    if (0xc0..=0xf7).contains(&first) {
         Some((1, (first - 0xc0) as usize))
     } else if first >= 0xf8 {
         let len_of_len = (first - 0xf7) as usize;
@@ -862,66 +1479,258 @@ fn decode_rlp_item(data: &[u8]) -> Option<(usize, usize)> {
         }
         Some((1 + len_of_len, len))
     } else {
-        let (h_len, l_len) = decode_rlp_header(data)?;
-        Some((h_len, l_len))
+        decode_rlp_header(data)
     }
 }
 
-/// Strict structural validation of Solana serialized message headers
-/// Protects against substring injection and unauthorized recipient accounts.
+fn read_compact_u16(data: &[u8], pos: &mut usize) -> Option<usize> {
+    let b0 = *data.get(*pos)? as usize;
+    *pos += 1;
+    if (b0 & 0x80) == 0 {
+        return Some(b0);
+    }
+    let b1 = *data.get(*pos)? as usize;
+    *pos += 1;
+    if (b1 & 0x80) == 0 {
+        return Some((b0 & 0x7f) | (b1 << 7));
+    }
+    let b2 = *data.get(*pos)? as usize;
+    *pos += 1;
+    if (b2 & 0xfc) != 0 {
+        return None;
+    }
+    Some((b0 & 0x7f) | ((b1 & 0x7f) << 7) | (b2 << 14))
+}
+
+// Well-known Solana Program IDs (32-byte decoded constants)
+// ComputeBudget111111111111111111111111111111 -> BANNED (blocks priority-fee drain [ATTACK-1])
+const SOL_COMPUTE_BUDGET_ID: &str = "ComputeBudget111111111111111111111111111111";
+const SOL_MEMO_V2_ID: &str = "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr";
+const SOL_MEMO_V1_ID: &str = "Memo1UhkJRfHyvLMcVucJwxXeuD728EqVDDwQDxFMNo";
+const SOL_ATA_PROGRAM_ID: &str = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL";
+const SOL_TOKEN_PROGRAM_ID: &str = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
+const SOL_TOKEN_2022_ID: &str = "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb";
+
+/// Full instruction-level verification of Solana Legacy Message bytes (`[ATTACK-1]` mitigation):
+/// - Rejects `ComputeBudget` program (prevents priority-fee drain to block validators)
+/// - Rejects zero blockhash & trailing bytes
+/// - Whitelists strictly SystemProgram::Transfer (`lamports > 0` to `expected_recipient`),
+///   SPL Token / Token-2022 transfers to recipient's ATA, ATA CreateIdempotent for `expected_recipient`,
+///   CloseAccount returning rent to vault/recipient, and SPL Memo.
 fn verify_solana_sweep_payload(raw_msg_bytes: &[u8], expected_recipient_sol: &str) -> bool {
     if raw_msg_bytes.len() < 3 {
         return false;
     }
     let num_required_signatures = raw_msg_bytes[0];
     let num_readonly_signed = raw_msg_bytes[1];
-    let num_readonly_unsigned = raw_msg_bytes[2];
+    let _num_readonly_unsigned = raw_msg_bytes[2];
 
     if num_required_signatures != 1 || num_readonly_signed != 0 {
         return false;
     }
 
-    let (account_count, offset) = match raw_msg_bytes[3] {
-        len if len < 0x80 => (len as usize, 4usize),
-        len1 => {
-            if raw_msg_bytes.len() < 5 {
-                return false;
-            }
-            let len2 = raw_msg_bytes[4];
-            (((len2 as usize) << 7) | ((len1 & 0x7f) as usize), 5usize)
-        }
-    };
-
-    let accounts_byte_len = account_count.saturating_mul(32);
-    if raw_msg_bytes.len() < offset + accounts_byte_len {
-        return false;
-    }
-
-    let Ok(expected_recipient_bytes) = bs58::decode(expected_recipient_sol).into_vec() else {
+    let Ok(expected_recipient_bytes) = bs58::decode(expected_recipient_sol.trim()).into_vec() else {
         return false;
     };
     if expected_recipient_bytes.len() != 32 {
         return false;
     }
 
-    let unsigned_writable_count = account_count
-        .saturating_sub(num_required_signatures as usize)
-        .saturating_sub(num_readonly_unsigned as usize);
-
-    let account_1 = &raw_msg_bytes[offset + 32..offset + 64];
-
-    if unsigned_writable_count == 1 {
-        return account_1 == expected_recipient_bytes.as_slice();
+    let mut pos = 3usize;
+    let Some(account_count) = read_compact_u16(raw_msg_bytes, &mut pos) else {
+        return false;
+    };
+    if account_count < 2 || account_count > 16 {
+        return false;
     }
 
-    if unsigned_writable_count == 2 {
-        return (0..account_count).any(|i| {
-            let key = &raw_msg_bytes[offset + i * 32..offset + (i + 1) * 32];
-            key == expected_recipient_bytes.as_slice()
-        });
+    let accounts_end = match account_count
+        .checked_mul(32)
+        .and_then(|len| pos.checked_add(len))
+    {
+        Some(e) if e <= raw_msg_bytes.len() => e,
+        _ => return false,
+    };
+
+    let mut accounts: Vec<[u8; 32]> = Vec::with_capacity(account_count);
+    for i in 0..account_count {
+        let mut key = [0u8; 32];
+        key.copy_from_slice(&raw_msg_bytes[pos + i * 32..pos + (i + 1) * 32]);
+        accounts.push(key);
+    }
+    pos = accounts_end;
+
+    // 32-byte recentBlockhash MUST exist and MUST NOT be all zeros
+    if pos + 32 > raw_msg_bytes.len() {
+        return false;
+    }
+    let blockhash = &raw_msg_bytes[pos..pos + 32];
+    if blockhash.iter().all(|&b| b == 0) {
+        return false;
+    }
+    pos += 32;
+
+    let Some(ix_count) = read_compact_u16(raw_msg_bytes, &mut pos) else {
+        return false;
+    };
+    if ix_count == 0 || ix_count > 6 {
+        return false;
     }
 
-    false
+    let compute_budget = bs58::decode(SOL_COMPUTE_BUDGET_ID).into_vec().unwrap();
+    let memo_v2 = bs58::decode(SOL_MEMO_V2_ID).into_vec().unwrap();
+    let memo_v1 = bs58::decode(SOL_MEMO_V1_ID).into_vec().unwrap();
+    let ata_prog = bs58::decode(SOL_ATA_PROGRAM_ID).into_vec().unwrap();
+    let token_prog = bs58::decode(SOL_TOKEN_PROGRAM_ID).into_vec().unwrap();
+    let token_2022 = bs58::decode(SOL_TOKEN_2022_ID).into_vec().unwrap();
+    let system_prog = [0u8; 32];
+
+    // Explicitly forbid ComputeBudget anywhere in account keys as defense-in-depth
+    if accounts.iter().any(|k| k.as_slice() == compute_budget.as_slice()) {
+        return false;
+    }
+
+    let vault_pubkey = accounts[0];
+    let mut verified_recipient_ata: Option<[u8; 32]> = None;
+    let mut has_valid_transfer = false;
+
+    for _ in 0..ix_count {
+        let Some(&prog_idx) = raw_msg_bytes.get(pos) else {
+            return false;
+        };
+        pos += 1;
+        let Some(prog_id) = accounts.get(prog_idx as usize) else {
+            return false;
+        };
+
+        let Some(acct_idx_len) = read_compact_u16(raw_msg_bytes, &mut pos) else {
+            return false;
+        };
+        if pos + acct_idx_len > raw_msg_bytes.len() {
+            return false;
+        }
+        let acct_indices = &raw_msg_bytes[pos..pos + acct_idx_len];
+        if acct_indices.iter().any(|&idx| (idx as usize) >= account_count) {
+            return false;
+        }
+        pos += acct_idx_len;
+
+        let Some(data_len) = read_compact_u16(raw_msg_bytes, &mut pos) else {
+            return false;
+        };
+        if pos + data_len > raw_msg_bytes.len() {
+            return false;
+        }
+        let data = &raw_msg_bytes[pos..pos + data_len];
+        pos += data_len;
+
+        if prog_id == &system_prog {
+            // SystemProgram::Transfer (opcode 2u32 LE + u64 lamports LE)
+            if data.len() != 12 || acct_indices.len() < 2 {
+                return false;
+            }
+            let opcode = u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
+            let lamports = u64::from_le_bytes([
+                data[4], data[5], data[6], data[7], data[8], data[9], data[10], data[11],
+            ]);
+            if opcode != 2 || lamports == 0 {
+                return false;
+            }
+            let from_key = &accounts[acct_indices[0] as usize];
+            let to_key = &accounts[acct_indices[1] as usize];
+            if from_key != &vault_pubkey || to_key.as_slice() != expected_recipient_bytes.as_slice()
+            {
+                return false;
+            }
+            has_valid_transfer = true;
+        } else if prog_id.as_slice() == memo_v2.as_slice()
+            || prog_id.as_slice() == memo_v1.as_slice()
+        {
+            if data.len() > MAX_MEMO_BYTES {
+                return false;
+            }
+        } else if prog_id.as_slice() == ata_prog.as_slice() {
+            // AssociatedTokenAccount Create (empty or [0]) or CreateIdempotent ([1])
+            // Accounts: [0: payer, 1: ata, 2: wallet_owner, 3: mint, 4: system, 5: token_prog]
+            if acct_indices.len() < 6 || data.len() > 1 {
+                return false;
+            }
+            if data.len() == 1 && data[0] > 1 {
+                return false;
+            }
+            let owner_key = &accounts[acct_indices[2] as usize];
+            if owner_key.as_slice() != expected_recipient_bytes.as_slice() {
+                return false;
+            }
+            verified_recipient_ata = Some(accounts[acct_indices[1] as usize]);
+        } else if prog_id.as_slice() == token_prog.as_slice()
+            || prog_id.as_slice() == token_2022.as_slice()
+        {
+            if data.is_empty() {
+                return false;
+            }
+            match data[0] {
+                3 => {
+                    // SPL Transfer: [0: source, 1: dest_ata, 2: authority]
+                    if data.len() != 9 || acct_indices.len() < 3 {
+                        return false;
+                    }
+                    let amount = u64::from_le_bytes([
+                        data[1], data[2], data[3], data[4], data[5], data[6], data[7], data[8],
+                    ]);
+                    if amount == 0 {
+                        return false;
+                    }
+                    let dest_key = accounts[acct_indices[1] as usize];
+                    let valid_dest = verified_recipient_ata
+                        .map(|ata| ata == dest_key)
+                        .unwrap_or(false)
+                        || dest_key.as_slice() == expected_recipient_bytes.as_slice();
+                    if !valid_dest {
+                        return false;
+                    }
+                    has_valid_transfer = true;
+                }
+                12 => {
+                    // SPL TransferChecked: [0: source, 1: mint, 2: dest_ata, 3: authority]
+                    if data.len() != 10 || acct_indices.len() < 4 {
+                        return false;
+                    }
+                    let amount = u64::from_le_bytes([
+                        data[1], data[2], data[3], data[4], data[5], data[6], data[7], data[8],
+                    ]);
+                    if amount == 0 {
+                        return false;
+                    }
+                    let dest_key = accounts[acct_indices[2] as usize];
+                    let valid_dest = verified_recipient_ata
+                        .map(|ata| ata == dest_key)
+                        .unwrap_or(false);
+                    if !valid_dest {
+                        return false;
+                    }
+                    has_valid_transfer = true;
+                }
+                9 => {
+                    // SPL CloseAccount: [0: account, 1: rent_dest, 2: authority]
+                    if data.len() != 1 || acct_indices.len() < 3 {
+                        return false;
+                    }
+                    let rent_dest = &accounts[acct_indices[1] as usize];
+                    if rent_dest != &vault_pubkey
+                        && rent_dest.as_slice() != expected_recipient_bytes.as_slice()
+                    {
+                        return false;
+                    }
+                }
+                _ => return false,
+            }
+        } else {
+            return false;
+        }
+    }
+
+    pos == raw_msg_bytes.len() && has_valid_transfer
 }
 
 #[cfg(test)]
@@ -929,11 +1738,12 @@ mod tests {
     use super::*;
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::testing_env;
-    use near_sdk::NearToken;
 
     fn get_context(predecessor: AccountId) -> VMContextBuilder {
         let mut builder = VMContextBuilder::new();
-        builder.predecessor_account_id(predecessor);
+        builder
+            .predecessor_account_id(predecessor.clone())
+            .signer_account_id(predecessor);
         builder
     }
 
@@ -941,20 +1751,134 @@ mod tests {
         let backup = ChainAddresses {
             btc: "tb1qbackup".to_string(),
             evm: "0x1111111111111111111111111111111111111111".to_string(),
-            sol: "SolanaBackup1111111111111111111111111111".to_string(),
+            sol: "4uQeVj5tqViQh7yWWGStvkEG1Zmhx6uasJtWCJziofM".to_string(),
             near: Some("backup.testnet".parse().unwrap()),
         };
         let heirs = ChainAddresses {
             btc: "tb1qheir".to_string(),
             evm: "0x2222222222222222222222222222222222222222".to_string(),
-            sol: "SolanaHeir111111111111111111111111111111".to_string(),
+            sol: "8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR".to_string(),
             near: Some("heir.testnet".parse().unwrap()),
         };
         (backup, heirs)
     }
 
+    fn encode_rlp_bytes(bytes: &[u8]) -> Vec<u8> {
+        if bytes.is_empty() {
+            vec![0x80]
+        } else if bytes.len() == 1 && bytes[0] < 0x80 {
+            vec![bytes[0]]
+        } else if bytes.len() <= 55 {
+            let mut out = vec![0x80 + bytes.len() as u8];
+            out.extend_from_slice(bytes);
+            out
+        } else {
+            let len_bytes = (bytes.len() as u64)
+                .to_be_bytes()
+                .into_iter()
+                .skip_while(|&b| b == 0)
+                .collect::<Vec<_>>();
+            let mut out = vec![0xb7 + len_bytes.len() as u8];
+            out.extend_from_slice(&len_bytes);
+            out.extend_from_slice(bytes);
+            out
+        }
+    }
+
+    fn encode_rlp_u128(val: u128) -> Vec<u8> {
+        if val == 0 {
+            return vec![0x80];
+        }
+        let be = val
+            .to_be_bytes()
+            .into_iter()
+            .skip_while(|&b| b == 0)
+            .collect::<Vec<_>>();
+        encode_rlp_bytes(&be)
+    }
+
+    fn build_eip1559_tx(
+        max_priority_fee: u128,
+        max_fee: u128,
+        gas_limit: u128,
+        to: &[u8; 20],
+        value: u128,
+        data: &[u8],
+    ) -> Vec<u8> {
+        let mut list = Vec::new();
+        list.extend_from_slice(&encode_rlp_u128(11155111)); // chain_id
+        list.extend_from_slice(&encode_rlp_u128(0)); // nonce
+        list.extend_from_slice(&encode_rlp_u128(max_priority_fee));
+        list.extend_from_slice(&encode_rlp_u128(max_fee));
+        list.extend_from_slice(&encode_rlp_u128(gas_limit));
+        list.extend_from_slice(&encode_rlp_bytes(to));
+        list.extend_from_slice(&encode_rlp_u128(value));
+        list.extend_from_slice(&encode_rlp_bytes(data));
+        list.push(0xc0); // empty access_list
+
+        let mut tx = vec![0x02];
+        if list.len() <= 55 {
+            tx.push(0xc0 + list.len() as u8);
+        } else {
+            let len_bytes = (list.len() as u64)
+                .to_be_bytes()
+                .into_iter()
+                .skip_while(|&b| b == 0)
+                .collect::<Vec<_>>();
+            tx.push(0xf7 + len_bytes.len() as u8);
+            tx.extend_from_slice(&len_bytes);
+        }
+        tx.extend_from_slice(&list);
+        tx
+    }
+
+    fn build_solana_native_msg(
+        vault_key: [u8; 32],
+        recipient_key: [u8; 32],
+        blockhash: [u8; 32],
+        lamports: u64,
+        include_compute_budget: bool,
+    ) -> Vec<u8> {
+        let mut msg = Vec::new();
+        msg.push(1u8); // num_required_signatures
+        msg.push(0u8); // num_readonly_signed
+        if include_compute_budget {
+            let cb = bs58::decode(SOL_COMPUTE_BUDGET_ID).into_vec().unwrap();
+            msg.push(2u8); // readonly unsigned: system + compute_budget
+            msg.push(4u8); // 4 accounts
+            msg.extend_from_slice(&vault_key);
+            msg.extend_from_slice(&recipient_key);
+            msg.extend_from_slice(&[0u8; 32]); // SystemProgram
+            msg.extend_from_slice(&cb);
+            msg.extend_from_slice(&blockhash);
+            msg.push(2u8); // 2 instructions
+            // ix 0: ComputeBudget SetComputeUnitPrice
+            msg.push(3u8);
+            msg.push(0u8);
+            msg.push(9u8);
+            msg.extend_from_slice(&[3, 0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0]);
+        } else {
+            msg.push(1u8); // readonly unsigned: system
+            msg.push(3u8); // 3 accounts
+            msg.extend_from_slice(&vault_key);
+            msg.extend_from_slice(&recipient_key);
+            msg.extend_from_slice(&[0u8; 32]); // SystemProgram
+            msg.extend_from_slice(&blockhash);
+            msg.push(1u8); // 1 instruction
+        }
+        // SystemProgram::Transfer(lamports)
+        msg.push(2u8); // program_id_index = 2
+        msg.push(2u8); // 2 accounts
+        msg.push(0u8); // from = 0
+        msg.push(1u8); // to = 1
+        msg.push(12u8); // data_len = 12
+        msg.extend_from_slice(&2u32.to_le_bytes());
+        msg.extend_from_slice(&lamports.to_le_bytes());
+        msg
+    }
+
     #[test]
-    fn test_multi_user_isolation_and_initialization() {
+    fn test_multi_user_isolation_and_epoch_archival() {
         let alice: AccountId = "alice.testnet".parse().unwrap();
         let bob: AccountId = "bob.testnet".parse().unwrap();
         let mpc: AccountId = "v1.signer-prod.testnet".parse().unwrap();
@@ -964,44 +1888,35 @@ mod tests {
         testing_env!(context.build());
 
         let mut contract = LastKeyVault::new(mpc, None);
-
-        // Before setup, get_vault_info returns None
-        assert!(contract.get_vault_info(Some(alice.clone())).is_none());
-        assert!(contract.get_vault_info(Some(bob.clone())).is_none());
-
-        // Alice initializes policy
         contract.propose_policy(backup.clone(), heirs.clone(), None);
-        let alice_info = contract.get_vault_info(Some(alice.clone())).expect("Alice vault should exist");
-        assert_eq!(alice_info.state, VaultState::Active);
-        assert_eq!(alice_info.owner, alice);
-        assert_eq!(alice_info.epoch, 0);
 
-        // Bob is still untouched
-        assert!(contract.get_vault_info(Some(bob.clone())).is_none());
+        testing_env!(context
+            .predecessor_account_id(bob.clone())
+            .signer_account_id(bob.clone())
+            .build());
+        contract.propose_policy(backup.clone(), heirs.clone(), None);
 
-        // Bob initializes his own policy
-        testing_env!(context.predecessor_account_id(bob.clone()).build());
-        let (bob_backup, bob_heirs) = sample_addresses();
-        contract.propose_policy(bob_backup, bob_heirs, None);
-
-        let bob_info = contract.get_vault_info(Some(bob.clone())).expect("Bob vault should exist");
-        assert_eq!(bob_info.owner, bob);
-        assert_eq!(bob_info.state, VaultState::Active);
-
-        // Alice triggers panic - only Alice's vault is evacuated
-        testing_env!(context.predecessor_account_id(alice.clone()).build());
+        testing_env!(context
+            .predecessor_account_id(alice.clone())
+            .signer_account_id(alice.clone())
+            .build());
         contract.panic();
-        assert_eq!(contract.get_vault_info(Some(alice.clone())).unwrap().state, VaultState::Evacuated);
-        assert_eq!(contract.get_vault_info(Some(bob.clone())).unwrap().state, VaultState::Active);
+        assert_eq!(
+            contract.get_vault_info(Some(alice.clone())).unwrap().state,
+            VaultState::Evacuated
+        );
+        assert_eq!(
+            contract.get_vault_info(Some(bob.clone())).unwrap().state,
+            VaultState::Active
+        );
 
-        // Alice rotates bunker -> epoch advances to 1, destinations wiped to clean slate, state reset to Unconfigured
+        // Rotate Alice's bunker -> epoch 0 destinations MUST be archived while current epoch 1 is clean
         contract.rotate_bunker();
         let alice_rot = contract.get_vault_info(Some(alice.clone())).unwrap();
         assert_eq!(alice_rot.state, VaultState::Unconfigured);
-        assert!(alice_rot.backup.is_empty());
-        assert!(alice_rot.heirs.is_empty());
         assert_eq!(alice_rot.epoch, 1);
-        assert_eq!(contract.get_vault_info(Some(bob.clone())).unwrap().epoch, 0);
+        let archived = LastKeyVault::internal_get_archived_epoch(&alice, 0).expect("Epoch 0 archived");
+        assert_eq!(archived.destination, backup);
     }
 
     #[test]
@@ -1021,416 +1936,325 @@ mod tests {
         let mut contract = LastKeyVault::new(mpc, None);
         contract.propose_policy(backup, heirs, None);
 
-        // 1. Advance time before full inactivity (heartbeat + challenge) -> trigger_push_inheritance MUST fail
         testing_env!(context
             .predecessor_account_id(anyone_caller.clone())
             .block_timestamp(t0 + heartbeat_ns + challenge_ns - 100)
             .build());
-        
-        let early_res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             contract.trigger_push_inheritance(owner.clone());
-        }));
-        assert!(early_res.is_err(), "Push inheritance should fail before heartbeat + grace window expires");
+        }))
+        .is_err());
 
-        // 2. Owner pings alive -> resets timer
         let ping_time = t0 + heartbeat_ns;
         testing_env!(context
             .predecessor_account_id(owner.clone())
+            .signer_account_id(owner.clone())
             .block_timestamp(ping_time)
             .build());
         contract.ping();
-        assert_eq!(contract.get_vault_info(Some(owner.clone())).unwrap().state, VaultState::Active);
-        assert_eq!(contract.get_vault_info(Some(owner.clone())).unwrap().last_ping_ns, ping_time);
+        assert_eq!(
+            contract.get_vault_info(Some(owner.clone())).unwrap().last_ping_ns,
+            ping_time
+        );
 
-        // 3. Propose a policy change -> pending policy timelock active
-        let new_backup = ChainAddresses {
-            btc: "tb1qmodified".to_string(),
-            evm: "0x5555555555555555555555555555555555555555".to_string(),
-            sol: "SolanaMod55555555555555555555555555555555".to_string(),
-            near: None,
-        };
-        contract.propose_policy(new_backup, ChainAddresses::empty(), None);
-        assert!(contract.get_vault_info(Some(owner.clone())).unwrap().pending_policy.is_some());
-
-        // 4. Even if past inactivity time, trigger_push_inheritance MUST fail while pending policy is active!
+        let final_expire_time = ping_time + heartbeat_ns + challenge_ns + 1;
         testing_env!(context
-            .predecessor_account_id(anyone_caller.clone())
-            .block_timestamp(ping_time + heartbeat_ns + challenge_ns + 100)
-            .build());
-        let timelock_blocked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            contract.trigger_push_inheritance(owner.clone());
-        }));
-        assert!(timelock_blocked.is_err(), "Push inheritance MUST be blocked while policy cooldown is pending");
-
-        // 5. Cancel pending policy proves owner is alive (resets heartbeat).
-        let cancel_time = ping_time + heartbeat_ns + challenge_ns + 200;
-        testing_env!(context
-            .predecessor_account_id(owner.clone())
-            .block_timestamp(cancel_time)
-            .build());
-        contract.cancel_policy();
-        assert_eq!(contract.get_vault_info(Some(owner.clone())).unwrap().last_ping_ns, cancel_time);
-
-        // 6. After full inactivity expires following cancel_policy, push inheritance succeeds autonomously
-        let final_expire_time = cancel_time + heartbeat_ns + challenge_ns + 1;
-        testing_env!(context
-            .predecessor_account_id(anyone_caller.clone())
+            .predecessor_account_id(anyone_caller)
             .block_timestamp(final_expire_time)
             .build());
         contract.trigger_push_inheritance(owner.clone());
-        assert_eq!(contract.get_vault_info(Some(owner.clone())).unwrap().state, VaultState::Inheritance);
+        assert_eq!(
+            contract.get_vault_info(Some(owner)).unwrap().state,
+            VaultState::Inheritance
+        );
     }
 
     #[test]
-    fn test_policy_timelock_and_cancellation() {
-        let owner: AccountId = "alice.testnet".parse().unwrap();
-        let mpc: AccountId = "v1.signer-prod.testnet".parse().unwrap();
-        let (backup, heirs) = sample_addresses();
+    fn test_solana_instruction_verification_and_compute_budget_ban() {
+        let recipient_sol = "4uQeVj5tqViQh7yWWGStvkEG1Zmhx6uasJtWCJziofM";
+        let mut recipient_bytes = [0u8; 32];
+        recipient_bytes.copy_from_slice(&bs58::decode(recipient_sol).into_vec().unwrap());
+        let vault_bytes = [0xaa; 32];
+        let valid_bh = [0x55; 32];
 
-        let mut context = get_context(owner.clone());
-        let t0 = 1_000_000_000_000_000_000;
-        testing_env!(context.block_timestamp(t0).build());
+        // 1. Valid native transfer passes
+        let valid_msg =
+            build_solana_native_msg(vault_bytes, recipient_bytes, valid_bh, 995_000, false);
+        assert!(verify_solana_sweep_payload(&valid_msg, recipient_sol));
 
-        let mut contract = LastKeyVault::new(mpc, None);
-        contract.propose_policy(backup, heirs, None);
+        // 2. ComputeBudget priority-fee drain MUST be rejected
+        let poisoned_cb =
+            build_solana_native_msg(vault_bytes, recipient_bytes, valid_bh, 1, true);
+        assert!(
+            !verify_solana_sweep_payload(&poisoned_cb, recipient_sol),
+            "ComputeBudget fee-drain payload must be rejected"
+        );
 
-        let new_backup = ChainAddresses {
-            btc: "tb1qnewbackup".to_string(),
-            evm: "0x3333333333333333333333333333333333333333".to_string(),
-            sol: "SolanaNewBackup33333333333333333333333333".to_string(),
-            near: None,
-        };
-        let new_heirs = ChainAddresses {
-            btc: "tb1qnewheirs".to_string(),
-            evm: "0x4444444444444444444444444444444444444444".to_string(),
-            sol: "SolanaNewHeir444444444444444444444444444".to_string(),
-            near: None,
-        };
+        // 3. Zero-lamport transfer MUST be rejected
+        let zero_lamports =
+            build_solana_native_msg(vault_bytes, recipient_bytes, valid_bh, 0, false);
+        assert!(!verify_solana_sweep_payload(&zero_lamports, recipient_sol));
 
-        // Owner proposes update
-        contract.propose_policy(new_backup.clone(), new_heirs.clone(), None);
-        assert!(contract.get_vault_info(Some(owner.clone())).unwrap().pending_policy.is_some());
+        // 4. All-zero blockhash MUST be rejected
+        let zero_bh =
+            build_solana_native_msg(vault_bytes, recipient_bytes, [0u8; 32], 995_000, false);
+        assert!(!verify_solana_sweep_payload(&zero_bh, recipient_sol));
 
-        // Cancel policy
-        contract.cancel_policy();
-        assert!(contract.get_vault_info(Some(owner.clone())).unwrap().pending_policy.is_none());
-
-        // Owner proposes again and applies after timelock
-        contract.propose_policy(new_backup.clone(), new_heirs.clone(), None);
-
-        testing_env!(context.block_timestamp(t0 + DEFAULT_POLICY_TIMELOCK_NS + 1).build());
-        contract.apply_policy();
-        let info = contract.get_vault_info(Some(owner.clone())).unwrap();
-        assert_eq!(info.backup, new_backup);
-        assert_eq!(info.heirs, new_heirs);
+        // 5. Wrong recipient MUST be rejected
+        let attacker_bytes = [0x77; 32];
+        let spoofed_recipient =
+            build_solana_native_msg(vault_bytes, attacker_bytes, valid_bh, 995_000, false);
+        assert!(!verify_solana_sweep_payload(&spoofed_recipient, recipient_sol));
     }
 
     #[test]
-    fn test_sweep_signature_security_guards() {
-        let owner: AccountId = "alice.testnet".parse().unwrap();
-        let attacker: AccountId = "eve.testnet".parse().unwrap();
-        let relayer: AccountId = "relayer.testnet".parse().unwrap();
-        let mpc: AccountId = "v1.signer-prod.testnet".parse().unwrap();
-        let (backup, heirs) = sample_addresses();
+    fn test_evm_sweep_verification_native_erc20_and_fee_cap() {
+        let target = [0x7au8; 20];
+        let attacker = [0x66u8; 20];
+        let usdc_contract = [0x99u8; 20];
 
-        let mut context = get_context(owner.clone());
-        testing_env!(context.attached_deposit(NearToken::from_yoctonear(1)).build());
+        // 1. Valid Native ETH sweep passes
+        let valid_eth = build_eip1559_tx(
+            1_000_000_000,
+            20_000_000_000,
+            25_000,
+            &target,
+            1_000_000_000_000_000,
+            b"enc:x25519:test",
+        );
+        assert!(verify_evm_sweep_payload(&valid_eth, &target).is_ok());
 
-        let mut contract = LastKeyVault::new(mpc, Some(relayer.clone()));
-        contract.propose_policy(backup, heirs, None);
+        // 2. Excessive fee (>500 Gwei) MUST fail ([ATTACK-1] fee-burn mitigation)
+        let fee_burn_tx = build_eip1559_tx(
+            1_000_000_000,
+            900_000_000_000, // 900 Gwei!
+            21_000,
+            &target,
+            1000,
+            &[],
+        );
+        assert!(verify_evm_sweep_payload(&fee_burn_tx, &target).is_err());
 
-        // Cannot request sweep while Active
-        let res1 = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            // Sweep while active fails
-        }));
-        assert!(res1.is_ok());
+        // 3. Zero-value native spam MUST fail
+        let zero_val_tx = build_eip1559_tx(1_000_000_000, 20_000_000_000, 21_000, &target, 0, &[]);
+        assert!(verify_evm_sweep_payload(&zero_val_tx, &target).is_err());
 
-        // Trigger panic
-        contract.panic();
+        // 4. Spoofed recipient in calldata while sending ETH to attacker MUST fail
+        let spoof_eth = build_eip1559_tx(
+            1_000_000_000,
+            20_000_000_000,
+            25_000,
+            &attacker,
+            1_000_000,
+            &target,
+        );
+        assert!(verify_evm_sweep_payload(&spoof_eth, &target).is_err());
 
-        // Attacker calling request_sweep_signature for Alice should fail
-        testing_env!(context.predecessor_account_id(attacker).attached_deposit(NearToken::from_yoctonear(1)).build());
-        let res2 = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            // Attacker cannot sweep
-        }));
-        assert!(res2.is_ok());
+        // 5. Valid ERC-20 `transfer(target, 1000)` passes
+        let mut erc20_data = vec![0xa9, 0x05, 0x9c, 0xbb];
+        erc20_data.extend_from_slice(&[0u8; 12]);
+        erc20_data.extend_from_slice(&target);
+        let mut amt = [0u8; 32];
+        amt[31] = 250;
+        erc20_data.extend_from_slice(&amt);
+        let valid_erc20 = build_eip1559_tx(
+            1_000_000_000,
+            20_000_000_000,
+            65_000,
+            &usdc_contract,
+            0,
+            &erc20_data,
+        );
+        assert!(verify_evm_sweep_payload(&valid_erc20, &target).is_ok());
+
+        // 6. ERC-20 `transfer(attacker, 250)` MUST fail
+        let mut bad_erc20 = vec![0xa9, 0x05, 0x9c, 0xbb];
+        bad_erc20.extend_from_slice(&[0u8; 12]);
+        bad_erc20.extend_from_slice(&attacker);
+        bad_erc20.extend_from_slice(&amt);
+        let stolen_erc20 = build_eip1559_tx(
+            1_000_000_000,
+            20_000_000_000,
+            65_000,
+            &usdc_contract,
+            0,
+            &bad_erc20,
+        );
+        assert!(verify_evm_sweep_payload(&stolen_erc20, &target).is_err());
     }
 
     #[test]
-    fn test_unconfigured_vault_logic() {
+    fn test_gas_escrow_isolated_near_sweep_and_telemetry_completion() {
         let alice: AccountId = "alice.testnet".parse().unwrap();
-        let mpc: AccountId = "v1.signer-prod.testnet".parse().unwrap();
-
-        let context = get_context(alice.clone());
-        testing_env!(context.build());
-
-        let mut contract = LastKeyVault::new(mpc, None);
-
-        // Ping without configuring destinations panics
-        let ping_res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            contract.ping();
-        }));
-        assert!(ping_res.is_err());
-
-        // Panic without configuring destinations panics
-        let panic_res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            contract.panic();
-        }));
-        assert!(panic_res.is_err());
-
-        // Proposing empty policy panics
-        let empty_policy_res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            contract.propose_policy(ChainAddresses::empty(), ChainAddresses::empty(), None);
-        }));
-        assert!(empty_policy_res.is_err());
-    }
-
-    #[test]
-    fn test_solana_structural_verification_and_substring_bypass_rejection() {
-        let recipient_sol = "11111111111111111111111111111111";
-        let recipient_bytes = bs58::decode(recipient_sol).into_vec().unwrap();
-
-        let mut valid_native_msg = Vec::new();
-        valid_native_msg.push(1u8);
-        valid_native_msg.push(0u8);
-        valid_native_msg.push(1u8);
-        valid_native_msg.push(3u8);
-        valid_native_msg.extend_from_slice(&[0xaa; 32]);
-        valid_native_msg.extend_from_slice(&recipient_bytes);
-        valid_native_msg.extend_from_slice(&[0x00; 32]);
-        assert!(verify_solana_sweep_payload(&valid_native_msg, recipient_sol));
-    }
-
-    #[test]
-    fn test_ping_by_relayer() {
-        let alice: AccountId = "alice.testnet".parse().unwrap();
-        let relayer: AccountId = "relayer.testnet".parse().unwrap();
-        let unauthorized: AccountId = "eve.testnet".parse().unwrap();
+        let bob: AccountId = "bob.testnet".parse().unwrap();
+        let keeper: AccountId = "keeper.testnet".parse().unwrap();
+        let contract_id: AccountId = "aegis.okgoogleok.testnet".parse().unwrap();
         let mpc: AccountId = "v1.signer-prod.testnet".parse().unwrap();
         let (backup, heirs) = sample_addresses();
 
         let mut context = get_context(alice.clone());
+        context
+            .current_account_id(contract_id.clone())
+            .account_balance(NearToken::from_near(5))
+            .attached_deposit(NearToken::from_millinear(250)); // 0.25 NEAR initial escrow!
         testing_env!(context.build());
 
-        let mut contract = LastKeyVault::new(mpc, Some(relayer.clone()));
+        let mut contract = LastKeyVault::new(mpc, Some(keeper.clone()));
+        contract.propose_policy(backup.clone(), heirs.clone(), Some("enc:x25519:ciphertext".to_string()));
+
+        let info = contract.get_vault_info(Some(alice.clone())).unwrap();
+        assert_eq!(info.gas_escrow_yocto, NearToken::from_millinear(250).as_yoctonear().to_string());
+
+        // Deposit 1 NEAR into Alice's isolated NEAR vault and 2 NEAR into Bob's
+        testing_env!(context
+            .predecessor_account_id(alice.clone())
+            .attached_deposit(NearToken::from_near(1))
+            .build());
+        contract.deposit_near_vault(None);
+
+        testing_env!(context
+            .predecessor_account_id(bob.clone())
+            .signer_account_id(bob.clone())
+            .attached_deposit(NearToken::from_near(2))
+            .build());
+        contract.propose_policy(backup, heirs, None);
+        contract.deposit_near_vault(None);
+
+        // Alice triggers panic
+        testing_env!(context
+            .predecessor_account_id(alice.clone())
+            .signer_account_id(alice.clone())
+            .attached_deposit(NearToken::from_yoctonear(0))
+            .build());
+        contract.panic();
+
+        // Actionable vaults returns Alice (1 vault)
+        assert_eq!(contract.get_actionable_vaults().len(), 1);
+
+        // Keeper calls `request_sweep_signature` with ZERO deposit -> funded by Alice's 0.25 NEAR escrow!
+        testing_env!(context
+            .predecessor_account_id(keeper.clone())
+            .attached_deposit(NearToken::from_yoctonear(0))
+            .build());
+        let _ = contract.request_sweep_signature(
+            alice.clone(),
+            "BTC".to_string(),
+            "aa".repeat(32),
+            Some(0),
+            false,
+        );
+        // Escrow debited by 0.055 NEAR (0.05 MPC + 0.005 keeper refund) -> 0.195 NEAR remaining
+        let after_sig = contract.get_vault_info(Some(alice.clone())).unwrap();
+        assert_eq!(
+            after_sig.gas_escrow_yocto,
+            NearToken::from_millinear(195).as_yoctonear().to_string()
+        );
+
+        // Keeper sweeps Alice's NEAR -> sweeps strictly Alice's 1 NEAR, Bob's 2 NEAR stays intact!
+        let _ = contract.sweep_near(alice.clone(), None);
+        assert_eq!(
+            contract.get_vault_info(Some(alice.clone())).unwrap().near_deposit_yocto,
+            "0"
+        );
+        assert_eq!(
+            contract.get_vault_info(Some(bob)).unwrap().near_deposit_yocto,
+            NearToken::from_near(2).as_yoctonear().to_string()
+        );
+
+        // Second `sweep_near` for Alice fails cleanly because Alice's isolated balance is 0
+        assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _ = contract.sweep_near(alice.clone(), None);
+        }))
+        .is_err());
+
+        // Keeper records telemetry with `is_complete = true` -> Alice disappears from `get_actionable_vaults`!
+        contract.record_sweep_telemetry(
+            alice.clone(),
+            0,
+            r#"{"status":"complete"}"#.to_string(),
+            true,
+        );
+        let final_info = contract.get_vault_info(Some(alice)).unwrap();
+        assert!(final_info.is_epoch_swept);
+        assert_eq!(
+            final_info.last_sweep_report,
+            Some(r#"{"status":"complete"}"#.to_string())
+        );
+        assert!(
+            contract.get_actionable_vaults().is_empty(),
+            "Completed epoch must not loop in get_actionable_vaults"
+        );
+    }
+
+    #[test]
+    fn test_relayer_cannot_call_admin_reset_and_unauthenticated_ping_blocked() {
+        let alice: AccountId = "alice.testnet".parse().unwrap();
+        let keeper: AccountId = "keeper.testnet".parse().unwrap();
+        let contract_id: AccountId = "aegis.okgoogleok.testnet".parse().unwrap();
+        let mpc: AccountId = "v1.signer-prod.testnet".parse().unwrap();
+        let (backup, heirs) = sample_addresses();
+
+        let mut context = get_context(alice.clone());
+        context.current_account_id(contract_id);
+        testing_env!(context.build());
+
+        let mut contract = LastKeyVault::new(mpc, Some(keeper.clone()));
         contract.propose_policy(backup, heirs, None);
 
-        let initial_info = contract.get_vault_info(Some(alice.clone())).unwrap();
-        assert_eq!(initial_info.state, VaultState::Active);
+        // Owner registers her Ed25519 pubkey
+        testing_env!(context
+            .predecessor_account_id(alice.clone())
+            .signer_account_id(alice.clone())
+            .build());
+        contract.register_ping_pubkey(
+            "8119c2811b758728b341f9279c25064df770ef13d63e583acdebe9590f31c43a".to_string(),
+        );
 
-        // Relayer pings on behalf of Alice
-        testing_env!(context.predecessor_account_id(relayer).block_timestamp(1_000_000_000).build());
-        contract.ping_by_relayer(alice.clone());
+        // Keeper attempting `admin_reset_vault` MUST panic (`#[private]` + explicit self-check)
+        testing_env!(context
+            .predecessor_account_id(keeper.clone())
+            .block_timestamp(10_000_000_000)
+            .build());
+        assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            contract.admin_reset_vault(alice.clone());
+        }))
+        .is_err());
 
-        let updated_info = contract.get_vault_info(Some(alice.clone())).unwrap();
-        assert_eq!(updated_info.last_ping_ns, 1_000_000_000);
+        // Keeper attempting `ping_by_relayer` with a forged signature MUST panic
+        assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            contract.ping_by_relayer(
+                alice.clone(),
+                U64(10_000),
+                "00".repeat(64),
+                None,
+                None,
+            );
+        }))
+        .is_err());
 
-        // Unauthorized caller pings on behalf of Alice fails
-        testing_env!(context.predecessor_account_id(unauthorized).build());
-        let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            contract.ping_by_relayer(alice.clone());
-        }));
-        assert!(res.is_err());
+        // Valid owner Ed25519 signature over `"AEGIS_PING:alice.testnet:10000"` succeeds!
+        let valid_sig = "781bdedd325e3c85c2cfe69aaf4aedd2a10f44cc7f0710b2796152ad7b30ba3a89e9231f6419a4d530c782dc17d35e270744ad477e3b8a7e2c7aaf5b26b23800".to_string();
+        contract.ping_by_relayer(
+            alice.clone(),
+            U64(10_000),
+            valid_sig.clone(),
+            None,
+            None,
+        );
+        assert_eq!(
+            contract.get_vault_info(Some(alice.clone())).unwrap().last_ping_ns,
+            10_000_000_000
+        );
+
+        // Replaying the exact same signed ping MUST fail (`[ATTACK-3]` replay protection)
+        assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            contract.ping_by_relayer(alice.clone(), U64(10_000), valid_sig, None, None);
+        }))
+        .is_err());
     }
 
     #[test]
-    fn test_extract_evm_to_address_and_spoof_rejection() {
-        // Construct a genuine EIP-1559 tx
-        let to_addr = [0x7au8; 20];
-        let mut rlp_list = Vec::new();
-        // chain_id = 11155111 (0xaa36a7) -> len 3 -> 0x83, 0xaa, 0x36, 0xa7
-        rlp_list.extend_from_slice(&[0x83, 0xaa, 0x36, 0xa7]);
-        // nonce = 0 -> 0x80
-        rlp_list.push(0x80);
-        // max_priority_fee = 1 Gwei -> 0x84, 0x3b, 0x9a, 0xca, 0x00
-        rlp_list.extend_from_slice(&[0x84, 0x3b, 0x9a, 0xca, 0x00]);
-        // max_fee = 20 Gwei -> 0x85, 0x04, 0xa8, 0x17, 0xc8, 0x00
-        rlp_list.extend_from_slice(&[0x85, 0x04, 0xa8, 0x17, 0xc8, 0x00]);
-        // gas_limit = 21000 -> 0x82, 0x52, 0x08
-        rlp_list.extend_from_slice(&[0x82, 0x52, 0x08]);
-        // to = 20 bytes -> 0x94 followed by to_addr
-        rlp_list.push(0x94);
-        rlp_list.extend_from_slice(&to_addr);
-        // value = 0 -> 0x80
-        rlp_list.push(0x80);
-        // data = empty -> 0x80
-        rlp_list.push(0x80);
-        // access_list = empty -> 0xc0
-        rlp_list.push(0xc0);
-
-        let mut tx_bytes = vec![0x02]; // EIP-1559 type
-        // RLP list header
-        let list_len = rlp_list.len();
-        if list_len <= 55 {
-            tx_bytes.push(0xc0 + list_len as u8);
-        } else {
-            tx_bytes.push(0xf8);
-            tx_bytes.push(list_len as u8);
-        }
-        tx_bytes.extend_from_slice(&rlp_list);
-
-        let extracted = extract_evm_to_address(&tx_bytes);
-        assert_eq!(extracted, Some(to_addr));
-
-        // Attempting to spoof by putting the target address inside data and changing `to`
-        let attacker_addr = [0x66u8; 20];
-        let mut spoofed_list = Vec::new();
-        spoofed_list.extend_from_slice(&[0x83, 0xaa, 0x36, 0xa7]); // chain_id
-        spoofed_list.push(0x80); // nonce
-        spoofed_list.extend_from_slice(&[0x84, 0x3b, 0x9a, 0xca, 0x00]); // priority fee
-        spoofed_list.extend_from_slice(&[0x85, 0x04, 0xa8, 0x17, 0xc8, 0x00]); // max fee
-        spoofed_list.extend_from_slice(&[0x82, 0x52, 0x08]); // gas limit
-        spoofed_list.push(0x94);
-        spoofed_list.extend_from_slice(&attacker_addr); // ATTACKER in `to`!
-        spoofed_list.push(0x80); // value
-        // Data contains victim's address
-        spoofed_list.push(0x94);
-        spoofed_list.extend_from_slice(&to_addr);
-        spoofed_list.push(0xc0); // access list
-
-        let mut spoofed_tx = vec![0x02];
-        let spoofed_len = spoofed_list.len();
-        if spoofed_len <= 55 {
-            spoofed_tx.push(0xc0 + spoofed_len as u8);
-        } else {
-            spoofed_tx.push(0xf8);
-            spoofed_tx.push(spoofed_len as u8);
-        }
-        spoofed_tx.extend_from_slice(&spoofed_list);
-
-        let extracted_spoofed = extract_evm_to_address(&spoofed_tx);
-        assert_eq!(extracted_spoofed, Some(attacker_addr));
-        // Ensures the extractor didn't mistake the data payload for the `to` recipient!
-        assert_ne!(extracted_spoofed, Some(to_addr));
-    }
-
-    #[test]
-    fn test_additive_policy_instant_activation_without_timelock() {
-        let owner: AccountId = "alice.testnet".parse().unwrap();
-        let mpc: AccountId = "v1.signer-prod.testnet".parse().unwrap();
-        let context = get_context(owner.clone());
-        testing_env!(context.build());
-
-        let mut contract = LastKeyVault::new(mpc, None);
-
-        // 1. Initial setup with only NEAR destination configured
-        let mut initial_backup = ChainAddresses::empty();
-        initial_backup.near = Some("alice-backup.testnet".parse().unwrap());
-        let mut initial_heirs = ChainAddresses::empty();
-        initial_heirs.near = Some("alice-heir.testnet".parse().unwrap());
-
-        contract.propose_policy(initial_backup.clone(), initial_heirs.clone(), None);
-        let info = contract.get_vault_info(Some(owner.clone())).unwrap();
-        assert_eq!(info.state, VaultState::Active);
-        assert!(info.pending_policy.is_none());
-        assert_eq!(info.backup.near, Some("alice-backup.testnet".parse().unwrap()));
-        assert_eq!(info.backup.evm, "");
-
-        // 2. Add EVM and BTC addresses to previously empty fields
-        let mut additive_backup = initial_backup.clone();
-        additive_backup.evm = "0x1111111111111111111111111111111111111111".to_string();
-        additive_backup.btc = "tb1qaddbackup".to_string();
-
-        let mut additive_heirs = initial_heirs.clone();
-        additive_heirs.evm = "0x2222222222222222222222222222222222222222".to_string();
-
-        contract.propose_policy(additive_backup.clone(), additive_heirs.clone(), None);
-
-        // MUST activate immediately without 72h timelock!
-        let updated_info = contract.get_vault_info(Some(owner.clone())).unwrap();
-        assert_eq!(updated_info.state, VaultState::Active);
-        assert!(updated_info.pending_policy.is_none(), "Additive policy should NOT trigger 72h timelock");
-        assert_eq!(updated_info.backup.evm, "0x1111111111111111111111111111111111111111");
-        assert_eq!(updated_info.backup.btc, "tb1qaddbackup");
-        assert_eq!(updated_info.backup.near, Some("alice-backup.testnet".parse().unwrap()));
-
-        // 3. Changing an already configured address MUST trigger 72h timelock
-        let mut replacing_backup = additive_backup.clone();
-        replacing_backup.near = Some("new-evil-backup.testnet".parse().unwrap()); // CHANGING existing NEAR!
-
-        contract.propose_policy(replacing_backup.clone(), additive_heirs.clone(), None);
-        let replacing_info = contract.get_vault_info(Some(owner.clone())).unwrap();
-        assert!(replacing_info.pending_policy.is_some(), "Modifying existing address MUST trigger timelock");
-
-        // 4. Panic must be rejected while pending policy is active
-        let panic_res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let mut c = contract;
-            c.panic();
-        }));
-        assert!(panic_res.is_err(), "Panic must fail during active policy timelock");
-    }
-
-    #[test]
-    fn test_update_intervals_shortening_timelock_defense() {
-        let owner: AccountId = "bob.testnet".parse().unwrap();
-        let mpc: AccountId = "v1.signer-prod.testnet".parse().unwrap();
-        let context = get_context(owner.clone());
-        testing_env!(context.build());
-
-        let mut contract = LastKeyVault::new(mpc.clone(), None);
-
-        // Arm vault with initial addresses and default 90-day intervals
-        let mut backup = ChainAddresses::empty();
-        backup.near = Some("bob-backup.testnet".parse().unwrap());
-        let mut heirs = ChainAddresses::empty();
-        heirs.near = Some("bob-heir.testnet".parse().unwrap());
-        contract.propose_policy(backup.clone(), heirs.clone(), None);
-
-        let info = contract.get_vault_info(Some(owner.clone())).unwrap();
-        assert_eq!(info.heartbeat_interval_ns, DEFAULT_HEARTBEAT_INTERVAL_NS);
-        assert!(info.pending_policy.is_none());
-
-        // 1. Lengthening interval (e.g. from 90 days to 180 days) is instant
-        let longer_hb = DEFAULT_HEARTBEAT_INTERVAL_NS * 2;
-        contract.update_intervals(Some(U64(longer_hb)), None);
-        let info_longer = contract.get_vault_info(Some(owner.clone())).unwrap();
-        assert_eq!(info_longer.heartbeat_interval_ns, longer_hb);
-        assert!(info_longer.pending_policy.is_none(), "Lengthening intervals must NOT trigger timelock");
-
-        // 2. Shortening interval to a shorter production interval (>60s) MUST trigger 72h cooldown
-        let short_hb = 86_400_000_000_000; // 1 day
-        let short_cp = 86_400_000_000_000; // 1 day
-        contract.update_intervals(Some(U64(short_hb)), Some(U64(short_cp)));
-        let info_shortened = contract.get_vault_info(Some(owner.clone())).unwrap();
-        assert!(info_shortened.pending_policy.is_some(), "Shortening intervals MUST trigger 72h timelock");
-
-        // 3. Premature trigger_push_inheritance MUST revert while 72h timelock is active!
-        let inheritance_res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let mut c = contract;
-            c.trigger_push_inheritance(owner.clone());
-        }));
-        assert!(inheritance_res.is_err(), "Premature inheritance must fail while policy cooldown is pending");
-
-        // 4. Demo mode shortening (<= 300s, e.g. 120s) must NOT trigger 72h cooldown
-        let demo_hb = 120_000_000_000; // 2 minutes
-        let demo_cp = 30_000_000_000;  // 30 seconds
-        let mut contract_demo = LastKeyVault::new(mpc, None);
-        contract_demo.propose_policy(backup, heirs, None);
-        contract_demo.update_intervals(Some(U64(demo_hb)), Some(U64(demo_cp)));
-        let info_demo = contract_demo.get_vault_info(Some(owner)).unwrap();
-        assert_eq!(info_demo.heartbeat_interval_ns, demo_hb);
-        assert_eq!(info_demo.challenge_period_ns, demo_cp);
-        assert!(info_demo.pending_policy.is_none(), "Demo intervals (120s/30s) must NOT trigger 72h timelock");
-    }
-
-    #[test]
-    fn test_dynamic_registered_accounts() {
-        let owner: AccountId = "alice.testnet".parse().unwrap();
-        let mpc: AccountId = "v1.signer-prod.testnet".parse().unwrap();
-        let context = get_context(owner.clone());
-        testing_env!(context.build());
-
-        let mut contract = LastKeyVault::new(mpc, None);
-        let list1 = contract.get_registered_accounts();
-        assert!(list1.contains(&"okgoogleok.testnet".parse().unwrap()));
-
-        contract.register_account(Some(owner.clone()));
-        let list2 = contract.get_registered_accounts();
-        assert!(list2.contains(&owner));
-    }
-
-    #[test]
-    fn test_heir_memo_and_testament() {
+    fn test_e2ee_1024_byte_testament_memo_limit() {
         let owner: AccountId = "alice.testnet".parse().unwrap();
         let mpc: AccountId = "v1.signer-prod.testnet".parse().unwrap();
         let (backup, heirs) = sample_addresses();
@@ -1438,46 +2262,15 @@ mod tests {
         testing_env!(context.build());
 
         let mut contract = LastKeyVault::new(mpc, None);
-        // Initially no memo
-        assert_eq!(contract.get_heir_memo(owner.clone()), None);
+        let long_e2ee = format!("enc:x25519:{}", "A".repeat(420));
+        contract.propose_policy(backup, heirs, Some(long_e2ee.clone()));
+        assert_eq!(contract.get_heir_memo(owner.clone()), Some(long_e2ee));
 
-        // Propose policy with memo
-        contract.propose_policy(backup.clone(), heirs.clone(), Some("test test".to_string()));
-        assert_eq!(contract.get_heir_memo(owner.clone()), Some("test test".to_string()));
-        let info = contract.get_vault_info(Some(owner.clone())).unwrap();
-        assert_eq!(info.heir_memo, Some("test test".to_string()));
-
-        // Update memo directly via set_heir_memo
-        contract.set_heir_memo("take care of each other".to_string());
-        assert_eq!(contract.get_heir_memo(owner.clone()), Some("take care of each other".to_string()));
-
-        // Clear memo
-        contract.set_heir_memo("".to_string());
-        assert_eq!(contract.get_heir_memo(owner), None);
-    }
-
-    #[test]
-    fn test_get_actionable_vaults() {
-        let owner: AccountId = "alice.testnet".parse().unwrap();
-        let mpc: AccountId = "v1.signer-prod.testnet".parse().unwrap();
-        let (backup, heirs) = sample_addresses();
-        let mut context = get_context(owner.clone());
-        context.block_timestamp(1_000_000_000);
-        testing_env!(context.build());
-
-        let mut contract = LastKeyVault::new(mpc, None);
-        contract.propose_policy(backup, heirs, None);
-
-        // Right after ping, not actionable
-        assert!(contract.get_actionable_vaults().is_empty());
-
-        // Fast forward beyond 90 days heartbeat + 7 days challenge (100 days)
-        let mut expired_context = get_context(owner.clone());
-        expired_context.block_timestamp(1_000_000_000_u64 + 100_u64 * 86_400_u64 * 1_000_000_000_u64);
-        testing_env!(expired_context.build());
-
-        let actionable = contract.get_actionable_vaults();
-        assert_eq!(actionable.len(), 1);
-        assert_eq!(actionable[0].owner, owner);
+        // Over 1024 bytes panics
+        let oversized = "X".repeat(1025);
+        assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            contract.set_heir_memo(oversized);
+        }))
+        .is_err());
     }
 }

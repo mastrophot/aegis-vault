@@ -5,7 +5,7 @@ services:
     plan: free
     region: frankfurt
     buildCommand: npm install
-    startCommand: node relayer/service.js --watch
+    startCommand: node relayer/service.js --server
     healthCheckPath: /health
     autoDeploy: true
     envVars:
@@ -16,9 +16,9 @@ services:
       - key: CONTRACT_ID
         value: aegis.okgoogleok.testnet
       - key: RELAYER_ACCOUNT_ID
-        value: okgoogleok.testnet
+        value: keeper.aegis.okgoogleok.testnet
       - key: RELAYER_PRIVATE_KEY
-        value: ed25519:4x6ax7etHYmUHG5iCWL9FnTZhEZnK48D47nQo95xkDK8rR6wFNxdbUxD4HNfyP3GA1P6dCycSvFaMvFnfA1dZdg9
+        sync: false
       - key: NEAR_NETWORK
         value: testnet
       - key: NEAR_RPC_URL
@@ -26,4 +26,4 @@ services:
       - key: SOLANA_RPC_URL
         value: https://api.devnet.solana.com
       - key: EVM_RPC_URL
-        value: https://rpc.sepolia.org
+        value: https://ethereum-sepolia-rpc.publicnode.com

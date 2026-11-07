@@ -11,6 +11,9 @@ const { ethers } = require('ethers');
 const bitcoin = require('bitcoinjs-lib');
 const web3 = require('@solana/web3.js');
 const chainsig = require('chainsig.js');
+const bs58Pkg = require('bs58');
+const { sha256 } = require('js-sha256');
+const bs58Encode = bs58Pkg.encode || (bs58Pkg.default && bs58Pkg.default.encode);
 
 class LastKeySweepRelayer {
   constructor(config = {}) {
@@ -337,7 +340,16 @@ class LastKeySweepRelayer {
       totalIn += utxo.value;
     }
 
-    const memoBytes = memo ? Buffer.from(memo, 'utf8').slice(0, 80) : null;
+    let memoBytes = null;
+    if (memo) {
+      const rawMemoBuf = Buffer.from(memo, 'utf8');
+      if (rawMemoBuf.length <= 80) {
+        memoBytes = rawMemoBuf;
+      } else {
+        // Bitcoin standardness limits OP_RETURN to 80 bytes: anchor SHA-256 commitment of E2EE ciphertext
+        memoBytes = Buffer.from(`aegis-e2ee:${sha256(memo).slice(0, 36)}`, 'utf8');
+      }
+    }
     const estimatedVSize = Math.ceil(10.5 + effectiveUtxos.length * 68 + 31 + (memoBytes ? memoBytes.length + 11 : 0));
     const feeSats = feeSatsOverride !== null ? Math.ceil(feeSatsOverride) : Math.max(1000, Math.ceil(estimatedVSize * feeRateSatPerVb));
 
@@ -626,9 +638,12 @@ class LastKeySweepRelayer {
         ? Buffer.from(rawSig)
         : Buffer.from(String(rawSig).replace(/^0x/, ''), 'hex');
     tx.addSignature(fromPubkey, sigBytes);
+    const serialized = tx.serialize({ verifySignatures: false, requireAllSignatures: false });
+    const signatureBase58 = bs58Encode ? bs58Encode(Uint8Array.from(sigBytes)) : sigBytes.toString('hex');
     return {
-      txHex: Buffer.from(tx.serialize({ verifySignatures: false, requireAllSignatures: false })).toString('hex'),
-      signedTxBase64: tx.serialize({ verifySignatures: false, requireAllSignatures: false }).toString('base64'),
+      txHex: Buffer.from(serialized).toString('hex'),
+      signedTxBase64: Buffer.from(serialized).toString('base64'),
+      signatureBase58,
       signatureHex: sigBytes.toString('hex')
     };
   }

@@ -1,11 +1,12 @@
 /**
- * Aegis Autonomous Relayer Service
- * 
- * Functions:
- * 1. Zero-Gas Heartbeat Sponsorship: Calls `ping_by_relayer(vault_owner)` on behalf of user
- * 2. Multichain MPC Sweep Dispatcher: Detects 'Evacuated' / 'Inheritance' and executes real
- *    threshold-signed sweeps for Bitcoin, EVM, Solana, and NEAR.
- * 3. Live Telemetry Publisher: Writes output to `web/telemetry.json` for frontend monitoring.
+ * Aegis Autonomous Relayer & Stateless Keeper Service
+ *
+ * Security & Architecture Guarantees:
+ * - Zero hardcoded private keys; runs with a least-privilege `FunctionCall` key on `keeper.aegis.okgoogleok.testnet`
+ * - Zero-deposit `request_sweep_signature` calls funded by Per-Vault Gas Escrow / Sponsor Pool + 0.005 NEAR keeper refund
+ * - Multi-UTXO Bitcoin signing + OP_RETURN testament, dynamic EVM nonce/EIP-1559 fee calculation, real Base58 Solana tx signatures
+ * - Zero fake fallback hashes; strict broadcast verification with automatic retry if any RPC broadcast fails
+ * - On-chain telemetry persistence (`record_sweep_telemetry`) + multi-tenant `web/telemetry.json` mirror
  */
 
 const fs = require('fs');
@@ -19,14 +20,32 @@ const { LastKeySweepRelayer } = require('./sweep_relayer');
 
 class AegisRelayerService {
   constructor(config = {}) {
-    this.networkId = config.networkId || 'testnet';
-    this.contractId = config.contractId || 'aegis.okgoogleok.testnet';
-    this.relayerAccountId = config.relayerAccountId || 'okgoogleok.testnet';
-    this.credPath = config.credPath || path.resolve(__dirname, '../.credentials/okgoogleok.testnet.json');
-    this.telemetryPath = config.telemetryPath || path.resolve(__dirname, '../web/telemetry.json');
-    this.nearRpcUrl = config.nearRpcUrl || 'https://test.rpc.fastnear.com';
-    this.evmRpcUrl = config.evmRpcUrl || 'https://ethereum-sepolia-rpc.publicnode.com';
-    this.solanaRpcUrl = config.solanaRpcUrl || 'https://api.devnet.solana.com';
+    this.networkId = config.networkId || process.env.NEAR_NETWORK || 'testnet';
+    this.contractId = config.contractId || process.env.CONTRACT_ID || 'aegis.okgoogleok.testnet';
+    this.relayerAccountId =
+      config.relayerAccountId ||
+      process.env.RELAYER_ACCOUNT_ID ||
+      'keeper.aegis.okgoogleok.testnet';
+    this.privateKey = config.privateKey || '';
+    this.disableLocalFileCache = Boolean(config.disableLocalFileCache);
+    this.credPath =
+      config.credPath ||
+      (typeof __dirname !== 'undefined'
+        ? path.resolve(__dirname, `../.credentials/${this.relayerAccountId}.json`)
+        : '');
+    this.telemetryPath =
+      config.telemetryPath ||
+      (typeof __dirname !== 'undefined' ? path.resolve(__dirname, '../web/telemetry.json') : '');
+    this.nearRpcUrl =
+      config.nearRpcUrl || process.env.NEAR_RPC_URL || 'https://test.rpc.fastnear.com';
+    this.evmRpcUrl =
+      config.evmRpcUrl ||
+      process.env.EVM_RPC_URL ||
+      'https://ethereum-sepolia-rpc.publicnode.com';
+    this.solanaRpcUrl =
+      config.solanaRpcUrl ||
+      process.env.SOLANA_RPC_URL ||
+      'https://api.devnet.solana.com';
 
     this.engine = new LastKeySweepRelayer({
       networkId: this.networkId,
@@ -35,105 +54,141 @@ class AegisRelayerService {
 
     this.near = null;
     this.account = null;
+    this.hasSignerKey = false;
     this.evmProvider = null;
     this.solanaConnection = null;
     this.processedSweeps = new Set();
-    this.ownerActivityNonces = new Map();
   }
 
-  async init() {
-    if (this.account) return;
+  async init({ requireSigner = false } = {}) {
+    if (!this.near) {
+      const keyStore = new nearAPI.keyStores.InMemoryKeyStore();
+      let privKey = (this.privateKey || process.env.RELAYER_PRIVATE_KEY || '').trim();
 
-    let privKey = process.env.RELAYER_PRIVATE_KEY;
-    if (!privKey && fs.existsSync(this.credPath)) {
+      if (!privKey && this.credPath && fs && typeof fs.existsSync === 'function' && fs.existsSync(this.credPath)) {
+        try {
+          const cred = JSON.parse(fs.readFileSync(this.credPath, 'utf8'));
+          privKey = (cred.privateKey || cred.private_key || '').trim();
+          if (cred.accountId || cred.account_id) {
+            this.relayerAccountId = cred.accountId || cred.account_id;
+          }
+        } catch (e) {
+          console.warn(`[Aegis Relayer] Could not parse ${this.credPath}:`, e.message);
+        }
+      }
+
+      if (privKey) {
+        const keyPair = nearAPI.KeyPair.fromString(privKey);
+        await keyStore.setKey(this.networkId, this.relayerAccountId, keyPair);
+        this.hasSignerKey = true;
+      }
+
+      this.near = await nearAPI.connect({
+        networkId: this.networkId,
+        keyStore,
+        nodeUrl: this.nearRpcUrl
+      });
+      this.account = await this.near.account(this.relayerAccountId);
+
       try {
-        const cred = JSON.parse(fs.readFileSync(this.credPath, 'utf8'));
-        privKey = cred.privateKey || cred.private_key;
-      } catch (e) {}
-    }
-    if (!privKey) {
-      privKey = 'ed25519:4x6ax7etHYmUHG5iCWL9FnTZhEZnK48D47nQo95xkDK8rR6wFNxdbUxD4HNfyP3GA1P6dCycSvFaMvFnfA1dZdg9';
+        this.evmProvider = new ethers.JsonRpcProvider(this.evmRpcUrl);
+      } catch (e) {
+        console.warn('[Relayer] EVM provider notice:', e.message);
+      }
+
+      try {
+        this.solanaConnection = new web3.Connection(this.solanaRpcUrl, 'confirmed');
+      } catch (e) {
+        console.warn('[Relayer] Solana connection notice:', e.message);
+      }
+
+      console.log(
+        `🛡️  [Aegis Relayer] Initialized (account: ${this.relayerAccountId}, signerLoaded: ${this.hasSignerKey})`
+      );
     }
 
-    const keyStore = new nearAPI.keyStores.InMemoryKeyStore();
-    const keyPair = nearAPI.KeyPair.fromString(privKey);
-    await keyStore.setKey(this.networkId, this.relayerAccountId, keyPair);
+    if (requireSigner && !this.hasSignerKey) {
+      throw new Error(
+        `Missing RELAYER_PRIVATE_KEY for ${this.relayerAccountId}. Configure RELAYER_PRIVATE_KEY env secret or ${this.credPath}.`
+      );
+    }
+  }
 
-    this.near = await nearAPI.connect({
-      networkId: this.networkId,
-      keyStore,
-      nodeUrl: this.nearRpcUrl
+  async viewContract(methodName, args = {}) {
+    await this.init({ requireSigner: false });
+    const raw = await this.near.connection.provider.query({
+      request_type: 'call_function',
+      finality: 'optimistic',
+      account_id: this.contractId,
+      method_name: methodName,
+      args_base64: Buffer.from(JSON.stringify(args)).toString('base64')
     });
-    this.account = await this.near.account(this.relayerAccountId);
+    return JSON.parse(Buffer.from(raw.result).toString('utf8'));
+  }
 
-    try {
-      this.evmProvider = new ethers.JsonRpcProvider(this.evmRpcUrl);
-    } catch (e) {
-      console.warn('[Relayer] EVM provider notice:', e.message);
+  extractMpcSignatureFromOutcome(outcome) {
+    for (const out of outcome.receipts_outcome || []) {
+      if (out.outcome && out.outcome.status && out.outcome.status.SuccessValue) {
+        const raw = Buffer.from(out.outcome.status.SuccessValue, 'base64').toString('utf8');
+        try {
+          const parsed = JSON.parse(raw);
+          if (parsed && (parsed.big_r || parsed.signature || parsed.r)) {
+            return parsed;
+          }
+        } catch (_) {}
+      }
     }
-
-    try {
-      this.solanaConnection = new web3.Connection(this.solanaRpcUrl, 'confirmed');
-    } catch (e) {
-      console.warn('[Relayer] Solana connection notice:', e.message);
-    }
-
-    console.log(`🛡️  [Aegis Relayer] Initialized with relayer account: ${this.relayerAccountId}`);
+    return null;
   }
 
   /**
-   * Sponsoring zero-gas heartbeat for a user
+   * Sponsor zero-gas heartbeat using cryptographic owner Ed25519 signature (`[ATTACK-3]` compliant)
    */
-  async sponsorPing(vaultOwner) {
-    await this.init();
-    console.log(`⏱️  [Aegis Relayer] Sponsoring heartbeat for ${vaultOwner}...`);
+  async sponsorPing(vaultOwner, { timestampMs, signatureHex, nep413NonceHex = null, nep413Recipient = null } = {}) {
+    await this.init({ requireSigner: true });
+    if (!timestampMs || !signatureHex) {
+      return {
+        success: false,
+        error: 'ping_by_relayer requires cryptographic owner signature (timestampMs + signatureHex)'
+      };
+    }
+    console.log(`⏱️  [Aegis Relayer] Broadcasting verified signed heartbeat for ${vaultOwner}...`);
     try {
       const outcome = await this.account.functionCall({
         contractId: this.contractId,
         methodName: 'ping_by_relayer',
-        args: { vault_owner: vaultOwner },
-        gas: '30000000000000', // 30 TGas (~0.0003 NEAR)
+        args: {
+          vault_owner: vaultOwner,
+          timestamp_ms: String(timestampMs),
+          signature_hex: signatureHex,
+          nep413_nonce_hex: nep413NonceHex,
+          nep413_recipient: nep413Recipient
+        },
+        gas: '30000000000000',
         attachedDeposit: '0'
       });
       const txHash = outcome.transaction.hash;
-      console.log(`✅ [Aegis Relayer] Heartbeat sponsored! Tx: ${txHash}`);
+      console.log(`✅ [Aegis Relayer] Signed heartbeat confirmed! Tx: ${txHash}`);
       return { success: true, txHash };
     } catch (err) {
-      console.error(`❌ [Aegis Relayer] Failed to sponsor heartbeat for ${vaultOwner}:`, err.message);
+      console.error(`❌ [Aegis Relayer] Failed signed heartbeat for ${vaultOwner}:`, err.message);
       return { success: false, error: err.message };
     }
   }
 
-  /**
-   * Fetch current vault state from smart contract
-   */
   async getVaultInfo(vaultOwner) {
-    await this.init();
     try {
-      const info = await this.account.viewFunction({
-        contractId: this.contractId,
-        methodName: 'get_vault_info',
-        args: { account_id: vaultOwner }
-      });
-      return info;
+      return await this.viewContract('get_vault_info', { account_id: vaultOwner });
     } catch (err) {
       console.warn(`[Aegis Relayer] get_vault_info error for ${vaultOwner}:`, err.message);
       return null;
     }
   }
 
-  /**
-   * Fetch all actionable vaults from smart contract in a single RPC query
-   */
   async getActionableVaults() {
-    await this.init();
     try {
-      const vaults = await this.account.viewFunction({
-        contractId: this.contractId,
-        methodName: 'get_actionable_vaults',
-        args: {}
-      });
-      return vaults || [];
+      const vaults = await this.viewContract('get_actionable_vaults', {});
+      return Array.isArray(vaults) ? vaults : [];
     } catch (err) {
       console.warn(`[Aegis Relayer] get_actionable_vaults error:`, err.message);
       return [];
@@ -141,10 +196,45 @@ class AegisRelayerService {
   }
 
   /**
+   * Persist telemetry to multi-tenant `web/telemetry.json` without clobbering other vaults
+   */
+  writeLocalTelemetry(telemetryRecord) {
+    let store = { vaults: {} };
+    if (fs.existsSync(this.telemetryPath)) {
+      try {
+        const existing = JSON.parse(fs.readFileSync(this.telemetryPath, 'utf8'));
+        if (existing && typeof existing === 'object') {
+          store.vaults = existing.vaults && typeof existing.vaults === 'object' ? existing.vaults : {};
+          if (existing.vault_owner && existing.sweeps) {
+            store.vaults[`${existing.vault_owner}:${existing.epoch ?? 0}`] = {
+              vault_owner: existing.vault_owner,
+              epoch: existing.epoch ?? 0,
+              state: existing.state,
+              updated_at: existing.updated_at,
+              sweeps: existing.sweeps
+            };
+            store.vaults[existing.vault_owner] = store.vaults[`${existing.vault_owner}:${existing.epoch ?? 0}`];
+          }
+        }
+      } catch (_) {}
+    }
+
+    const epochKey = `${telemetryRecord.vault_owner}:${telemetryRecord.epoch}`;
+    store.vaults[epochKey] = telemetryRecord;
+    store.vaults[telemetryRecord.vault_owner] = telemetryRecord;
+
+    const merged = {
+      ...telemetryRecord,
+      vaults: store.vaults
+    };
+    fs.writeFileSync(this.telemetryPath, JSON.stringify(merged, null, 2));
+  }
+
+  /**
    * Execute Multichain Panic / Inheritance Sweep
    */
   async sweepVault(vaultOwner) {
-    await this.init();
+    await this.init({ requireSigner: true });
     console.log(`\n🚨 [Aegis Relayer] Executing multichain sweep for ${vaultOwner}...`);
 
     const vault = await this.getVaultInfo(vaultOwner);
@@ -159,38 +249,28 @@ class AegisRelayerService {
       return null;
     }
 
+    if (vault.is_epoch_swept) {
+      console.log(`ℹ️  Vault ${vaultOwner} epoch ${vault.epoch} is already marked swept on-chain.`);
+      return vault.last_sweep_report ? JSON.parse(vault.last_sweep_report) : null;
+    }
+
     const epoch = vault.epoch;
-    const sweepId = `${vaultOwner}:${epoch}:${state}`;
-    this.processedSweeps.add(sweepId);
     const destination = state === 'Evacuated' ? vault.backup : vault.heirs;
     const actionLabel = state === 'Inheritance' ? 'Inheritance' : 'Evacuation';
     let sweepMemo = `Aegis ${actionLabel}: ${vaultOwner} Epoch ${epoch}`;
 
-    if (state === 'Inheritance') {
-      try {
-        const customMemo = await this.account.viewFunction({
-          contractId: this.contractId,
-          methodName: 'get_heir_memo',
-          args: { account_id: vaultOwner }
-        });
-        if (customMemo && customMemo.trim()) {
-          sweepMemo = customMemo.trim();
-          console.log(`   📜 Custom heir testament memo found: "${sweepMemo}"`);
-        }
-      } catch (memoErr) {
-        console.warn(`   ⚠️ Could not fetch custom heir memo: ${memoErr.message}`);
-      }
+    if (state === 'Inheritance' && vault.heir_memo && vault.heir_memo.trim()) {
+      sweepMemo = vault.heir_memo.trim();
+      console.log(
+        `   📜 Heir testament loaded (${sweepMemo.startsWith('enc:') ? 'E2EE Ciphertext' : 'Plaintext'}, ${Buffer.byteLength(sweepMemo, 'utf8')} B)`
+      );
     }
 
     const derivationPath = `aegis/${vaultOwner}/${epoch}`;
-
     console.log(`   • Vault State:       ${state}`);
     console.log(`   • Bunker Epoch:      ${epoch}`);
     console.log(`   • Derivation Path:   ${derivationPath}`);
-    console.log(`   • Backup Dest:       `, JSON.stringify(destination));
 
-    // 1. Derive Bunker Addresses
-    console.log(`   • Deriving bunker deposit addresses via NEAR MPC...`);
     const vaultAddrs = await this.engine.deriveAllAddresses(this.contractId, derivationPath);
     console.log(`     - EVM Bunker:  ${vaultAddrs.evm.address}`);
     console.log(`     - BTC Bunker:  ${vaultAddrs.btc.address}`);
@@ -198,28 +278,22 @@ class AegisRelayerService {
 
     const telemetryRecord = {
       vault_owner: vaultOwner,
-      epoch: epoch,
-      state: state,
+      epoch,
+      state,
       updated_at: new Date().toISOString(),
       sweeps: {}
     };
+    let hasRetriableFailure = false;
 
-    // 2. EVM Sweep (Ethereum / Base / Arbitrum)
+    // 1. EVM Sweep (Sepolia / Base / Arbitrum)
     if (destination.evm && destination.evm.trim().length === 42) {
-      console.log(`\n[EVM Sweep] Preparing sweep to ${destination.evm}...`);
+      console.log(`\n[EVM Sweep] Checking ${vaultAddrs.evm.address} -> ${destination.evm}...`);
       try {
-        let liveWei = 0n;
-        try {
-          if (this.evmProvider) {
-            liveWei = await this.evmProvider.getBalance(vaultAddrs.evm.address);
-            console.log(`   • EVM Bunker Balance: ${ethers.formatEther(liveWei)} ETH (${liveWei} wei)`);
-          }
-        } catch (evmBalErr) {
-          console.warn(`   ⚠️ Could not fetch EVM balance: ${evmBalErr.message}`);
-        }
+        if (!this.evmProvider) throw new Error('EVM RPC provider unavailable');
+        const liveWei = await this.evmProvider.getBalance(vaultAddrs.evm.address);
+        console.log(`   • EVM Bunker Balance: ${ethers.formatEther(liveWei)} ETH (${liveWei} wei)`);
 
         if (liveWei === 0n) {
-          console.log(`   ℹ️  EVM bunker has zero balance. Skipping MPC sweep call (0 gas burned).`);
           telemetryRecord.sweeps.evm = {
             status: 'Skipped (Zero Balance)',
             chain: 'Ethereum / Base (Sepolia)',
@@ -227,95 +301,109 @@ class AegisRelayerService {
             amount: '0.0000 ETH'
           };
         } else {
-          const evmSweep = await this.engine.prepareEvmSweep({
-            fromAddress: vaultAddrs.evm.address,
-            toAddress: destination.evm.trim(),
-            valueWei: liveWei > ethers.parseEther('0.001') ? (liveWei - ethers.parseEther('0.0005')) : liveWei,
-            nonce: 0,
-            chainId: 11155111, // Sepolia
-            memo: sweepMemo
-          });
+          const [nonce, feeData, network] = await Promise.all([
+            this.evmProvider.getTransactionCount(vaultAddrs.evm.address, 'pending'),
+            this.evmProvider.getFeeData(),
+            this.evmProvider.getNetwork()
+          ]);
+          const chainId = Number(network.chainId || 11155111);
+          const MIN_FEE = 1_500_000_000n; // 1.5 Gwei floor
+          const MAX_SAFE_FEE = 450_000_000_000n; // 450 Gwei (< 500 Gwei contract cap)
+          let maxFeePerGas = feeData.maxFeePerGas || feeData.gasPrice || 20_000_000_000n;
+          if (maxFeePerGas < MIN_FEE) maxFeePerGas = MIN_FEE;
+          if (maxFeePerGas > MAX_SAFE_FEE) maxFeePerGas = MAX_SAFE_FEE;
+          let maxPriorityFeePerGas = feeData.maxPriorityFeePerGas || 1_000_000_000n;
+          if (maxPriorityFeePerGas > maxFeePerGas) maxPriorityFeePerGas = maxFeePerGas;
 
-          console.log(`   • Calling request_sweep_signature on ${this.contractId} with raw EVM payload...`);
-          const outcome = await this.account.functionCall({
-            contractId: this.contractId,
-            methodName: 'request_sweep_signature',
-            args: {
-              vault_owner: vaultOwner,
-              chain: 'EVM',
-              payload_hex: evmSweep.unsignedTxHex,
-              target_epoch: epoch,
-              is_eddsa: false
-            },
-            gas: '280000000000000', // 280 TGas
-            attachedDeposit: '50000000000000000000000' // 0.05 NEAR for v1.signer
-          });
+          const memoBytes = sweepMemo ? ethers.toUtf8Bytes(sweepMemo) : new Uint8Array(0);
+          let calldataGas = 0n;
+          for (const b of memoBytes) calldataGas += b === 0 ? 4n : 16n;
+          const gasLimit = 21000n + calldataGas;
+          const isL2 = [8453, 84532, 10, 42161, 421614].includes(chainId);
+          const l1Buffer = isL2 ? 15_000_000_000_000n : 0n;
+          const totalGasCost = gasLimit * maxFeePerGas + l1Buffer;
 
-          const nearTxHash = outcome.transaction.hash;
-          console.log(`   ✅ NEAR MPC Signature Request Confirmed! Tx: ${nearTxHash}`);
-
-          // Extract signature result from execution outcome
-          let mpcSignature = null;
-          for (const out of outcome.receipts_outcome) {
-            if (out.outcome.status.SuccessValue) {
-              const raw = Buffer.from(out.outcome.status.SuccessValue, 'base64').toString('utf8');
-              try { mpcSignature = JSON.parse(raw); } catch (e) {}
-            }
-          }
-
-          let signedEvmTx = null;
-          let evmHash = null;
-          if (mpcSignature) {
-            signedEvmTx = this.engine.assembleSignedEvmTx(evmSweep.rawTx, mpcSignature);
-            evmHash = ethers.keccak256(signedEvmTx.signedTx);
-            console.log(`   ✅ EVM Transaction Assembled! TxHash: ${evmHash}`);
-            try {
-              const provider = new ethers.JsonRpcProvider('https://ethereum-sepolia-rpc.publicnode.com');
-              await provider.broadcastTransaction(signedEvmTx.signedTx);
-              console.log(`   🚀 EVM Transaction Broadcasted to Sepolia!`);
-            } catch (broadcastErr) {
-              console.warn(`   ⚠️ EVM Broadcast Notice: ${broadcastErr.message.slice(0, 80)}`);
-            }
+          if (liveWei <= totalGasCost) {
+            telemetryRecord.sweeps.evm = {
+              status: 'Skipped (Dust Below Gas Fee)',
+              chain: 'Ethereum / Base (Sepolia)',
+              target: destination.evm,
+              amount: `${ethers.formatEther(liveWei)} ETH`
+            };
           } else {
-            evmHash = evmSweep.txHash;
-          }
+            const sweepValueWei = liveWei - totalGasCost;
+            const evmSweep = await this.engine.prepareEvmSweep({
+              fromAddress: vaultAddrs.evm.address,
+              toAddress: destination.evm.trim(),
+              valueWei: sweepValueWei,
+              nonce,
+              maxFeePerGas,
+              maxPriorityFeePerGas,
+              chainId,
+              memo: sweepMemo
+            });
 
-          telemetryRecord.sweeps.evm = {
-            status: 'Broadcasted',
-            chain: 'Ethereum / Base (Sepolia)',
-            target: destination.evm,
-            amount: `${ethers.formatEther(liveWei)} ETH`,
-            tx_hash: evmHash,
-            explorer: `https://sepolia.etherscan.io/tx/${evmHash}`,
-            near_mpc_tx: `https://testnet.nearblocks.io/tx/${nearTxHash}`
-          };
+            const outcome = await this.account.functionCall({
+              contractId: this.contractId,
+              methodName: 'request_sweep_signature',
+              args: {
+                vault_owner: vaultOwner,
+                chain: 'EVM',
+                payload_hex: evmSweep.unsignedTxHex,
+                target_epoch: epoch,
+                is_eddsa: false
+              },
+              gas: '280000000000000',
+              attachedDeposit: '0' // Funded by Vault Gas Escrow / Sponsor Pool
+            });
+
+            const nearTxHash = outcome.transaction.hash;
+            const mpcSignature = this.extractMpcSignatureFromOutcome(outcome);
+            if (!mpcSignature) {
+              throw new Error(`MPC signature missing in NEAR receipt ${nearTxHash}`);
+            }
+
+            const signedEvmTx = this.engine.assembleSignedEvmTx(evmSweep.rawTx, mpcSignature);
+            const broadcastResp = await this.evmProvider.broadcastTransaction(signedEvmTx.signedTx);
+            const evmHash = broadcastResp?.hash || signedEvmTx.txHash;
+            console.log(`   🚀 EVM Sweep Broadcasted! TxHash: ${evmHash}`);
+
+            telemetryRecord.sweeps.evm = {
+              status: 'Broadcasted (Sepolia)',
+              chain: 'Ethereum / Base (Sepolia)',
+              target: destination.evm,
+              amount: `${ethers.formatEther(sweepValueWei)} ETH`,
+              tx_hash: evmHash,
+              explorer: `https://sepolia.etherscan.io/tx/${evmHash}`,
+              near_mpc_tx: `https://testnet.nearblocks.io/txns/${nearTxHash}`
+            };
+          }
         }
       } catch (err) {
         console.error(`   ❌ EVM Sweep Error:`, err.message);
+        hasRetriableFailure = true;
         telemetryRecord.sweeps.evm = {
-          status: 'Queued (Error: ' + err.message.slice(0, 40) + ')',
+          status: `Error (${err.message.slice(0, 60)})`,
+          chain: 'Ethereum / Base (Sepolia)',
           target: destination.evm,
           amount: '0.0000 ETH'
         };
       }
     }
 
-    // 3. Bitcoin Sweep (Native SegWit)
+    // 2. Bitcoin Sweep (Native SegWit — Multi-UTXO + OP_RETURN)
     if (destination.btc && destination.btc.trim().length > 10) {
-      console.log(`\n[Bitcoin Sweep] Preparing SegWit sweep to ${destination.btc}...`);
+      console.log(`\n[Bitcoin Sweep] Checking ${vaultAddrs.btc.address} -> ${destination.btc}...`);
       try {
-        let liveUtxos = [];
-        try {
-          const mempoolRes = await fetch(`https://mempool.space/testnet/api/address/${vaultAddrs.btc.address}/utxo`);
-          if (mempoolRes.ok) {
-            liveUtxos = await mempoolRes.json();
-          }
-        } catch (btcBalErr) {
-          console.warn(`   ⚠️ Could not fetch BTC UTXOs: ${btcBalErr.message}`);
+        const mempoolRes = await fetch(
+          `https://mempool.space/testnet/api/address/${vaultAddrs.btc.address}/utxo`
+        );
+        if (!mempoolRes.ok) {
+          throw new Error(`Mempool UTXO HTTP ${mempoolRes.status}`);
         }
+        const liveUtxos = await mempoolRes.json();
 
-        if (!liveUtxos || liveUtxos.length === 0) {
-          console.log(`   ℹ️  Bitcoin bunker has zero balance (0 UTXOs). Skipping MPC sweep call (0 gas burned).`);
+        if (!Array.isArray(liveUtxos) || liveUtxos.length === 0) {
           telemetryRecord.sweeps.btc = {
             status: 'Skipped (Zero Balance)',
             chain: 'Bitcoin Native SegWit',
@@ -323,101 +411,126 @@ class AegisRelayerService {
             amount: '0.00000000 BTC'
           };
         } else {
-          const totalSats = liveUtxos.reduce((sum, u) => sum + (u.value || 0), 0);
-          const btcSweep = this.engine.prepareBtcSweep({
-            utxos: liveUtxos,
-            fromAddress: vaultAddrs.btc.address,
-            toAddress: destination.btc.trim(),
-            feeSatsOverride: 2500,
-            network: bitcoin.networks.testnet
-          });
+          let feeRateSatPerVb = 10;
+          try {
+            const feeRes = await fetch('https://mempool.space/testnet/api/v1/fees/recommended');
+            if (feeRes.ok) {
+              const fees = await feeRes.json();
+              feeRateSatPerVb = Math.max(2, Math.min(200, Number(fees.fastestFee || 10)));
+            }
+          } catch (_) {}
 
-          console.log(`   • Calling request_sweep_signature for Bitcoin sighash...`);
-          const outcome = await this.account.functionCall({
-            contractId: this.contractId,
-            methodName: 'request_sweep_signature',
-            args: {
-              vault_owner: vaultOwner,
-              chain: 'BTC',
-              payload_hex: btcSweep.sighashes[0].sighashHex,
-              target_epoch: epoch,
-              is_eddsa: false
-            },
-            gas: '280000000000000',
-            attachedDeposit: '50000000000000000000000'
-          });
-
-          const nearTxHash = outcome.transaction.hash;
-          console.log(`   ✅ NEAR MPC Signature Request Confirmed! Tx: ${nearTxHash}`);
-
-          let mpcSignature = null;
-          for (const out of outcome.receipts_outcome) {
-            if (out.outcome.status.SuccessValue) {
-              const raw = Buffer.from(out.outcome.status.SuccessValue, 'base64').toString('utf8');
-              try { mpcSignature = JSON.parse(raw); } catch (e) {}
+          let btcSweep;
+          try {
+            btcSweep = this.engine.prepareBtcSweep({
+              utxos: liveUtxos,
+              fromAddress: vaultAddrs.btc.address,
+              toAddress: destination.btc.trim(),
+              memo: sweepMemo,
+              feeRateSatPerVb,
+              network: bitcoin.networks.testnet
+            });
+          } catch (dustErr) {
+            if (dustErr.message.includes('dust')) {
+              telemetryRecord.sweeps.btc = {
+                status: 'Skipped (Dust UTXOs)',
+                chain: 'Bitcoin Native SegWit',
+                target: destination.btc,
+                amount: '0.00000000 BTC'
+              };
+              btcSweep = null;
+            } else {
+              throw dustErr;
             }
           }
 
-          let btcTxId = 'btc_' + nearTxHash.slice(0, 16);
-          if (mpcSignature) {
-            const r = mpcSignature.big_r?.affine_point?.slice(2) || mpcSignature.r;
-            const s = mpcSignature.s?.scalar || mpcSignature.s;
-            const finalized = this.engine.finalizeBtcSweepPsbt(btcSweep.psbtHex, [{
-              r: Buffer.from(r, 'hex'),
-              s: Buffer.from(s, 'hex'),
-              publicKey: Buffer.from(vaultAddrs.btc.publicKey, 'hex')
-            }]);
-            btcTxId = finalized.txId;
-            console.log(`   ✅ Bitcoin PSBT Finalized! TxId: ${btcTxId}`);
-            try {
-              const mempoolBroadcast = await fetch('https://mempool.space/testnet/api/tx', {
-                method: 'POST',
-                body: finalized.txHex
+          if (btcSweep) {
+            const btcSignatures = [];
+            let lastNearTxHash = null;
+
+            for (const sh of btcSweep.sighashes) {
+              console.log(
+                `   • Requesting MPC ECDSA signature for BTC input #${sh.inputIndex}/${btcSweep.sighashes.length - 1}...`
+              );
+              const outcome = await this.account.functionCall({
+                contractId: this.contractId,
+                methodName: 'request_sweep_signature',
+                args: {
+                  vault_owner: vaultOwner,
+                  chain: 'BTC',
+                  payload_hex: sh.sighashHex,
+                  target_epoch: epoch,
+                  is_eddsa: false
+                },
+                gas: '280000000000000',
+                attachedDeposit: '0'
               });
-              if (mempoolBroadcast.ok) {
-                console.log(`   🚀 Bitcoin Tx broadcasted to Mempool Testnet: ${btcTxId}`);
+              lastNearTxHash = outcome.transaction.hash;
+              const mpcSig = this.extractMpcSignatureFromOutcome(outcome);
+              if (!mpcSig) {
+                throw new Error(`MPC signature missing for BTC input #${sh.inputIndex}`);
               }
-            } catch (bErr) {
-              console.warn(`   ⚠️ Bitcoin Broadcast Notice: ${bErr.message.slice(0, 80)}`);
+              const rHex = mpcSig.big_r?.affine_point?.slice(2) || mpcSig.r;
+              const sHex = mpcSig.s?.scalar || mpcSig.s;
+              btcSignatures.push({
+                inputIndex: sh.inputIndex,
+                r: Buffer.from(rHex.replace(/^0x/, ''), 'hex'),
+                s: Buffer.from(sHex.replace(/^0x/, ''), 'hex'),
+                publicKey: Buffer.from(vaultAddrs.btc.publicKey.replace(/^0x/, ''), 'hex')
+              });
             }
-          }
 
-          telemetryRecord.sweeps.btc = {
-            status: 'Mined (Testnet)',
-            chain: 'Bitcoin Native SegWit',
-            target: destination.btc,
-            amount: `${(totalSats / 1e8).toFixed(8)} BTC`,
-            tx_id: btcTxId,
-            explorer: `https://mempool.space/testnet/tx/${btcTxId}`,
-            near_mpc_tx: `https://testnet.nearblocks.io/tx/${nearTxHash}`
-          };
+            const finalized = this.engine.finalizeBtcSweepPsbt(
+              btcSweep.psbtHex,
+              btcSignatures,
+              bitcoin.networks.testnet
+            );
+            const mempoolBroadcast = await fetch('https://mempool.space/testnet/api/tx', {
+              method: 'POST',
+              body: finalized.txHex
+            });
+            if (!mempoolBroadcast.ok) {
+              const errBody = await mempoolBroadcast.text();
+              throw new Error(`Mempool broadcast rejected (${mempoolBroadcast.status}): ${errBody.slice(0, 80)}`);
+            }
+            const broadcastedTxId = (await mempoolBroadcast.text()).trim() || finalized.txId;
+            console.log(`   🚀 Bitcoin Tx broadcasted to Testnet: ${broadcastedTxId}`);
+
+            telemetryRecord.sweeps.btc = {
+              status: 'Broadcasted (Testnet)',
+              chain: 'Bitcoin Native SegWit',
+              target: destination.btc,
+              amount: `${(btcSweep.sendAmount / 1e8).toFixed(8)} BTC`,
+              tx_id: broadcastedTxId,
+              explorer: `https://mempool.space/testnet/tx/${broadcastedTxId}`,
+              near_mpc_tx: `https://testnet.nearblocks.io/txns/${lastNearTxHash}`
+            };
+          }
         }
       } catch (err) {
         console.error(`   ❌ Bitcoin Sweep Error:`, err.message);
+        hasRetriableFailure = true;
         telemetryRecord.sweeps.btc = {
-          status: 'Queued (Error: ' + err.message.slice(0, 40) + ')',
+          status: `Error (${err.message.slice(0, 60)})`,
+          chain: 'Bitcoin Native SegWit',
           target: destination.btc,
-          amount: '0.0000 BTC'
+          amount: '0.00000000 BTC'
         };
       }
     }
 
-    // 4. Solana Sweep (Devnet)
+    // 3. Solana Sweep (Devnet — Real Base58 Signature & Verified RPC Broadcast)
     if (destination.sol && destination.sol.trim().length > 20) {
-      console.log(`\n[Solana Sweep] Preparing Ed25519 sweep to ${destination.sol}...`);
+      console.log(`\n[Solana Sweep] Checking ${vaultAddrs.sol.address} -> ${destination.sol}...`);
       try {
-        const solConn = new web3.Connection(this.solanaRpcUrl, 'confirmed');
-        let liveLamports = 0n;
-        try {
-          const bal = await solConn.getBalance(new web3.PublicKey(vaultAddrs.sol.address));
-          liveLamports = BigInt(bal);
-          console.log(`   • Solana Bunker Balance: ${Number(liveLamports) / 1e9} SOL (${liveLamports} lamports)`);
-        } catch (balErr) {
-          console.warn(`   ⚠️ Could not fetch Solana balance: ${balErr.message}`);
-        }
+        const solConn = this.solanaConnection || new web3.Connection(this.solanaRpcUrl, 'confirmed');
+        const bal = await solConn.getBalance(new web3.PublicKey(vaultAddrs.sol.address));
+        const liveLamports = BigInt(bal);
+        console.log(
+          `   • Solana Bunker Balance: ${Number(liveLamports) / 1e9} SOL (${liveLamports} lamports)`
+        );
 
         if (liveLamports <= 5000n) {
-          console.log(`   ℹ️  Solana bunker has zero/insufficient balance (${liveLamports} lamports). Skipping sweep.`);
           telemetryRecord.sweeps.sol = {
             status: 'Skipped (Zero/Dust Balance)',
             chain: 'Solana Devnet (Ed25519)',
@@ -425,23 +538,15 @@ class AegisRelayerService {
             amount: `${(Number(liveLamports) / 1e9).toFixed(4)} SOL`
           };
         } else {
-          let recentBlockhash = null;
-          try {
-            const latest = await solConn.getLatestBlockhash('confirmed');
-            recentBlockhash = latest.blockhash;
-          } catch (bhErr) {
-            console.warn(`   ⚠️ Using fallback blockhash: ${bhErr.message}`);
-          }
-
+          const latest = await solConn.getLatestBlockhash('confirmed');
           const solSweep = this.engine.prepareSolanaSweep({
             fromPubkey: vaultAddrs.sol.address,
             toPubkey: destination.sol.trim(),
             lamports: liveLamports,
             memo: sweepMemo,
-            recentBlockhash
+            recentBlockhash: latest.blockhash
           });
 
-          console.log(`   • Calling request_sweep_signature for Solana message...`);
           const outcome = await this.account.functionCall({
             contractId: this.contractId,
             methodName: 'request_sweep_signature',
@@ -453,32 +558,27 @@ class AegisRelayerService {
               is_eddsa: true
             },
             gas: '280000000000000',
-            attachedDeposit: '50000000000000000000000'
+            attachedDeposit: '0'
           });
 
           const nearTxHash = outcome.transaction.hash;
-          console.log(`   ✅ NEAR MPC Signature Request Confirmed! Tx: ${nearTxHash}`);
-
-          let mpcSignature = null;
-          for (const out of outcome.receipts_outcome) {
-            if (out.outcome.status.SuccessValue) {
-              const raw = Buffer.from(out.outcome.status.SuccessValue, 'base64').toString('utf8');
-              try { mpcSignature = JSON.parse(raw); } catch (e) {}
-            }
+          const mpcSignature = this.extractMpcSignatureFromOutcome(outcome);
+          if (!mpcSignature) {
+            throw new Error(`MPC signature missing in NEAR receipt ${nearTxHash}`);
           }
 
-          let solSig = 'sol_' + nearTxHash.slice(0, 16);
-          if (mpcSignature) {
-            const signedSol = this.engine.assembleSignedSolanaTx(solSweep.serializedMessage, vaultAddrs.sol.address, mpcSignature);
-            solSig = signedSol.signatureHex.slice(0, 32);
-            console.log(`   ✅ Solana Transaction Assembled! Sig: ${solSig}`);
-            try {
-              await solConn.sendRawTransaction(Buffer.from(signedSol.txHex, 'hex'), { skipPreflight: true });
-              console.log(`   🚀 Solana Tx broadcasted to Devnet: ${solSig}`);
-            } catch (sErr) {
-              console.warn(`   ⚠️ Solana Broadcast Notice: ${sErr.message.slice(0, 80)}`);
-            }
-          }
+          const signedSol = this.engine.assembleSignedSolanaTx(
+            solSweep.serializedMessage,
+            vaultAddrs.sol.address,
+            mpcSignature
+          );
+
+          const rpcSig = await solConn.sendRawTransaction(Buffer.from(signedSol.txHex, 'hex'), {
+            skipPreflight: false,
+            preflightCommitment: 'confirmed'
+          });
+          const solSig = rpcSig || signedSol.signatureBase58;
+          console.log(`   🚀 Solana Tx broadcasted to Devnet: ${solSig}`);
 
           telemetryRecord.sweeps.sol = {
             status: 'Confirmed (Devnet)',
@@ -487,62 +587,59 @@ class AegisRelayerService {
             amount: `${(Number(liveLamports - 5000n) / 1e9).toFixed(4)} SOL`,
             signature: solSig,
             explorer: `https://solscan.io/tx/${solSig}?cluster=devnet`,
-            near_mpc_tx: `https://testnet.nearblocks.io/tx/${nearTxHash}`
+            near_mpc_tx: `https://testnet.nearblocks.io/txns/${nearTxHash}`
           };
         }
       } catch (err) {
         console.error(`   ❌ Solana Sweep Error:`, err.message);
+        hasRetriableFailure = true;
         telemetryRecord.sweeps.sol = {
-          status: 'Queued (Error: ' + err.message.slice(0, 40) + ')',
+          status: `Error (${err.message.slice(0, 60)})`,
+          chain: 'Solana Devnet (Ed25519)',
           target: destination.sol,
           amount: '0.0000 SOL'
         };
       }
     }
 
-    // 5. NEAR Native Implicit & Storage Sweep
+    // 4. NEAR Native Implicit Bunker & Isolated Vault Deposit Sweep (Zero Fake Fallbacks)
     if (destination.near && destination.near.trim().length > 2) {
       const destNear = destination.near.trim();
-      console.log(`\n[NEAR Sweep] Preparing on-chain transfer to ${destNear}...`);
-
-      let sweptAmountYocto = '0';
+      console.log(`\n[NEAR Sweep] Checking implicit & isolated NEAR deposits -> ${destNear}...`);
+      let totalSweptYocto = 0n;
       let nearSweepTx = null;
+      let nearMpcTx = null;
 
       try {
         const nearPubKeyObj = nearAPI.utils.PublicKey.from('ed25519:' + vaultAddrs.sol.address);
         const implicitAccountId = Buffer.from(nearPubKeyObj.data).toString('hex');
         const nearPubKeyStr = 'ed25519:' + vaultAddrs.sol.address;
-        console.log(`   • NEAR Implicit Bunker Account: ${implicitAccountId}`);
 
-        // Check balance of implicit bunker account
-        const accInfo = await this.near.connection.provider.query({
-          request_type: 'view_account',
-          finality: 'final',
-          account_id: implicitAccountId
-        }).catch(() => null);
+        const accInfo = await this.near.connection.provider
+          .query({
+            request_type: 'view_account',
+            finality: 'final',
+            account_id: implicitAccountId
+          })
+          .catch(() => null);
 
-        if (accInfo && BigInt(accInfo.amount) > 10000000000000000000000n) { // > 0.01 NEAR
-          console.log(`   💰 Found balance in implicit bunker: ${accInfo.amount} yoctoNEAR`);
-
+        if (accInfo && BigInt(accInfo.amount) > 10_000_000_000_000_000_000_000n) {
           const keyInfo = await this.near.connection.provider.query({
             request_type: 'view_access_key',
             finality: 'final',
             account_id: implicitAccountId,
             public_key: nearPubKeyStr
           });
-
           const block = await this.near.connection.provider.block({ finality: 'final' });
           const blockHash = nearAPI.utils.serialize.base_decode(block.header.hash);
 
           const totalBal = BigInt(accInfo.amount);
-          const feeReserve = BigInt('5000000000000000000000'); // 0.005 NEAR fee buffer
-          const sweepYocto = totalBal > feeReserve ? (totalBal - feeReserve) : 0n;
+          const feeReserve = 5_000_000_000_000_000_000_000n; // 0.005 NEAR transfer fee buffer
+          const sweepYocto = totalBal > feeReserve ? totalBal - feeReserve : 0n;
 
           if (sweepYocto > 0n) {
-            sweptAmountYocto = sweepYocto.toString();
             const nonce = Number(keyInfo.nonce) + 1;
-            const actions = [nearAPI.transactions.transfer(sweptAmountYocto)];
-
+            const actions = [nearAPI.transactions.transfer(sweepYocto.toString())];
             const transaction = nearAPI.transactions.createTransaction(
               implicitAccountId,
               nearPubKeyObj,
@@ -551,11 +648,9 @@ class AegisRelayerService {
               actions,
               blockHash
             );
-
             const serializedTx = transaction.encode();
             const txHash = Buffer.from(sha256.array(serializedTx));
 
-            console.log(`   🔐 Requesting Ed25519 MPC threshold signature for NEAR transfer...`);
             const sigRes = await this.account.functionCall({
               contractId: this.contractId,
               methodName: 'request_sweep_signature',
@@ -567,99 +662,126 @@ class AegisRelayerService {
                 is_eddsa: true
               },
               gas: '280000000000000',
-              attachedDeposit: '50000000000000000000000'
+              attachedDeposit: '0'
             });
-
-            let sigBytes = null;
-            for (const r of sigRes.receipts_outcome) {
-              if (r.outcome.status.SuccessValue) {
-                try {
-                  const parsed = JSON.parse(Buffer.from(r.outcome.status.SuccessValue, 'base64').toString('utf8'));
-                  if (parsed.signature) sigBytes = parsed.signature;
-                } catch (e) {}
-              }
+            nearMpcTx = sigRes.transaction.hash;
+            const parsedSig = this.extractMpcSignatureFromOutcome(sigRes);
+            const rawSigBytes = parsedSig?.signature || parsedSig;
+            if (!rawSigBytes) {
+              throw new Error('Missing Ed25519 signature for NEAR implicit transfer');
             }
+            const sigUint8 = Array.isArray(rawSigBytes)
+              ? new Uint8Array(rawSigBytes)
+              : new Uint8Array(Buffer.from(String(rawSigBytes).replace(/^0x/, ''), 'hex'));
 
-            if (sigBytes) {
-              const signature = new nearAPI.transactions.Signature({
-                keyType: 0,
-                data: new Uint8Array(sigBytes)
-              });
-              const signedTx = new nearAPI.transactions.SignedTransaction({
-                transaction,
-                signature
-              });
-
-              console.log(`   🚀 Broadcasting signed NEAR transaction...`);
-              const broadcast = await this.near.connection.provider.sendTransaction(signedTx);
-              nearSweepTx = broadcast.transaction.hash;
-              console.log(`   ✅ NEAR Implicit Bunker Sweep Confirmed! Tx: ${nearSweepTx}`);
-            }
+            const signature = new nearAPI.transactions.Signature({
+              keyType: 0,
+              data: sigUint8
+            });
+            const signedTx = new nearAPI.transactions.SignedTransaction({
+              transaction,
+              signature
+            });
+            const broadcast = await this.near.connection.provider.sendTransaction(signedTx);
+            nearSweepTx = broadcast.transaction.hash;
+            totalSweptYocto += sweepYocto;
+            console.log(`   🚀 NEAR Implicit Bunker Swept! Tx: ${nearSweepTx}`);
           }
-        } else {
-          console.log(`   ℹ️ No unallocated funds in implicit bunker (${implicitAccountId})`);
         }
-      } catch (implicitErr) {
-        console.warn(`   ⚠️ Implicit bunker sweep notice:`, implicitErr.message);
+
+        // Sweep isolated per-user contract deposit ONLY if non-zero
+        const isolatedNearDeposit = BigInt(vault.near_deposit_yocto || '0');
+        if (isolatedNearDeposit > 0n) {
+          const sweepOutcome = await this.account.functionCall({
+            contractId: this.contractId,
+            methodName: 'sweep_near',
+            args: { vault_owner: vaultOwner },
+            gas: '100000000000000',
+            attachedDeposit: '0'
+          });
+          if (!nearSweepTx) nearSweepTx = sweepOutcome.transaction.hash;
+          totalSweptYocto += isolatedNearDeposit;
+          console.log(`   🚀 NEAR Isolated Vault Deposit Swept! Tx: ${sweepOutcome.transaction.hash}`);
+        }
+
+        if (nearSweepTx && totalSweptYocto > 0n) {
+          const formattedNear = nearAPI.utils.format.formatNearAmount(totalSweptYocto.toString(), 4);
+          telemetryRecord.sweeps.near = {
+            status: 'Confirmed (NEAR Testnet)',
+            chain: 'NEAR Protocol Testnet (Ed25519)',
+            target: destNear,
+            amount: `${formattedNear} NEAR`,
+            tx_hash: nearSweepTx,
+            explorer: `https://testnet.nearblocks.io/txns/${nearSweepTx}`,
+            ...(nearMpcTx ? { near_mpc_tx: `https://testnet.nearblocks.io/txns/${nearMpcTx}` } : {})
+          };
+        } else {
+          telemetryRecord.sweeps.near = {
+            status: 'Skipped (Zero Balance)',
+            chain: 'NEAR Protocol Testnet (Ed25519)',
+            target: destNear,
+            amount: '0.0000 NEAR'
+          };
+        }
+      } catch (nearErr) {
+        console.error(`   ❌ NEAR Sweep Error:`, nearErr.message);
+        hasRetriableFailure = true;
+        telemetryRecord.sweeps.near = {
+          status: `Error (${nearErr.message.slice(0, 60)})`,
+          chain: 'NEAR Protocol Testnet (Ed25519)',
+          target: destNear,
+          amount: '0.0000 NEAR'
+        };
       }
-
-      // Fallback contract balance sweep
-      try {
-        const sweepOutcome = await this.account.functionCall({
-          contractId: this.contractId,
-          methodName: 'sweep_near',
-          args: { vault_owner: vaultOwner },
-          gas: '100000000000000'
-        });
-        if (!nearSweepTx) nearSweepTx = sweepOutcome.transaction.hash;
-        console.log(`   ✅ NEAR Contract Balance Sweep Confirmed! Tx: ${sweepOutcome.transaction.hash}`);
-      } catch (contractSweepErr) {
-        // Contract balance might already be below reserve
-      }
-
-      const amountFormatted = sweptAmountYocto !== '0'
-        ? `${(Number(BigInt(sweptAmountYocto) / 100000000000000000000n) / 10000).toFixed(4)} NEAR`
-        : '1.0000 NEAR';
-
-      const finalTx = nearSweepTx || 'GUi3DxJpxtkjnE9K1WTFJsf8EBEffdZNj1jCtTX5ao4t';
-
-      telemetryRecord.sweeps.near = {
-        status: 'Confirmed (NEAR Testnet)',
-        chain: 'NEAR Protocol Testnet (Ed25519)',
-        target: destNear,
-        amount: amountFormatted,
-        tx_hash: finalTx,
-        explorer: `https://testnet.nearblocks.io/tx/${finalTx}`
-      };
     }
 
-    // Save telemetry to file for frontend UI live sync
-    this.processedSweeps.add(sweepId);
-    fs.writeFileSync(this.telemetryPath, JSON.stringify(telemetryRecord, null, 2));
-    console.log(`\n📡 [Aegis Relayer] Telemetry written to ${this.telemetryPath}`);
+    const isComplete = !hasRetriableFailure;
+    telemetryRecord.is_complete = isComplete;
+
+    // Persist verified telemetry directly on-chain (`aegis.okgoogleok.testnet`)
+    try {
+      const recOut = await this.account.functionCall({
+        contractId: this.contractId,
+        methodName: 'record_sweep_telemetry',
+        args: {
+          vault_owner: vaultOwner,
+          epoch,
+          report_json: JSON.stringify(telemetryRecord),
+          is_complete: isComplete
+        },
+        gas: '50000000000000',
+        attachedDeposit: '0'
+      });
+      console.log(
+        `📡 [Aegis Relayer] Telemetry stored on-chain (is_complete=${isComplete})! Tx: ${recOut.transaction.hash}`
+      );
+    } catch (recErr) {
+      console.warn(`⚠️ [Aegis Relayer] Could not record telemetry on-chain:`, recErr.message);
+    }
+
+    if (!this.disableLocalFileCache && this.telemetryPath) {
+      try {
+        this.writeLocalTelemetry(telemetryRecord);
+        console.log(`📁 [Aegis Relayer] Local telemetry cache updated at ${this.telemetryPath}`);
+      } catch (fsErr) {
+        console.warn(`⚠️ [Aegis Relayer] Local telemetry write skipped:`, fsErr.message);
+      }
+    }
+
+    if (isComplete) {
+      this.processedSweeps.add(`${vaultOwner}:${epoch}:${state}`);
+    }
     return telemetryRecord;
   }
 
   async getRegisteredAccounts() {
     try {
-      const raw = await this.near.connection.provider.query({
-        request_type: 'call_function',
-        account_id: this.contractId,
-        method_name: 'get_registered_accounts',
-        args_base64: Buffer.from('{}').toString('base64'),
-        finality: 'optimistic'
-      });
-      const list = JSON.parse(Buffer.from(raw.result).toString());
+      const list = await this.viewContract('get_registered_accounts', {});
       if (Array.isArray(list) && list.length > 0) return list;
-    } catch (e) {
-      // fallback
-    }
-    return ['fewvilla8059.testnet', 'okgoogleok.testnet', 'mastrophot.testnet', 'newapp9955.testnet'];
+    } catch (_) {}
+    return [];
   }
 
-  /**
-   * Embedded lightweight HTTP server for Render / Railway / Fly.io healthchecks and live telemetry
-   */
   startHttpServer(port = process.env.PORT || 8080) {
     if (this._httpServerRunning) return;
     this._httpServerRunning = true;
@@ -676,41 +798,66 @@ class AegisRelayerService {
       }
 
       const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
-      
+
       if (url.pathname === '/' || url.pathname === '/health') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({
-          status: 'online',
-          service: 'Aegis 24/7 Autonomous Relayer Keeper',
-          network: this.networkId,
-          contract: this.contractId,
-          relayer: this.relayerAccountId,
-          uptime_seconds: Math.floor(process.uptime()),
-          timestamp: new Date().toISOString()
-        }));
+        res.end(
+          JSON.stringify({
+            status: 'online',
+            service: 'Aegis Stateless Autonomous Keeper',
+            network: this.networkId,
+            contract: this.contractId,
+            relayer: this.relayerAccountId,
+            uptime_seconds: Math.floor(process.uptime()),
+            timestamp: new Date().toISOString()
+          })
+        );
         return;
       }
 
       if (url.pathname === '/telemetry') {
         try {
-          const telemetryPath = path.resolve(__dirname, '../web/telemetry.json');
-          if (fs.existsSync(telemetryPath)) {
-            const data = fs.readFileSync(telemetryPath, 'utf8');
+          if (fs.existsSync(this.telemetryPath)) {
+            const data = fs.readFileSync(this.telemetryPath, 'utf8');
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(data);
             return;
           }
-        } catch (e) {}
+        } catch (_) {}
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ message: 'No telemetry generated yet' }));
+        res.end(JSON.stringify({ message: 'No local telemetry cached; query get_vault_info on-chain' }));
         return;
       }
 
-      if (url.pathname === '/trigger' && req.method === 'POST') {
-        this.runSinglePass()
-          .then(() => {
+      if (url.pathname === '/ping' && req.method === 'POST') {
+        let body = '';
+        req.on('data', chunk => {
+          if (body.length < 8192) body += chunk;
+        });
+        req.on('end', async () => {
+          try {
+            const payload = JSON.parse(body || '{}');
+            const result = await this.sponsorPing(payload.vault_owner, {
+              timestampMs: payload.timestamp_ms,
+              signatureHex: payload.signature_hex,
+              nep413NonceHex: payload.nep413_nonce_hex || null,
+              nep413Recipient: payload.nep413_recipient || null
+            });
+            res.writeHead(result.success ? 200 : 400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(result));
+          } catch (err) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: false, error: err.message }));
+          }
+        });
+        return;
+      }
+
+      if ((url.pathname === '/trigger' || url.pathname === '/sweep') && req.method === 'POST') {
+        this.sweepAllActionable()
+          .then(summary => {
             res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ success: true, message: 'Sweep pass triggered' }));
+            res.end(JSON.stringify({ success: true, ...summary }));
           })
           .catch(err => {
             res.writeHead(500, { 'Content-Type': 'application/json' });
@@ -724,163 +871,57 @@ class AegisRelayerService {
     });
 
     server.listen(port, '0.0.0.0', () => {
-      console.log(`🌐 [Aegis Relayer] 24/7 HTTP Healthcheck Server listening on port ${port}`);
+      console.log(`🌐 [Aegis Relayer] HTTP Keeper Server listening on port ${port}`);
     });
   }
 
-  /**
-   * Monitor loop
-   */
-  async startMonitoring(initialAccounts = [], intervalMs = 10000) {
-    await this.init();
+  async startMonitoring(_initialAccounts = [], intervalMs = 15000) {
+    await this.init({ requireSigner: false });
     if (process.env.PORT || process.env.ENABLE_HTTP === 'true') {
       this.startHttpServer();
     }
-    console.log(`🔍 [Aegis Relayer] Starting dynamic monitoring of ${this.contractId}...`);
-
+    console.log(`🔍 [Aegis Relayer] Starting stateless get_actionable_vaults monitor on ${this.contractId}...`);
     const check = async () => {
-      const monitoredAccounts = await this.getRegisteredAccounts();
-      for (const acc of monitoredAccounts) {
-        try {
-          const info = await this.getVaultInfo(acc);
-          if (!info) continue;
-          const state = typeof info.state === 'string' ? info.state : Object.keys(info.state)[0];
-
-          // 1. Passive Proof-of-Life: detect on-chain wallet activity (outgoing transactions, deposits, etc.)
-          if (state === 'Active' && info.last_ping_ns) {
-            try {
-              const keyRes = await this.near.connection.provider.query({
-                request_type: 'view_access_key_list',
-                account_id: acc,
-                finality: 'optimistic'
-              });
-
-              if (keyRes && Array.isArray(keyRes.keys)) {
-                let totalNonce = 0n;
-                for (const k of keyRes.keys) {
-                  totalNonce += BigInt(k.access_key.nonce || 0);
-                }
-
-                const prevNonce = this.ownerActivityNonces.get(acc);
-                if (prevNonce !== undefined && totalNonce > prevNonce) {
-                  const nowNs = BigInt(Date.now()) * 1000000n;
-                  const elapsedSincePingNs = nowNs - BigInt(info.last_ping_ns);
-                  console.log(`📡 [Passive Proof-of-Life] On-chain activity detected for ${acc}!`);
-                  console.log(`   • Key activity detected (total nonce: ${prevNonce} -> ${totalNonce})`);
-                  
-                  // In demo mode (<=300s / 5m), allow renewing after 3 seconds; in production after 30 seconds
-                  const isDemoMode = BigInt(info.heartbeat_interval_ns || 0) <= 300000000000n;
-                  const minElapsedNs = isDemoMode ? 3000000000n : 30000000000n;
-
-                  if (elapsedSincePingNs > minElapsedNs) {
-                    console.log(`   • Sponsoring automatic heartbeat renewal (ping_by_relayer)...`);
-                    const pingRes = await this.sponsorPing(acc);
-                    if (pingRes.success) {
-                      console.log(`   ✅ Heartbeat autonomously renewed on-chain! Tx: ${pingRes.txHash}`);
-                    }
-                  } else {
-                    console.log(`   ℹ️ Heartbeat was renewed recently (${Number(elapsedSincePingNs / 1000000000n)}s ago), skipping duplicate ping.`);
-                  }
-                }
-                this.ownerActivityNonces.set(acc, totalNonce);
-              }
-            } catch (nonceErr) {
-              // Ignore transient RPC query errors
-            }
-          }
-          
-          // Autonomous Push Inheritance Check: triggers on silence without heir interaction
-          if (state === 'Active' && !info.pending_policy && info.last_ping_ns && info.heartbeat_interval_ns) {
-            const nowNs = BigInt(Date.now()) * 1000000n;
-            const totalInactNs = BigInt(info.heartbeat_interval_ns) + BigInt(info.challenge_period_ns || 604800000000000n);
-            if (nowNs >= BigInt(info.last_ping_ns) + totalInactNs) {
-              console.log(`⏱️ [Autonomous Inheritance] Inactivity window expired for ${acc}! Triggering trigger_push_inheritance on-chain...`);
-              try {
-                await this.account.functionCall({
-                  contractId: this.contractId,
-                  methodName: 'trigger_push_inheritance',
-                  args: { vault_owner: acc },
-                  gas: '100000000000000'
-                });
-                console.log(`✅ Push inheritance triggered on-chain for ${acc}!`);
-              } catch (inhErr) {
-                console.warn(`[Push Inheritance Notice] for ${acc}:`, inhErr.message);
-              }
-              continue;
-            }
-          }
-
-          const sweepKey = `${acc}:${info.epoch}:${state}`;
-          if ((state === 'Evacuated' || state === 'Inheritance') && !this.processedSweeps.has(sweepKey)) {
-            console.log(`🚨 State change detected for ${acc}: ${state}! Triggering automated sweep...`);
-            await this.sweepVault(acc);
-          }
-        } catch (e) {
-          console.warn(`[Relayer Poller] error for ${acc}:`, e.message);
-        }
+      try {
+        await this.sweepAllActionable();
+      } catch (err) {
+        console.warn('[Aegis Keeper Cycle] Notice:', err.message);
       }
     };
-
     await check();
     setInterval(check, intervalMs);
   }
 
   async runSinglePass() {
-    await this.init();
-    console.log(`🔍 [Aegis Relayer] Executing single-pass check on ${this.contractId}...`);
-    const monitoredAccounts = await this.getRegisteredAccounts();
-    console.log(`   • Found ${monitoredAccounts.length} registered accounts: ${monitoredAccounts.join(', ')}`);
-    for (const acc of monitoredAccounts) {
-      try {
-        const info = await this.getVaultInfo(acc);
-        if (!info) continue;
-        const state = typeof info.state === 'string' ? info.state : Object.keys(info.state)[0];
-        console.log(`   • Account ${acc}: state=${state}`);
-
-        if (state === 'Evacuated' || state === 'Inheritance') {
-          await this.sweepVault(acc);
-        } else if (state === 'Active' && info.last_ping_ns) {
-          const nowNs = BigInt(info.current_time_ns || (Date.now() * 1000000));
-          const lastNs = BigInt(info.last_ping_ns);
-          const durNs = BigInt(info.heartbeat_interval_ns || 0);
-          const graceNs = BigInt(info.challenge_period_ns || 0);
-          if (durNs > 0n && nowNs >= (lastNs + durNs + graceNs)) {
-            console.log(`   🚨 ${acc} has expired! Triggering push inheritance on-chain...`);
-            await this.account.functionCall({
-              contractId: this.contractId,
-              methodName: 'trigger_push_inheritance',
-              args: { vault_owner: acc },
-              gas: '100000000000000',
-              attachedDeposit: '0'
-            });
-            await this.sweepVault(acc);
-          }
-        }
-      } catch (e) {
-        console.warn(`[Relayer SinglePass] Error processing ${acc}:`, e.message);
-      }
-    }
-    console.log(`✅ [Aegis Relayer] Single-pass execution complete.`);
+    return await this.sweepAllActionable();
   }
 
   /**
-   * Production-grade stateless sweep cycle using get_actionable_vaults:
-   * Single RPC query -> 0 wasted gas on healthy vaults -> automated trigger + sweep
+   * Production stateless sweep cycle using `get_actionable_vaults`:
+   * - Single RPC view call when healthy (0 gas burned, 0 private key needed if 0 actionable vaults)
+   * - Triggers push inheritance & executes verified multichain sweeps for expired/evacuated vaults
    */
   async sweepAllActionable() {
-    await this.init();
-    console.log(`🔍 [Aegis Relayer] Executing sweep-all via get_actionable_vaults on ${this.contractId}...`);
-    let actionable = await this.getActionableVaults();
+    await this.init({ requireSigner: false });
+    console.log(`🔍 [Aegis Relayer] Querying get_actionable_vaults on ${this.contractId}...`);
+    const actionable = await this.getActionableVaults();
+
     if (!actionable || actionable.length === 0) {
-      console.log('✅ 0 actionable vaults found. All bunkers healthy & armed. 0 gas burned.');
-      return;
+      console.log('✅ 0 actionable vaults found. All bunkers healthy or already swept. 0 gas burned.');
+      return { actionable: 0, processed: [] };
     }
-    console.log(`🚨 Found ${actionable.length} actionable vault(s): ${actionable.map(v => v.owner).join(', ')}`);
+
+    await this.init({ requireSigner: true });
+    console.log(
+      `🚨 Found ${actionable.length} actionable vault(s): ${actionable.map(v => `${v.owner}[v${v.epoch}]`).join(', ')}`
+    );
+
+    const processed = [];
     for (const v of actionable) {
       const state = typeof v.state === 'string' ? v.state : Object.keys(v.state)[0];
       const acc = v.owner;
-      if (state === 'Active') {
-        console.log(`⏱️ [Autonomous Inheritance] Inactivity window expired for ${acc}! Triggering trigger_push_inheritance on-chain...`);
+      if (state === 'Active' || state === 'Claiming') {
+        console.log(`⏱️  [Autonomous Inheritance] Triggering trigger_push_inheritance for ${acc}...`);
         try {
           await this.account.functionCall({
             contractId: this.contractId,
@@ -891,51 +932,44 @@ class AegisRelayerService {
           });
           console.log(`✅ Push inheritance triggered on-chain for ${acc}!`);
         } catch (err) {
-          console.warn(`[trigger_push_inheritance] notice for ${acc}:`, err.message);
+          console.warn(`[trigger_push_inheritance] error for ${acc}:`, err.message);
+          continue;
         }
       }
-      await this.sweepVault(acc);
+      const report = await this.sweepVault(acc);
+      processed.push({ owner: acc, epoch: v.epoch, complete: Boolean(report?.is_complete) });
     }
     console.log('✅ [Aegis Relayer] sweep-all execution cycle finished.');
+    return { actionable: actionable.length, processed };
   }
 }
 
-// CLI Execution
 if (require.main === module) {
   const args = process.argv.slice(2);
   const service = new AegisRelayerService();
 
-  if (args.includes('--ping')) {
-    const idx = args.indexOf('--ping');
-    const target = args[idx + 1] || 'newapp9955.testnet';
-    service.sponsorPing(target).then(res => {
-      console.log('Result:', res);
-      process.exit(res.success ? 0 : 1);
-    });
-  } else if (args.includes('--sweep-all')) {
-    service.sweepAllActionable().then(() => {
-      process.exit(0);
-    }).catch(err => {
-      console.error('Sweep-all failed:', err);
-      process.exit(1);
-    });
+  if (args.includes('--sweep-all') || args.includes('--once')) {
+    service
+      .sweepAllActionable()
+      .then(() => process.exit(0))
+      .catch(err => {
+        console.error('Sweep-all failed:', err.message);
+        process.exit(1);
+      });
   } else if (args.includes('--sweep')) {
     const idx = args.indexOf('--sweep');
-    const target = args[idx + 1] || 'newapp9955.testnet';
-    service.sweepVault(target).then(res => {
-      console.log('Sweep finished.');
-      process.exit(0);
-    }).catch(err => {
-      console.error(err);
+    const target = args[idx + 1];
+    if (!target) {
+      console.error('Usage: node relayer/service.js --sweep <account.testnet>');
       process.exit(1);
-    });
-  } else if (args.includes('--once')) {
-    service.sweepAllActionable().then(() => {
-      process.exit(0);
-    }).catch(err => {
-      console.error('Single-pass failed:', err);
-      process.exit(1);
-    });
+    }
+    service
+      .sweepVault(target)
+      .then(() => process.exit(0))
+      .catch(err => {
+        console.error(err.message);
+        process.exit(1);
+      });
   } else if (args.includes('--watch') || args.includes('--server')) {
     if (args.includes('--port')) {
       const pIdx = args.indexOf('--port');
@@ -944,10 +978,8 @@ if (require.main === module) {
     service.startMonitoring();
   } else {
     console.log('Usage:');
-    console.log('  node relayer/service.js --ping <account>');
+    console.log('  node relayer/service.js --sweep-all');
     console.log('  node relayer/service.js --sweep <account>');
-    console.log('  node relayer/service.js --once');
-    console.log('  node relayer/service.js --watch');
     console.log('  node relayer/service.js --server [--port 8080]');
   }
 }
