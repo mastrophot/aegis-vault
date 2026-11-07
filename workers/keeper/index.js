@@ -1,15 +1,23 @@
 /**
  * Aegis Cloudflare Worker: 24/7 Stateless Autonomous Keeper (`nodejs_compat`)
  *
- * - Runs on 1-minute Cron (`* * * * *`) + HTTP `/sweep` & `/ping` endpoints
- * - Uses restricted `FunctionCall` key on `keeper.aegis.okgoogleok.testnet` (injected via `wrangler secret put RELAYER_PRIVATE_KEY`)
+ * - Lazy-loads heavy multichain crypto libraries (`ethers`, `bitcoinjs-lib`, `@solana/web3.js`, `chainsig.js`)
+ *   inside request/cron handlers so Worker cold-start CPU stays <5ms
+ * - Uses restricted `FunctionCall` key on `keeper.aegis.okgoogleok.testnet`
  * - Executes real NEAR MPC threshold sweeps (`v1.signer-prod.testnet`) and broadcasts to BTC, EVM, Solana & NEAR
  * - Persists verified telemetry on-chain via `record_sweep_telemetry` (+ optional Cloudflare KV mirror)
  */
 
 import './shims/workerd-init.js';
-import relayerPkg from '../../relayer/service.js';
-const { AegisRelayerService } = relayerPkg;
+
+let CachedRelayerService = null;
+async function getRelayerServiceClass() {
+  if (!CachedRelayerService) {
+    const mod = await import('../../relayer/service.js');
+    CachedRelayerService = mod.AegisRelayerService || (mod.default && mod.default.AegisRelayerService);
+  }
+  return CachedRelayerService;
+}
 
 const CORS_HEADERS = {
   'Content-Type': 'application/json',
@@ -18,7 +26,8 @@ const CORS_HEADERS = {
   'Access-Control-Allow-Headers': 'Content-Type, Authorization'
 };
 
-function createKeeperService(env) {
+async function createKeeperService(env) {
+  const AegisRelayerService = await getRelayerServiceClass();
   return new AegisRelayerService({
     networkId: env.NEAR_NETWORK || 'testnet',
     contractId: env.CONTRACT_ID || 'aegis.okgoogleok.testnet',
@@ -32,7 +41,7 @@ function createKeeperService(env) {
 }
 
 async function executeSweepCycle(env) {
-  const keeper = createKeeperService(env);
+  const keeper = await createKeeperService(env);
   const summary = await keeper.sweepAllActionable();
 
   if (env.AEGIS_TELEMETRY_KV && summary.processed && summary.processed.length > 0) {
@@ -92,7 +101,7 @@ export default {
     if (url.pathname === '/ping' && request.method === 'POST') {
       try {
         const body = await request.json();
-        const keeper = createKeeperService(env);
+        const keeper = await createKeeperService(env);
         const res = await keeper.sponsorPing(body.vault_owner, {
           timestampMs: body.timestamp_ms,
           signatureHex: body.signature_hex,
@@ -120,7 +129,7 @@ export default {
         }
       }
       if (owner) {
-        const keeper = createKeeperService(env);
+        const keeper = await createKeeperService(env);
         const info = await keeper.getVaultInfo(owner);
         if (info && info.last_sweep_report) {
           return new Response(info.last_sweep_report, { status: 200, headers: CORS_HEADERS });
