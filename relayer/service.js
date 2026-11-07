@@ -858,27 +858,37 @@ class AegisRelayerService {
       let nearMpcTx = null;
 
       try {
+        // 4a. Sweep isolated per-user contract deposit first
+        const isolatedNearDeposit = BigInt(vault.near_deposit_yocto || '0');
+        if (isolatedNearDeposit > 0n) {
+          const sweepOutcome = await this.callContract('sweep_near', { vault_owner: vaultOwner }, '100000000000000', '0');
+          if (!nearSweepTx) nearSweepTx = sweepOutcome.transaction.hash;
+          totalSweptYocto += isolatedNearDeposit;
+          console.log(`   🚀 NEAR Isolated Vault Deposit Swept! Tx: ${sweepOutcome.transaction.hash}`);
+        }
+
+        // 4b. Check NEAR implicit bunker account if not already swept in an edge-constrained pass
         const nearPubKeyObj = nearAPI.utils.PublicKey.from('ed25519:' + vaultAddrs.sol.address);
         const implicitAccountId = Buffer.from(nearPubKeyObj.data).toString('hex');
         const nearPubKeyStr = 'ed25519:' + vaultAddrs.sol.address;
 
-        const accInfo = await this.nearRpc('query', {
-          request_type: 'view_account',
-          finality: 'final',
-          account_id: implicitAccountId
-        }).catch(() => null);
+        const accInfo =
+          isolatedNearDeposit > 0n && options.transitionedInSamePass
+            ? null
+            : await this.nearRpc('query', {
+                request_type: 'view_account',
+                finality: 'final',
+                account_id: implicitAccountId
+              }).catch(() => null);
 
         if (accInfo && accInfo.amount && BigInt(accInfo.amount) > 10_000_000_000_000_000_000_000n) {
-          const [keyInfo, block] = await Promise.all([
-            this.nearRpc('query', {
-              request_type: 'view_access_key',
-              finality: 'final',
-              account_id: implicitAccountId,
-              public_key: nearPubKeyStr
-            }),
-            this.nearRpc('block', { finality: 'final' })
-          ]);
-          const blockHash = nearAPI.utils.serialize.base_decode(block.header.hash);
+          const keyInfo = await this.nearRpc('query', {
+            request_type: 'view_access_key',
+            finality: 'final',
+            account_id: implicitAccountId,
+            public_key: nearPubKeyStr
+          });
+          const blockHash = nearAPI.utils.serialize.base_decode(keyInfo.block_hash);
 
           const totalBal = BigInt(accInfo.amount);
           const feeReserve = 5_000_000_000_000_000_000_000n; // 0.005 NEAR transfer fee buffer
@@ -936,15 +946,6 @@ class AegisRelayerService {
             totalSweptYocto += sweepYocto;
             console.log(`   🚀 NEAR Implicit Bunker Swept! Tx: ${nearSweepTx}`);
           }
-        }
-
-        // Sweep isolated per-user contract deposit ONLY if non-zero
-        const isolatedNearDeposit = BigInt(vault.near_deposit_yocto || '0');
-        if (isolatedNearDeposit > 0n) {
-          const sweepOutcome = await this.callContract('sweep_near', { vault_owner: vaultOwner }, '100000000000000', '0');
-          if (!nearSweepTx) nearSweepTx = sweepOutcome.transaction.hash;
-          totalSweptYocto += isolatedNearDeposit;
-          console.log(`   🚀 NEAR Isolated Vault Deposit Swept! Tx: ${sweepOutcome.transaction.hash}`);
         }
 
         if (nearSweepTx && totalSweptYocto > 0n) {
@@ -1165,46 +1166,27 @@ class AegisRelayerService {
       const acc = v.owner;
       const prefetchedVault = await this.getVaultInfo(acc);
       if (!prefetchedVault) continue;
-      let preSweptNear = null;
+      let transitionedInSamePass = false;
 
       if (state === 'Active' || state === 'Claiming') {
         console.log(`⏱️  [Autonomous Inheritance] Triggering trigger_push_inheritance for ${acc}...`);
         try {
-          const isolatedDeposit = BigInt(prefetchedVault.near_deposit_yocto || '0');
-          const hasHeirNear = Boolean(prefetchedVault.heirs?.near && prefetchedVault.heirs.near.trim().length > 2);
-          const batchActions = [
-            {
-              methodName: 'trigger_push_inheritance',
-              args: { vault_owner: acc },
-              gas: '80000000000000',
-              attachedDeposit: '0'
-            }
-          ];
-          if (isolatedDeposit > 0n && hasHeirNear) {
-            batchActions.push({
-              methodName: 'sweep_near',
-              args: { vault_owner: acc },
-              gas: '100000000000000',
-              attachedDeposit: '0'
-            });
-          }
-          const pushOut = await this.callContractActions(batchActions);
+          const pushOut = await this.callContract(
+            'trigger_push_inheritance',
+            { vault_owner: acc },
+            '80000000000000',
+            '0'
+          );
           console.log(`✅ Push inheritance triggered on-chain for ${acc}! Tx: ${pushOut.transaction.hash}`);
           prefetchedVault.state = 'Inheritance';
           prefetchedVault.is_epoch_swept = false;
-          if (isolatedDeposit > 0n && hasHeirNear) {
-            preSweptNear = {
-              txHash: pushOut.transaction.hash,
-              amountYocto: isolatedDeposit.toString()
-            };
-            prefetchedVault.near_deposit_yocto = '0';
-          }
+          transitionedInSamePass = true;
         } catch (err) {
           console.warn(`[trigger_push_inheritance] error for ${acc}:`, err.message);
           continue;
         }
       }
-      const report = await this.sweepVault(acc, { prefetchedVault, preSweptNear });
+      const report = await this.sweepVault(acc, { prefetchedVault, transitionedInSamePass });
       processed.push({
         owner: acc,
         epoch: v.epoch,

@@ -4874,7 +4874,12 @@
       }
       try {
         const res = await fetch(`${keeperUrl}/trigger`, { method: 'POST' });
-        const data = await res.json().catch(() => null);
+        let data = await res.json().catch(() => null);
+        if (data?.processed?.some(p => !p.complete)) {
+          await new Promise(r => setTimeout(r, 1500));
+          const res2 = await fetch(`${keeperUrl}/trigger`, { method: 'POST' });
+          data = await res2.json().catch(() => data);
+        }
         await fetchLiveContractState();
         fetchLiveBalances(true);
         if (showFeedback) {
