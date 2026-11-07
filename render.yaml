@@ -24,6 +24,6 @@ services:
       - key: NEAR_RPC_URL
         value: https://test.rpc.fastnear.com
       - key: SOLANA_RPC_URL
-        value: https://api.devnet.solana.com
+        value: https://solana-devnet.api.onfinality.io/public
       - key: EVM_RPC_URL
         value: https://ethereum-sepolia-rpc.publicnode.com

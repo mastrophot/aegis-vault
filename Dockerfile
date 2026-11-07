@@ -21,7 +21,7 @@ ENV NODE_ENV=production \
     CONTRACT_ID=aegis.okgoogleok.testnet \
     RELAYER_ACCOUNT_ID=keeper.aegis.okgoogleok.testnet \
     NEAR_RPC_URL=https://test.rpc.fastnear.com \
-    SOLANA_RPC_URL=https://api.devnet.solana.com \
+    SOLANA_RPC_URL=https://solana-devnet.api.onfinality.io/public \
     EVM_RPC_URL=https://ethereum-sepolia-rpc.publicnode.com
 
 EXPOSE 8080

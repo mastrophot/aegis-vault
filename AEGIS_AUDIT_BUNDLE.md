@@ -4933,7 +4933,7 @@ if (typeof window !== "undefined") {
             </span>
           </div>
           <p class="text-xs text-[#8C95A6] hidden sm:block mt-0.5">
-            Multichain MPC Dead-Man's Switch · Chain Signatures MPC (`v1.signer`)
+            Multichain MPC Dead-Man's Switch · Chain Signatures MPC (v1.signer-prod.testnet)
           </p>
         </div>
       </div>
@@ -6084,7 +6084,7 @@ if (typeof window !== "undefined") {
 
       <!-- Footer Info -->
       <div class="text-[11px] font-mono text-[#6E788C] flex items-center justify-between border-t border-white/[0.06] pt-3.5">
-        <span>Smart contract on NEAR Testnet (`aegis.okgoogleok.testnet`)</span>
+        <span>Smart contract on NEAR Testnet (aegis.okgoogleok.testnet)</span>
         <span class="text-[#00F5D4] font-semibold">100% Non-Custodial</span>
       </div>
 
@@ -6256,7 +6256,7 @@ if (typeof window !== "undefined") {
           </div>
 
           <div class="pt-2 border-t border-nearBorder flex items-center justify-between text-xs font-sans">
-            <span class="text-textGray">24/7 Stateless Cloud Keeper (`keeper.aegis.okgoogleok.testnet`):</span>
+            <span class="text-textGray">24/7 Stateless Cloud Keeper (keeper.aegis.okgoogleok.testnet):</span>
             <button id="syncKeeperBtn" onclick="triggerCloudKeeperSweep(true)" class="px-4 py-1.5 near-pill-btn bg-nearGreen/20 hover:bg-nearGreen/30 text-nearGreen font-bold border border-nearGreen/40 transition active:scale-98 flex items-center gap-1.5 cursor-pointer">
               <span>⚡ Sync Cloud Keeper</span>
             </button>
@@ -6429,7 +6429,7 @@ if (typeof window !== "undefined") {
     ];
     const NEAR_RPC_URLS = [
       'https://test.rpc.fastnear.com',
-      'https://rpc.testnet.near.org'
+      'https://rpc.testnet.fastnear.com'
     ];
     let currentRpcIndex = 0;
     const CONTRACT_ID = 'aegis.okgoogleok.testnet';
@@ -10242,7 +10242,7 @@ async function runSweepSimulation() {
   // 4b. NEAR Native Sweep Simulation
   console.log('4️⃣b. Simulating Native NEAR Vault Sweep (Testnet)...');
   const nearSweep = relayer.prepareNearSweep({
-    fromAccount: 'lastkey-vault-2151.testnet',
+    fromAccount: 'aegis.okgoogleok.testnet',
     toAccount: 'mastrophot.testnet',
     balanceYocto: '10000000000000000000000000', // 10 NEAR
     memo: 'Aegis NEAR Evacuation'
@@ -10334,12 +10334,16 @@ runSweepSimulation().catch(err => {
 const { contracts, chainAdapters } = require('chainsig.js');
 const { Connection } = require('@solana/web3.js');
 
-async function deriveAllVaultAddresses(accountId = 'lastkey-vault-2151.testnet', path = 'aegis/v0', networkId = 'testnet') {
+async function deriveAllVaultAddresses(accountId = 'aegis.okgoogleok.testnet', path = 'aegis/v0', networkId = 'testnet') {
   console.log(`\n🔑 Deriving Vault Addresses via NEAR MPC (${networkId.toUpperCase()})`);
   console.log(`• NEAR Vault Contract: ${accountId}`);
   console.log(`• Derivation Path:     ${path}\n`);
 
-  const contract = new contracts.ChainSignatureContract({ networkId });
+  const contract = new contracts.ChainSignatureContract({
+    networkId,
+    contractId: networkId === 'mainnet' ? 'v1.signer' : 'v1.signer-prod.testnet',
+    fallbackRpcUrls: [networkId === 'mainnet' ? 'https://free.rpc.fastnear.com' : 'https://test.rpc.fastnear.com']
+  });
 
   // 1. EVM (Ethereum / Base / Arbitrum / Polygon)
   const evmAdapter = new chainAdapters.evm.EVM({ contract });
@@ -10375,7 +10379,7 @@ async function deriveAllVaultAddresses(accountId = 'lastkey-vault-2151.testnet',
 }
 
 if (require.main === module) {
-  const accountId = process.argv[2] || 'lastkey-vault-2151.testnet';
+  const accountId = process.argv[2] || 'aegis.okgoogleok.testnet';
   const path = process.argv[3] || 'aegis/v0';
   const networkId = process.argv[4] || 'testnet';
   deriveAllVaultAddresses(accountId, path, networkId)

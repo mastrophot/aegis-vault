@@ -13,5 +13,5 @@ services:
       - RELAYER_PRIVATE_KEY=${RELAYER_PRIVATE_KEY}
       - NEAR_NETWORK=testnet
       - NEAR_RPC_URL=https://test.rpc.fastnear.com
-      - SOLANA_RPC_URL=https://api.devnet.solana.com
+      - SOLANA_RPC_URL=https://solana-devnet.api.onfinality.io/public
       - EVM_RPC_URL=https://ethereum-sepolia-rpc.publicnode.com

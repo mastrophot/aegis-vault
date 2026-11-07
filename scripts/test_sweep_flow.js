@@ -174,7 +174,7 @@ async function runSweepSimulation() {
   // 4b. NEAR Native Sweep Simulation
   console.log('4️⃣b. Simulating Native NEAR Vault Sweep (Testnet)...');
   const nearSweep = relayer.prepareNearSweep({
-    fromAccount: 'lastkey-vault-2151.testnet',
+    fromAccount: 'aegis.okgoogleok.testnet',
     toAccount: 'mastrophot.testnet',
     balanceYocto: '10000000000000000000000000', // 10 NEAR
     memo: 'Aegis NEAR Evacuation'

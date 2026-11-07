@@ -7,12 +7,16 @@
 const { contracts, chainAdapters } = require('chainsig.js');
 const { Connection } = require('@solana/web3.js');
 
-async function deriveAllVaultAddresses(accountId = 'lastkey-vault-2151.testnet', path = 'aegis/v0', networkId = 'testnet') {
+async function deriveAllVaultAddresses(accountId = 'aegis.okgoogleok.testnet', path = 'aegis/v0', networkId = 'testnet') {
   console.log(`\n🔑 Deriving Vault Addresses via NEAR MPC (${networkId.toUpperCase()})`);
   console.log(`• NEAR Vault Contract: ${accountId}`);
   console.log(`• Derivation Path:     ${path}\n`);
 
-  const contract = new contracts.ChainSignatureContract({ networkId });
+  const contract = new contracts.ChainSignatureContract({
+    networkId,
+    contractId: networkId === 'mainnet' ? 'v1.signer' : 'v1.signer-prod.testnet',
+    fallbackRpcUrls: [networkId === 'mainnet' ? 'https://free.rpc.fastnear.com' : 'https://test.rpc.fastnear.com']
+  });
 
   // 1. EVM (Ethereum / Base / Arbitrum / Polygon)
   const evmAdapter = new chainAdapters.evm.EVM({ contract });
@@ -48,7 +52,7 @@ async function deriveAllVaultAddresses(accountId = 'lastkey-vault-2151.testnet',
 }
 
 if (require.main === module) {
-  const accountId = process.argv[2] || 'lastkey-vault-2151.testnet';
+  const accountId = process.argv[2] || 'aegis.okgoogleok.testnet';
   const path = process.argv[3] || 'aegis/v0';
   const networkId = process.argv[4] || 'testnet';
   deriveAllVaultAddresses(accountId, path, networkId)

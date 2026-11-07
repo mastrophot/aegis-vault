@@ -64,27 +64,27 @@ async function pollUpdates() {
             pairedChats.add(chatId);
             await sendMessage(
               chatId,
-              `🛡️ <b>LastKey Vault Sentinel Connected!</b>\n\n` +
-              `Welcome, <b>${from}</b>. Your Telegram account is now securely linked to your LastKey Vault.\n\n` +
+              `🛡️ <b>Aegis Vault Sentinel Connected!</b>\n\n` +
+              `Welcome, <b>${from}</b>. Your Telegram account is now securely linked to your Aegis Vault.\n\n` +
               `✅ <b>Zero-Spam Protection:</b> You will only receive critical alerts:\n` +
               `• 14-day & 3-day advance heartbeat warnings\n` +
               `• Emergency Panic evacuation broadcast notifications\n` +
               `• Unauthorized address modification attempts\n\n` +
-              `🔗 <i>Vault Account: lastkey-vault-2151.testnet</i>`
+              `🔗 <i>Vault Contract: aegis.okgoogleok.testnet</i>`
             );
           } else if (text === '/test_panic') {
             await sendMessage(
               chatId,
               `🚨 <b>[TEST EMERGENCY PANIC]</b>\n\n` +
-              `Panic triggered on vault <code>lastkey-vault-2151.testnet</code>!\n` +
-              `All assets across BTC, EVM, and Solana are being evacuated to your cold Ledger.`
+              `Panic triggered on contract <code>aegis.okgoogleok.testnet</code>!\n` +
+              `All assets across BTC, EVM, Solana, and NEAR are being evacuated to your cold backup addresses.`
             );
           } else if (text === '/test_alert') {
             await sendMessage(
               chatId,
-              `⚠️ <b>[LASTKEY HEARTBEAT WARNING]</b>\n\n` +
-              `Your vault has <b>3 days remaining</b> before the inheritance claim grace window opens!\n\n` +
-              `Please open your dashboard and click <b>I AM ALIVE</b> to reset the 90-day timer.`
+              `⚠️ <b>[AEGIS HEARTBEAT WARNING]</b>\n\n` +
+              `Your vault has <b>3 days remaining</b> before the inheritance grace window opens!\n\n` +
+              `Please open your dashboard and click <b>Check-In Now</b> to reset your timer.`
             );
           }
         }

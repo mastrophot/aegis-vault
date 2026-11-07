@@ -1,10 +1,10 @@
 /**
- * LastKey Vault Testnet Deployment Script
+ * Aegis Vault Testnet Deployment Script
  * 
  * 1. Generates an Ed25519 KeyPair
  * 2. Creates a unique testnet account via NEAR Testnet Faucet
  * 3. Deploys lastkey_vault.wasm to NEAR Testnet
- * 4. Initializes the vault contract with owner, guardian, and backup addresses
+ * 4. Initializes the multi-tenant vault contract with mpc_contract and default_relayer
  */
 
 const fs = require('fs');
@@ -51,11 +51,11 @@ async function createTestnetAccount(accountId, publicKey) {
 
 async function deploy() {
   console.log('====================================================');
-  console.log('🚀 LASTKEY TESTNET DEPLOYMENT ENGINE');
+  console.log('🚀 AEGIS VAULT TESTNET DEPLOYMENT ENGINE');
   console.log('====================================================\n');
 
   const randomSuffix = Math.floor(1000 + Math.random() * 9000);
-  const accountId = `lastkey-vault-${randomSuffix}.testnet`;
+  const accountId = process.env.CONTRACT_ID || `aegis-vault-${randomSuffix}.testnet`;
   const wasmPath = path.resolve(__dirname, '../contracts/vault/target/wasm32-unknown-unknown/release/lastkey_vault.wasm');
 
   if (!fs.existsSync(wasmPath)) {
@@ -81,7 +81,7 @@ async function deploy() {
   const config = {
     networkId: 'testnet',
     keyStore,
-    nodeUrl: 'https://rpc.testnet.near.org',
+    nodeUrl: process.env.NEAR_RPC_URL || 'https://test.rpc.fastnear.com',
     walletUrl: 'https://testnet.mynearwallet.com',
     helperUrl: 'https://helper.testnet.near.org',
     explorerUrl: 'https://testnet.nearblocks.io'
@@ -99,28 +99,13 @@ async function deploy() {
   console.log(`✅ Contract deployed! Transaction: ${deployResult.transaction.hash}`);
 
   // 5. Initialize Contract (LastKeyVault::new)
-  console.log(`⚙️  Initializing Vault contract...`);
-  const owner = 'mastrophot.testnet';
+  console.log(`⚙️  Initializing Multi-Tenant Vault contract...`);
   const mpcContract = 'v1.signer-prod.testnet';
+  const defaultRelayer = process.env.RELAYER_ACCOUNT_ID || `keeper.${accountId}`;
 
   const initArgs = {
-    owner,
     mpc_contract: mpcContract,
-    backup: {
-      btc: 'tb1qug7ge5vzhslcywjqs62k5392uy7ta5klvd2f7c',
-      evm: '0xbaF34172995c3a00bbA2Df888257c8d74E11E96e',
-      sol: 'b3VPfLqD97c8o5K6hYgQB4kit7Z3tnWBnZK8wWU66G1',
-      near: null
-    },
-    heirs: {
-      btc: 'tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx',
-      evm: '0x1111111111111111111111111111111111111111',
-      sol: '11111111111111111111111111111111',
-      near: null
-    },
-    heartbeat_interval_ns: null, // default 90 days
-    challenge_period_ns: null,   // default 7 days
-    policy_timelock_ns: null     // default 72 hours
+    default_relayer: defaultRelayer
   };
 
   const initTx = await account.functionCall({
@@ -134,18 +119,19 @@ async function deploy() {
   console.log(`✅ Vault initialized! Tx: ${initTx.transaction.hash}\n`);
 
   // 6. Query State via View Method
-  const vaultInfo = await account.viewFunction({
+  const activeAccounts = await account.viewFunction({
     contractId: accountId,
-    methodName: 'get_vault_info',
-    args: {}
+    methodName: 'get_active_accounts',
+    args: { from_index: 0, limit: 10 }
   });
 
   console.log('====================================================');
   console.log('🎉 DEPLOYMENT & VERIFICATION COMPLETE!');
   console.log('====================================================');
   console.log(`Contract Account:   ${accountId}`);
-  console.log(`State:              ${JSON.stringify(vaultInfo.state)}`);
-  console.log(`Owner:              ${vaultInfo.owner}`);
+  console.log(`MPC Signer:         ${mpcContract}`);
+  console.log(`Default Relayer:    ${defaultRelayer}`);
+  console.log(`Active Bunkers:     ${activeAccounts.length}`);
   console.log(`Explorer Link:      https://testnet.nearblocks.io/address/${accountId}`);
   console.log('====================================================');
 
