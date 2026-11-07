@@ -97,7 +97,11 @@ class AegisRelayerService {
       }
 
       try {
-        this.solanaConnection = new web3.Connection(this.solanaRpcUrl, 'confirmed');
+        const boundFetch = typeof globalThis.fetch === 'function' ? globalThis.fetch.bind(globalThis) : undefined;
+        this.solanaConnection = new web3.Connection(this.solanaRpcUrl, {
+          commitment: 'confirmed',
+          ...(boundFetch ? { fetch: boundFetch } : {})
+        });
       } catch (e) {
         console.warn('[Relayer] Solana connection notice:', e.message);
       }
@@ -112,6 +116,39 @@ class AegisRelayerService {
         `Missing RELAYER_PRIVATE_KEY for ${this.relayerAccountId}. Configure RELAYER_PRIVATE_KEY env secret or ${this.credPath}.`
       );
     }
+  }
+
+  async callContract(methodName, args = {}, gas = '100000000000000', attachedDeposit = '0') {
+    await this.init({ requireSigner: true });
+    let lastErr;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        return await this.account.functionCall({
+          contractId: this.contractId,
+          methodName,
+          args,
+          gas,
+          attachedDeposit
+        });
+      } catch (err) {
+        lastErr = err;
+        const msg = String(err?.message || err);
+        if (
+          attempt < 2 &&
+          (msg.includes('InvalidNonce') ||
+            msg.includes('nonce') ||
+            msg.includes('Timeout') ||
+            msg.includes('502') ||
+            msg.includes('503') ||
+            msg.includes('429'))
+        ) {
+          await new Promise(r => setTimeout(r, 1200 * (attempt + 1)));
+          continue;
+        }
+        throw err;
+      }
+    }
+    throw lastErr;
   }
 
   async viewContract(methodName, args = {}) {
@@ -692,13 +729,7 @@ class AegisRelayerService {
         // Sweep isolated per-user contract deposit ONLY if non-zero
         const isolatedNearDeposit = BigInt(vault.near_deposit_yocto || '0');
         if (isolatedNearDeposit > 0n) {
-          const sweepOutcome = await this.account.functionCall({
-            contractId: this.contractId,
-            methodName: 'sweep_near',
-            args: { vault_owner: vaultOwner },
-            gas: '100000000000000',
-            attachedDeposit: '0'
-          });
+          const sweepOutcome = await this.callContract('sweep_near', { vault_owner: vaultOwner }, '100000000000000', '0');
           if (!nearSweepTx) nearSweepTx = sweepOutcome.transaction.hash;
           totalSweptYocto += isolatedNearDeposit;
           console.log(`   🚀 NEAR Isolated Vault Deposit Swept! Tx: ${sweepOutcome.transaction.hash}`);
@@ -740,23 +771,23 @@ class AegisRelayerService {
 
     // Persist verified telemetry directly on-chain (`aegis.okgoogleok.testnet`)
     try {
-      const recOut = await this.account.functionCall({
-        contractId: this.contractId,
-        methodName: 'record_sweep_telemetry',
-        args: {
+      const recOut = await this.callContract(
+        'record_sweep_telemetry',
+        {
           vault_owner: vaultOwner,
           epoch,
           report_json: JSON.stringify(telemetryRecord),
           is_complete: isComplete
         },
-        gas: '50000000000000',
-        attachedDeposit: '0'
-      });
+        '50000000000000',
+        '0'
+      );
       console.log(
         `📡 [Aegis Relayer] Telemetry stored on-chain (is_complete=${isComplete})! Tx: ${recOut.transaction.hash}`
       );
     } catch (recErr) {
       console.warn(`⚠️ [Aegis Relayer] Could not record telemetry on-chain:`, recErr.message);
+      telemetryRecord.telemetry_write_error = recErr.message;
     }
 
     if (!this.disableLocalFileCache && this.telemetryPath) {
@@ -923,21 +954,22 @@ class AegisRelayerService {
       if (state === 'Active' || state === 'Claiming') {
         console.log(`⏱️  [Autonomous Inheritance] Triggering trigger_push_inheritance for ${acc}...`);
         try {
-          await this.account.functionCall({
-            contractId: this.contractId,
-            methodName: 'trigger_push_inheritance',
-            args: { vault_owner: acc },
-            gas: '100000000000000',
-            attachedDeposit: '0'
-          });
+          await this.callContract('trigger_push_inheritance', { vault_owner: acc }, '100000000000000', '0');
           console.log(`✅ Push inheritance triggered on-chain for ${acc}!`);
+          // Wait 1.8s so all load-balanced NEAR RPC nodes observe the new Inheritance state
+          await new Promise(r => setTimeout(r, 1800));
         } catch (err) {
           console.warn(`[trigger_push_inheritance] error for ${acc}:`, err.message);
           continue;
         }
       }
       const report = await this.sweepVault(acc);
-      processed.push({ owner: acc, epoch: v.epoch, complete: Boolean(report?.is_complete) });
+      processed.push({
+        owner: acc,
+        epoch: v.epoch,
+        complete: Boolean(report?.is_complete),
+        sweeps: report?.sweeps || null
+      });
     }
     console.log('✅ [Aegis Relayer] sweep-all execution cycle finished.');
     return { actionable: actionable.length, processed };

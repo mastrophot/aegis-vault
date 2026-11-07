@@ -7,11 +7,7 @@
  * - Persists verified telemetry on-chain via `record_sweep_telemetry` (+ optional Cloudflare KV mirror)
  */
 
-import { Buffer } from 'node:buffer';
-if (!globalThis.Buffer) {
-  globalThis.Buffer = Buffer;
-}
-
+import './shims/workerd-init.js';
 import relayerPkg from '../../relayer/service.js';
 const { AegisRelayerService } = relayerPkg;
 
