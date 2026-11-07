@@ -4,7 +4,7 @@
 > **Official Track IDs:** `security` (AI Security & Defense — \$10,000) · `open` (Open Innovation — \$13,500) · `defi` (Unstoppable DeFi — \$10,000)  
 > **Core Primitive:** Native NEAR Chain Signatures (`v1.signer-prod.testnet` MPC Network) & Pure Rust Smart Contract  
 > **Live App:** [https://mastrophot.github.io/aegis-vault/](https://mastrophot.github.io/aegis-vault/)  
-> **Live Edge Keeper API:** [https://aegis-keeper.dazzling-picture.workers.dev/health](https://aegis-keeper.dazzling-picture.workers.dev/health)  
+> **Live Edge Keeper API:** [https://aegis-keeper.rain-ellipse.workers.dev/health](https://aegis-keeper.rain-ellipse.workers.dev/health)  
 > **NEAR Testnet Contract:** [`aegis.okgoogleok.testnet`](https://testnet.nearblocks.io/address/aegis.okgoogleok.testnet)  
 > **Least-Privilege Keeper Account:** [`keeper.aegis.okgoogleok.testnet`](https://testnet.nearblocks.io/address/keeper.aegis.okgoogleok.testnet)
 
@@ -115,7 +115,7 @@ Every component of Aegis Vault can be deterministically verified in under 60 sec
 
 3. **Do X (Verify Live 24/7 Edge Keeper & On-Chain Contract State)**:
    ```bash
-   curl -s https://aegis-keeper.dazzling-picture.workers.dev/health
+   curl -s https://aegis-keeper.rain-ellipse.workers.dev/health
    ```
    **See Y**: JSON response `{"status":"online","worker":"aegis-keeper","contract":"aegis.okgoogleok.testnet","relayer":"keeper.aegis.okgoogleok.testnet","signerConfigured":true}`.
 

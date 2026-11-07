@@ -152,7 +152,7 @@
 
   <!-- NEAR Official Style Top Navigation -->
   <header class="border-b border-nearBorder bg-black/85 backdrop-blur-xl sticky top-0 z-40">
-    <div class="max-w-7xl mx-auto px-4 sm:px-8 min-h-[72px] py-2.5 flex items-center justify-between">
+    <div class="max-w-7xl mx-auto px-4 sm:px-8 min-h-[72px] py-2.5 flex items-center justify-between gap-3">
       
       <!-- Brand & Aegis Identity -->
       <div class="flex items-center gap-4">
@@ -373,11 +373,11 @@
                 Autonomous Vault Service
               </span>
             </div>
-            <div class="flex items-center gap-2">
-              <span id="bunkerEpochPill" class="text-xs font-mono font-bold text-nearGreen bg-nearGreenMuted border border-nearGreen/30 px-3 py-1 rounded-full whitespace-nowrap">
+            <div class="flex items-center gap-2 min-w-0 max-w-full">
+              <span id="bunkerEpochPill" class="text-xs font-mono font-bold text-nearGreen bg-nearGreenMuted border border-nearGreen/30 px-3 py-1 rounded-full whitespace-nowrap max-w-full truncate">
                 Derivation Path: aegis/v0 (Active)
               </span>
-              <span class="text-xs font-mono font-semibold text-textMuted bg-white/[0.04] border border-white/[0.08] px-3 py-1 rounded-full whitespace-nowrap">
+              <span class="text-xs font-mono font-semibold text-textMuted bg-white/[0.04] border border-white/[0.08] px-3 py-1 rounded-full whitespace-nowrap shrink-0">
                 100% Non-Custodial
               </span>
             </div>
@@ -1471,74 +1471,78 @@
   </div>
 
   <!-- Multichain Evacuation Live Telemetry Modal -->
-  <div id="evacMonitorModal" class="fixed inset-0 bg-black/90 backdrop-blur-md z-50 flex items-center justify-center p-4 hidden">
-    <div class="near-card border-nearGreen/40 rounded-3xl max-w-xl w-full p-7 sm:p-8 space-y-6 shadow-near-glow">
-      <div class="flex items-center justify-between border-b border-nearBorder pb-4">
-        <div class="flex items-center gap-2.5">
-          <span class="w-3 h-3 rounded-full bg-nearGreen radar-pulse"></span>
-          <h3 class="text-base sm:text-lg font-mono font-extrabold text-textWhite">Multichain Evacuation Monitor</h3>
+  <div id="evacMonitorModal" class="fixed inset-0 bg-black/90 backdrop-blur-md z-50 flex items-center justify-center p-4 hidden overflow-y-auto">
+    <div class="near-card border-nearGreen/40 rounded-3xl max-w-xl w-full p-6 sm:p-7 space-y-5 shadow-near-glow max-h-[92vh] overflow-y-auto">
+      <div class="flex items-center justify-between gap-3 border-b border-nearBorder pb-4">
+        <div class="flex items-center gap-2.5 min-w-0">
+          <span class="w-3 h-3 rounded-full bg-nearGreen radar-pulse shrink-0"></span>
+          <h3 class="text-base sm:text-lg font-mono font-extrabold text-textWhite truncate">Multichain Evacuation Monitor</h3>
         </div>
-        <button onclick="closeEvacMonitor()" class="text-textGray hover:text-textWhite">✕</button>
+        <button onclick="closeEvacMonitor()" class="w-8 h-8 rounded-full bg-nearElevated text-textGray hover:text-textWhite flex items-center justify-center shrink-0 cursor-pointer">✕</button>
       </div>
 
       <div class="space-y-3 font-mono text-xs">
         <!-- 1. Bitcoin -->
-        <div class="p-4 rounded-2xl bg-nearElevated border border-nearBorder flex items-center justify-between">
-          <div class="space-y-1">
-            <div class="text-textWhite font-bold flex items-center gap-2">
+        <div class="p-4 rounded-2xl bg-nearElevated border border-nearBorder flex items-start sm:items-center justify-between gap-3">
+          <div class="space-y-1 min-w-0 flex-1">
+            <div class="text-textWhite font-bold flex items-center gap-2 flex-wrap">
               <span class="text-amber-400">₿ Bitcoin SegWit:</span> <span id="monitorBtcBal">0.0000 BTC</span>
             </div>
-            <div class="text-textGray text-xs">Target: <span id="monitorBtcTarget">Not configured</span></div>
-            <div id="monitorBtcLink" class="text-[11px] pt-0.5"></div>
+            <div class="text-textGray text-xs break-all">Target: <span id="monitorBtcTarget" class="text-textSilver font-mono break-all">Not configured</span></div>
+            <div id="monitorBtcLink" class="text-[11px] pt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1"></div>
           </div>
-          <span id="monitorBtcStatus" class="text-nearGreen font-bold bg-nearGreenMuted px-2.5 py-1 rounded-full text-xs">Queued for relayer sweep</span>
+          <span id="monitorBtcStatus" class="text-[#8C929D] font-bold bg-white/[0.04] border border-white/10 px-3 py-1 rounded-full text-[11px] shrink-0 whitespace-nowrap text-center">Not configured</span>
         </div>
 
         <!-- 2. EVM -->
-        <div class="p-4 rounded-2xl bg-nearElevated border border-nearBorder space-y-2.5">
-          <div class="flex items-center justify-between">
-            <div class="space-y-1">
-              <div class="text-textWhite font-bold flex items-center gap-2">
-                <span class="text-blue-400">Ξ Ethereum / Base:</span> <span id="monitorEvmBal">0.0000 ETH</span>
-              </div>
-              <div class="text-textGray text-xs">Target: <span id="monitorEvmTarget">Not configured</span></div>
-              <div id="monitorEvmLink" class="text-[11px] pt-0.5"></div>
+        <div class="p-4 rounded-2xl bg-nearElevated border border-nearBorder flex items-start sm:items-center justify-between gap-3">
+          <div class="space-y-1 min-w-0 flex-1">
+            <div class="text-textWhite font-bold flex items-center gap-2 flex-wrap">
+              <span class="text-blue-400">Ξ Ethereum / Base:</span> <span id="monitorEvmBal">0.0000 ETH</span>
             </div>
-            <span id="evmTxStatusBadge" class="text-nearGreen font-bold bg-nearGreenMuted border border-nearGreen/30 px-2.5 py-1 rounded-full text-xs">
-              Queued for relayer sweep (Dynamic EIP-1559)
-            </span>
+            <div class="text-textGray text-xs break-all">Target: <span id="monitorEvmTarget" class="text-textSilver font-mono break-all">Not configured</span></div>
+            <div id="monitorEvmLink" class="text-[11px] pt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1"></div>
           </div>
-
-          <div class="pt-2 border-t border-nearBorder flex items-center justify-between text-xs font-sans">
-            <span class="text-textGray">24/7 Stateless Cloud Keeper (keeper.aegis.okgoogleok.testnet):</span>
-            <button id="syncKeeperBtn" onclick="triggerCloudKeeperSweep(true)" class="px-4 py-1.5 near-pill-btn bg-nearGreen/20 hover:bg-nearGreen/30 text-nearGreen font-bold border border-nearGreen/40 transition active:scale-98 flex items-center gap-1.5 cursor-pointer">
-              <span>⚡ Sync Cloud Keeper</span>
-            </button>
-          </div>
+          <span id="evmTxStatusBadge" class="text-[#8C929D] font-bold bg-white/[0.04] border border-white/10 px-3 py-1 rounded-full text-[11px] shrink-0 whitespace-nowrap text-center">
+            Not configured
+          </span>
         </div>
 
         <!-- 3. Solana -->
-        <div class="p-4 rounded-2xl bg-nearElevated border border-nearBorder flex items-center justify-between">
-          <div class="space-y-1">
-            <div class="text-textWhite font-bold flex items-center gap-2">
+        <div class="p-4 rounded-2xl bg-nearElevated border border-nearBorder flex items-start sm:items-center justify-between gap-3">
+          <div class="space-y-1 min-w-0 flex-1">
+            <div class="text-textWhite font-bold flex items-center gap-2 flex-wrap">
               <span class="text-purple-400">◎ Solana Devnet:</span> <span id="monitorSolBal">0.0000 SOL</span>
             </div>
-            <div class="text-textGray text-xs">Target: <span id="monitorSolTarget">Not configured</span></div>
-            <div id="monitorSolLink" class="text-[11px] pt-0.5"></div>
+            <div class="text-textGray text-xs break-all">Target: <span id="monitorSolTarget" class="text-textSilver font-mono break-all">Not configured</span></div>
+            <div id="monitorSolLink" class="text-[11px] pt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1"></div>
           </div>
-          <span id="monitorSolStatus" class="text-nearGreen font-bold bg-nearGreenMuted px-2.5 py-1 rounded-full text-xs">Queued for relayer sweep</span>
+          <span id="monitorSolStatus" class="text-[#8C929D] font-bold bg-white/[0.04] border border-white/10 px-3 py-1 rounded-full text-[11px] shrink-0 whitespace-nowrap text-center">Not configured</span>
         </div>
 
         <!-- 4. NEAR Protocol -->
-        <div class="p-4 rounded-2xl bg-nearElevated border border-nearBorder flex items-center justify-between">
-          <div class="space-y-1">
-            <div class="text-textWhite font-bold flex items-center gap-2">
+        <div class="p-4 rounded-2xl bg-nearElevated border border-nearBorder flex items-start sm:items-center justify-between gap-3">
+          <div class="space-y-1 min-w-0 flex-1">
+            <div class="text-textWhite font-bold flex items-center gap-2 flex-wrap">
               <span class="text-nearGreen">Ⓝ NEAR Protocol:</span> <span id="monitorNearBal">0.0000 NEAR</span>
             </div>
-            <div class="text-textGray text-xs">Target: <span id="monitorNearTarget">Not configured</span></div>
-            <div id="monitorNearLink" class="text-[11px] pt-0.5"></div>
+            <div class="text-textGray text-xs break-all">Target: <span id="monitorNearTarget" class="text-textSilver font-mono break-all">Not configured</span></div>
+            <div id="monitorNearLink" class="text-[11px] pt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1"></div>
           </div>
-          <span id="monitorNearStatus" class="text-nearGreen font-bold bg-nearGreenMuted px-2.5 py-1 rounded-full text-xs">Queued for relayer sweep</span>
+          <span id="monitorNearStatus" class="text-[#8C929D] font-bold bg-white/[0.04] border border-white/10 px-3 py-1 rounded-full text-[11px] shrink-0 whitespace-nowrap text-center">Not configured</span>
+        </div>
+
+        <!-- Stateless Cloud Keeper Control Bar -->
+        <div class="p-3.5 rounded-2xl bg-nearElevated/70 border border-nearBorder flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs font-sans">
+          <div class="min-w-0 flex-1">
+            <div class="text-textSilver font-semibold flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full bg-nearGreen radar-pulse shrink-0"></span>
+              <span class="truncate">24/7 Stateless Keeper (<span class="font-mono text-nearGreen">keeper.aegis.okgoogleok.testnet</span>)</span>
+            </div>
+          </div>
+          <button id="syncKeeperBtn" onclick="triggerCloudKeeperSweep(true)" class="px-4 py-1.5 near-pill-btn bg-nearGreen/20 hover:bg-nearGreen/30 text-nearGreen font-bold border border-nearGreen/40 transition active:scale-98 flex items-center justify-center gap-1.5 cursor-pointer shrink-0 whitespace-nowrap">
+            <span>⚡ Sync Cloud Keeper</span>
+          </button>
         </div>
 
         <!-- 5. Fault Isolation -->
@@ -1557,7 +1561,7 @@
         </div>
       </div>
 
-      <button onclick="closeEvacMonitor()" class="w-full bg-nearElevated hover:bg-nearHover text-textWhite font-bold py-3.5 near-pill-btn text-xs sm:text-sm transition border border-nearBorder">
+      <button onclick="closeEvacMonitor()" class="w-full bg-nearElevated hover:bg-nearHover text-textWhite font-bold py-3.5 near-pill-btn text-xs sm:text-sm transition border border-nearBorder cursor-pointer">
         Close Monitor
       </button>
     </div>
@@ -4085,16 +4089,20 @@
         // Header Panic Button: Disabled
         const headerPanic = document.getElementById('headerPanicBtn');
         const panicLabel = document.getElementById('panicBtnLabel');
+        const panicLabelMobile = document.getElementById('panicBtnLabelMobile');
         const panicDot = document.getElementById('panicBtnDot');
         if (headerPanic) {
           headerPanic.disabled = true;
-          headerPanic.className = 'px-4 py-2.5 rounded-xl bg-red-950/20 text-red-500/50 border border-red-500/20 text-xs sm:text-sm font-mono font-bold tracking-wider cursor-not-allowed opacity-40 flex items-center gap-2';
+          headerPanic.className = 'h-9 px-3.5 sm:px-4 rounded-xl bg-red-950/20 text-red-500/50 border border-red-500/20 text-xs sm:text-sm font-mono font-bold tracking-wider cursor-not-allowed opacity-40 flex items-center gap-2 shrink-0 whitespace-nowrap';
         }
         if (panicLabel) {
           panicLabel.innerText = isInheritance ? 'INHERITANCE EXECUTED' : 'VAULT EVACUATED';
         }
+        if (panicLabelMobile) {
+          panicLabelMobile.innerText = isInheritance ? 'INHERITED' : 'EVACUATED';
+        }
         if (panicDot) {
-          panicDot.className = isInheritance ? 'w-2 h-2 rounded-full bg-purple-500/40' : 'w-2 h-2 rounded-full bg-red-500/40';
+          panicDot.className = isInheritance ? 'w-2 h-2 rounded-full bg-purple-500/40 shrink-0' : 'w-2 h-2 rounded-full bg-red-500/40 shrink-0';
         }
 
         // Dropdowns: Disabled when evacuated
@@ -4142,13 +4150,15 @@
 
         const headerPanic = document.getElementById('headerPanicBtn');
         const panicLabel = document.getElementById('panicBtnLabel');
+        const panicLabelMobile = document.getElementById('panicBtnLabelMobile');
         const panicDot = document.getElementById('panicBtnDot');
         if (headerPanic) {
           headerPanic.disabled = true;
-          headerPanic.className = 'px-4 py-2.5 rounded-xl bg-amber-950/20 text-amber-500/50 border border-amber-500/20 text-xs sm:text-sm font-mono font-bold tracking-wider cursor-not-allowed opacity-40 flex items-center gap-2';
+          headerPanic.className = 'h-9 px-3.5 sm:px-4 rounded-xl bg-amber-950/20 text-amber-500/50 border border-amber-500/20 text-xs sm:text-sm font-mono font-bold tracking-wider cursor-not-allowed opacity-40 flex items-center gap-2 shrink-0 whitespace-nowrap';
         }
         if (panicLabel) panicLabel.innerText = 'VAULT UNARMED';
-        if (panicDot) panicDot.className = 'w-2 h-2 rounded-full bg-amber-500/40';
+        if (panicLabelMobile) panicLabelMobile.innerText = 'UNARMED';
+        if (panicDot) panicDot.className = 'w-2 h-2 rounded-full bg-amber-500/40 shrink-0';
 
         const inactSelect = document.getElementById('inactivitySelect');
         const graceSelect = document.getElementById('graceSelect');
@@ -4200,7 +4210,7 @@
               BigInt(lastFetchedVaultInfo.challenge_period_ns || '0')) / 1000000n
           );
           graceRemainingSec = Math.max(0, Math.ceil((fullExpiryMs - Date.now()) / 1000));
-          if (Date.now() >= fullExpiryMs + 1500 && Date.now() - lastCloudKeeperNudgeMs > 20000) {
+          if (Date.now() >= fullExpiryMs + 1500 && Date.now() - lastCloudKeeperNudgeMs > 8000) {
             lastCloudKeeperNudgeMs = Date.now();
             triggerCloudKeeperSweep(false);
           }
@@ -4222,12 +4232,12 @@
             ? `Grace Buffer Active (${graceRemainingSec}s before autonomous sweep)`
             : 'Autonomous Push Inheritance Executing via Cloud Keeper';
           onchainEl.innerHTML = `
-            <div class="w-full mt-2.5 bg-amber-500/10 border border-amber-500/30 text-amber-300 px-4 py-2.5 rounded-xl text-xs flex items-center justify-between cursor-pointer" onclick="openEvacMonitor()">
-              <span class="flex items-center gap-2">
-                <span class="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
-                <span>${bannerLabel}</span>
+            <div class="w-full mt-2.5 bg-amber-500/10 border border-amber-500/30 text-amber-300 px-4 py-2.5 rounded-xl text-xs flex items-center justify-between gap-3 cursor-pointer" onclick="openEvacMonitor('inheritance')">
+              <span class="flex items-center gap-2 min-w-0 flex-1">
+                <span class="w-2 h-2 rounded-full bg-amber-400 animate-ping shrink-0"></span>
+                <span class="truncate">${bannerLabel}</span>
               </span>
-              <span class="text-[10px] font-mono bg-amber-950/40 px-2 py-0.5 rounded border border-amber-500/30">View Live Sweep</span>
+              <span class="text-[10px] font-mono bg-amber-950/40 px-2.5 py-0.5 rounded border border-amber-500/30 shrink-0 whitespace-nowrap">View Live Sweep</span>
             </div>
           `;
         }
@@ -4298,7 +4308,7 @@
     if (countdownInterval) clearInterval(countdownInterval);
     countdownInterval = setInterval(() => {
       if (hasConfiguredDestinations() && lastFetchedVaultInfo && lastFetchedVaultInfo.state === 'Active') {
-        remainingSeconds--;
+        if (remainingSeconds > 0) remainingSeconds--;
       }
       updateCountdownDisplay();
     }, 1000);
@@ -4470,6 +4480,7 @@
       const tabToggle = document.getElementById('panicArmTabToggle');
       const btn = document.getElementById('headerPanicBtn');
       const label = document.getElementById('panicBtnLabel');
+      const labelMob = document.getElementById('panicBtnLabelMobile');
       const dot = document.getElementById('panicBtnDot');
       const safeDesc = document.getElementById('panicModeSafeDesc');
       const armedDesc = document.getElementById('panicModeArmedDesc');
@@ -4491,13 +4502,15 @@
 
       if (btn && label && dot) {
         if (enabled) {
-          btn.className = "px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-white border-2 border-red-400 transition text-xs sm:text-sm font-mono font-extrabold tracking-wider active:scale-98 flex items-center gap-2 shadow-danger-glow";
+          btn.className = "h-9 px-3.5 sm:px-4 rounded-xl bg-red-600 hover:bg-red-500 text-white border-2 border-red-400 transition text-xs sm:text-sm font-mono font-extrabold tracking-wider active:scale-98 flex items-center gap-2 shadow-danger-glow shrink-0 whitespace-nowrap";
           label.innerText = "⚡ 1-CLICK PANIC";
-          dot.className = "w-2.5 h-2.5 rounded-full bg-white animate-ping";
+          if (labelMob) labelMob.innerText = "⚡ PANIC";
+          dot.className = "w-2.5 h-2.5 rounded-full bg-white animate-ping shrink-0";
         } else {
-          btn.className = "px-4 py-2.5 rounded-xl bg-red-950/40 hover:bg-red-950/70 text-red-400 hover:text-red-300 border border-red-500/30 hover:border-red-500/60 transition text-xs sm:text-sm font-mono font-bold tracking-wider active:scale-98 flex items-center gap-2 shadow-sm";
+          btn.className = "h-9 px-3.5 sm:px-4 rounded-xl bg-red-950/40 hover:bg-red-950/70 text-red-400 hover:text-red-300 border border-red-500/30 hover:border-red-500/60 transition text-xs sm:text-sm font-mono font-bold tracking-wider active:scale-98 flex items-center gap-2 shadow-sm shrink-0 whitespace-nowrap";
           label.innerText = "EMERGENCY PANIC";
-          dot.className = "w-2 h-2 rounded-full bg-red-500 animate-pulse";
+          if (labelMob) labelMob.innerText = "PANIC";
+          dot.className = "w-2 h-2 rounded-full bg-red-500 animate-pulse shrink-0";
         }
       }
     }
@@ -4752,7 +4765,7 @@
         updateCountdownDisplay();
 
         showToast('PANIC CONFIRMED ON-CHAIN: Dispatching Cloud Keeper sweep...', true);
-        openEvacMonitor();
+        openEvacMonitor('evacuation');
         triggerCloudKeeperSweep(false);
 
         fetchLiveBalances(true);
@@ -4764,47 +4777,76 @@
       });
     }
 
-    function openEvacMonitor() {
-      const isInheritance = lastFetchedVaultInfo && lastFetchedVaultInfo.state === 'Inheritance';
+    function setMonitorBadgeStyle(badgeEl, rawStatus) {
+      if (!badgeEl) return;
+      let label = String(rawStatus || 'Not configured').trim();
+      if (label.includes('Dynamic EIP-1559')) label = 'Queued (EIP-1559)';
+      else if (label === 'Queued for relayer sweep') label = 'Queued for sweep';
+
+      badgeEl.innerText = label;
+      const lower = label.toLowerCase();
+      if (lower === 'not configured' || lower.startsWith('skipped') || lower.startsWith('no deposit') || lower.startsWith('0 balance')) {
+        badgeEl.className = 'text-[#8C929D] font-bold bg-white/[0.04] border border-white/10 px-3 py-1 rounded-full text-[11px] shrink-0 whitespace-nowrap text-center';
+      } else if (lower.includes('confirmed') || lower.includes('broadcasted')) {
+        badgeEl.className = 'text-nearGreen font-bold bg-nearGreenMuted border border-nearGreen/30 px-3 py-1 rounded-full text-[11px] shrink-0 whitespace-nowrap text-center';
+      } else {
+        badgeEl.className = 'text-amber-300 font-bold bg-amber-500/15 border border-amber-500/30 px-3 py-1 rounded-full text-[11px] shrink-0 whitespace-nowrap text-center';
+      }
+    }
+
+    function openEvacMonitor(modeOverride) {
+      const isInheritance = modeOverride === 'inheritance'
+        || (modeOverride !== 'evacuation' && Boolean(
+          lastFetchedVaultInfo && (
+            lastFetchedVaultInfo.state === 'Inheritance' ||
+            (lastFetchedVaultInfo.state === 'Active' && remainingSeconds <= 0)
+          )
+        ));
       const titleEl = document.querySelector('#evacMonitorModal h3');
       if (titleEl) {
         titleEl.innerText = isInheritance ? 'Multichain Inheritance Transfer Monitor' : 'Multichain Evacuation Monitor';
       }
 
+      const currentSigner = localStorage.getItem('aegis_signer_account') || '';
+      let savedLocal = {};
+      try {
+        savedLocal = JSON.parse(localStorage.getItem('aegis_addresses_' + currentSigner) || '{}');
+      } catch (_) {}
+
       let nearTarget, btcTarget, evmTarget, solTarget;
       if (isInheritance) {
-        nearTarget = document.getElementById('heirNearAddr')?.value?.trim() ||
-                     lastFetchedVaultInfo?.heirs?.near ||
-                     JSON.parse(localStorage.getItem('aegis_addresses') || '{}').heirNearAddr ||
+        nearTarget = lastFetchedVaultInfo?.heirs?.near ||
+                     document.getElementById('heirNearAddr')?.value?.trim() ||
+                     savedLocal.heirNearAddr ||
                      'Not configured';
-        btcTarget = document.getElementById('heirBtcAddr')?.value?.trim() ||
-                    lastFetchedVaultInfo?.heirs?.btc ||
-                    JSON.parse(localStorage.getItem('aegis_addresses') || '{}').heirBtcAddr ||
+        btcTarget = lastFetchedVaultInfo?.heirs?.btc ||
+                    document.getElementById('heirBtcAddr')?.value?.trim() ||
+                    savedLocal.heirBtcAddr ||
                     'Not configured';
-        evmTarget = document.getElementById('heirEvmAddr')?.value?.trim() ||
-                    lastFetchedVaultInfo?.heirs?.evm ||
-                    JSON.parse(localStorage.getItem('aegis_addresses') || '{}').heirEvmAddr ||
+        evmTarget = lastFetchedVaultInfo?.heirs?.evm ||
+                    document.getElementById('heirEvmAddr')?.value?.trim() ||
+                    savedLocal.heirEvmAddr ||
                     'Not configured';
-        solTarget = document.getElementById('heirSolAddr')?.value?.trim() ||
-                    lastFetchedVaultInfo?.heirs?.sol ||
-                    JSON.parse(localStorage.getItem('aegis_addresses') || '{}').heirSolAddr ||
+        solTarget = lastFetchedVaultInfo?.heirs?.sol ||
+                    document.getElementById('heirSolAddr')?.value?.trim() ||
+                    savedLocal.heirSolAddr ||
                     'Not configured';
       } else {
-        nearTarget = document.getElementById('panicNearAddr')?.value?.trim() ||
-                     lastFetchedVaultInfo?.backup?.near ||
-                     JSON.parse(localStorage.getItem('aegis_addresses') || '{}').panicNearAddr ||
+        nearTarget = lastFetchedVaultInfo?.backup?.near ||
+                     document.getElementById('panicNearAddr')?.value?.trim() ||
+                     savedLocal.panicNearAddr ||
                      'Not configured';
-        btcTarget = document.getElementById('panicBtcAddr')?.value?.trim() ||
-                    lastFetchedVaultInfo?.backup?.btc ||
-                    JSON.parse(localStorage.getItem('aegis_addresses') || '{}').panicBtcAddr ||
+        btcTarget = lastFetchedVaultInfo?.backup?.btc ||
+                    document.getElementById('panicBtcAddr')?.value?.trim() ||
+                    savedLocal.panicBtcAddr ||
                     'Not configured';
-        evmTarget = document.getElementById('panicEvmAddr')?.value?.trim() ||
-                    lastFetchedVaultInfo?.backup?.evm ||
-                    JSON.parse(localStorage.getItem('aegis_addresses') || '{}').panicEvmAddr ||
+        evmTarget = lastFetchedVaultInfo?.backup?.evm ||
+                    document.getElementById('panicEvmAddr')?.value?.trim() ||
+                    savedLocal.panicEvmAddr ||
                     'Not configured';
-        solTarget = document.getElementById('panicSolAddr')?.value?.trim() ||
-                    lastFetchedVaultInfo?.backup?.sol ||
-                    JSON.parse(localStorage.getItem('aegis_addresses') || '{}').panicSolAddr ||
+        solTarget = lastFetchedVaultInfo?.backup?.sol ||
+                    document.getElementById('panicSolAddr')?.value?.trim() ||
+                    savedLocal.panicSolAddr ||
                     'Not configured';
       }
 
@@ -4827,16 +4869,31 @@
       if (document.getElementById('monitorSolBal')) document.getElementById('monitorSolBal').innerText = solBal;
       if (document.getElementById('monitorNearBal')) document.getElementById('monitorNearBal').innerText = nearBal;
 
+      // Reset all links & badges before applying epoch-scoped telemetry
+      ['monitorBtcLink', 'monitorEvmLink', 'monitorSolLink', 'monitorNearLink'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.innerHTML = '';
+      });
+      setMonitorBadgeStyle(document.getElementById('monitorBtcStatus'), btcTarget === 'Not configured' ? 'Not configured' : 'Queued for sweep');
+      setMonitorBadgeStyle(document.getElementById('evmTxStatusBadge'), evmTarget === 'Not configured' ? 'Not configured' : 'Queued (EIP-1559)');
+      setMonitorBadgeStyle(document.getElementById('monitorSolStatus'), solTarget === 'Not configured' ? 'Not configured' : 'Queued for sweep');
+      setMonitorBadgeStyle(document.getElementById('monitorNearStatus'), nearTarget === 'Not configured' ? 'Not configured' : 'Queued for sweep');
+
       const modal = document.getElementById('evacMonitorModal');
       if (modal) modal.classList.remove('hidden');
 
       const applyTelemetryRecord = (t) => {
         if (!t || !t.sweeps) return false;
+        const expectedEpoch = lastFetchedVaultInfo?.epoch;
+        if (expectedEpoch !== undefined && t.epoch !== undefined && Number(t.epoch) !== Number(expectedEpoch)) {
+          return false;
+        }
         if (t.sweeps.btc) {
           const s = t.sweeps.btc;
           const statusEl = document.getElementById('monitorBtcStatus');
           const linkEl = document.getElementById('monitorBtcLink');
-          if (statusEl && s.status) statusEl.innerText = s.status;
+          if (statusEl && s.status) setMonitorBadgeStyle(statusEl, s.status);
+          if (s.target && btcEl) btcEl.innerText = s.target;
           if (s.amount && document.getElementById('monitorBtcBal')) document.getElementById('monitorBtcBal').innerText = s.amount;
           if (linkEl && s.explorer) {
             const safeExp = sanitizeExplorerUrl(s.explorer);
@@ -4845,12 +4902,15 @@
               : '';
             linkEl.innerHTML = `<a href="${safeExp}" target="_blank" rel="noopener noreferrer" class="text-amber-400 hover:underline font-mono">View on Mempool.space ↗</a>${mpcLink}`;
           }
+        } else if (t.is_complete) {
+          setMonitorBadgeStyle(document.getElementById('monitorBtcStatus'), btcTarget === 'Not configured' ? 'Not configured' : 'No deposit (0 BTC)');
         }
         if (t.sweeps.evm) {
           const s = t.sweeps.evm;
           const statusBadge = document.getElementById('evmTxStatusBadge');
           const linkEl = document.getElementById('monitorEvmLink');
-          if (statusBadge && s.status) statusBadge.innerText = s.status;
+          if (statusBadge && s.status) setMonitorBadgeStyle(statusBadge, s.status);
+          if (s.target && evmEl) evmEl.innerText = s.target;
           if (s.amount && document.getElementById('monitorEvmBal')) document.getElementById('monitorEvmBal').innerText = s.amount;
           if (linkEl && s.explorer) {
             const safeExp = sanitizeExplorerUrl(s.explorer);
@@ -4859,12 +4919,15 @@
               : '';
             linkEl.innerHTML = `<a href="${safeExp}" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:underline font-mono">View on Etherscan ↗</a>${mpcLink}`;
           }
+        } else if (t.is_complete) {
+          setMonitorBadgeStyle(document.getElementById('evmTxStatusBadge'), evmTarget === 'Not configured' ? 'Not configured' : 'No deposit (0 ETH)');
         }
         if (t.sweeps.sol) {
           const s = t.sweeps.sol;
           const statusEl = document.getElementById('monitorSolStatus');
           const linkEl = document.getElementById('monitorSolLink');
-          if (statusEl && s.status) statusEl.innerText = s.status;
+          if (statusEl && s.status) setMonitorBadgeStyle(statusEl, s.status);
+          if (s.target && solEl) solEl.innerText = s.target;
           if (s.amount && document.getElementById('monitorSolBal')) document.getElementById('monitorSolBal').innerText = s.amount;
           if (linkEl && s.explorer) {
             const safeExp = sanitizeExplorerUrl(s.explorer);
@@ -4873,12 +4936,15 @@
               : '';
             linkEl.innerHTML = `<a href="${safeExp}" target="_blank" rel="noopener noreferrer" class="text-purple-400 hover:underline font-mono">View on Solscan ↗</a>${mpcLink}`;
           }
+        } else if (t.is_complete) {
+          setMonitorBadgeStyle(document.getElementById('monitorSolStatus'), solTarget === 'Not configured' ? 'Not configured' : 'No deposit (0 SOL)');
         }
         if (t.sweeps.near) {
           const s = t.sweeps.near;
           const statusEl = document.getElementById('monitorNearStatus');
           const linkEl = document.getElementById('monitorNearLink');
-          if (statusEl && s.status) statusEl.innerText = s.status;
+          if (statusEl && s.status) setMonitorBadgeStyle(statusEl, s.status);
+          if (s.target && nearEl) nearEl.innerText = s.target;
           if (s.amount && document.getElementById('monitorNearBal')) document.getElementById('monitorNearBal').innerText = s.amount;
           if (linkEl && s.explorer) {
             const safeExp = sanitizeExplorerUrl(s.explorer);
@@ -4887,6 +4953,8 @@
               : '';
             linkEl.innerHTML = `<a href="${safeExp}" target="_blank" rel="noopener noreferrer" class="text-nearGreen hover:underline font-mono">View on NearBlocks ↗</a>${mpcLink}`;
           }
+        } else if (t.is_complete) {
+          setMonitorBadgeStyle(document.getElementById('monitorNearStatus'), nearTarget === 'Not configured' ? 'Not configured' : 'No deposit (0 NEAR)');
         }
         return true;
       };
@@ -4914,16 +4982,21 @@
         }
       }, 3500);
 
-      // 2. Secondary Fallback: Multi-Tenant telemetry.json
+      // 2. Secondary Fallback: Multi-Tenant telemetry.json (strictly scoped to current epoch)
       if (!renderedOnChain) {
         fetch('telemetry.json?t=' + Date.now()).then(r => r.json()).then(t => {
           if (!t) return;
-          const currentSigner = localStorage.getItem('aegis_signer_account');
           const ep = lastFetchedVaultInfo?.epoch ?? 0;
-          const scoped = (t.vaults && currentSigner && (t.vaults[`${currentSigner}:${ep}`] || t.vaults[currentSigner]))
-            || (t.vault_owner === currentSigner ? t : null);
+          const scoped = (t.vaults && currentSigner && t.vaults[`${currentSigner}:${ep}`])
+            || (t.vault_owner === currentSigner && Number(t.epoch) === Number(ep) ? t : null);
           if (scoped) applyTelemetryRecord(scoped);
         }).catch(() => {});
+      }
+
+      // Automatically nudge Keeper if epoch sweep is not yet complete
+      if (lastFetchedVaultInfo && !lastFetchedVaultInfo.is_epoch_swept && Date.now() - lastCloudKeeperNudgeMs > 4000) {
+        lastCloudKeeperNudgeMs = Date.now();
+        triggerCloudKeeperSweep(false);
       }
     }
 
@@ -4935,28 +5008,42 @@
       document.getElementById('evacMonitorModal').classList.add('hidden');
     }
 
-    const DEFAULT_CLOUD_KEEPER_URL = 'https://aegis-keeper.dazzling-picture.workers.dev';
+    const DEFAULT_CLOUD_KEEPER_URL = 'https://aegis-keeper.rain-ellipse.workers.dev';
+    const LOCAL_KEEPER_URL = 'http://127.0.0.1:8788';
     let lastCloudKeeperNudgeMs = 0;
 
     async function triggerCloudKeeperSweep(showFeedback = false) {
-      const keeperUrl = (localStorage.getItem('aegis_keeper_url') || DEFAULT_CLOUD_KEEPER_URL).replace(/\/$/, '');
+      let savedUrl = (localStorage.getItem('aegis_keeper_url') || '').trim();
+      if (savedUrl.includes('dazzling-picture') || savedUrl.includes('dawn-direction')) {
+        localStorage.removeItem('aegis_keeper_url');
+        savedUrl = '';
+      }
+      const keeperUrl = (savedUrl || DEFAULT_CLOUD_KEEPER_URL).replace(/\/$/, '');
       const btn = document.getElementById('syncKeeperBtn');
       if (showFeedback) {
         if (btn) { btn.disabled = true; btn.innerText = 'Syncing Keeper...'; }
         showToast('⚡ Dispatching 24/7 Cloud Keeper sweep pass...');
       }
       try {
-        const res = await fetch(`${keeperUrl}/trigger`, { method: 'POST' });
-        let data = await res.json().catch(() => null);
+        const callKeeperEndpoints = async () => {
+          const results = await Promise.allSettled([
+            fetch(`${LOCAL_KEEPER_URL}/trigger`, { method: 'POST' }).then(r => r.json()),
+            fetch(`${keeperUrl}/trigger`, { method: 'POST' }).then(r => r.json())
+          ]);
+          for (const r of results) {
+            if (r.status === 'fulfilled' && r.value && r.value.success) return r.value;
+          }
+          return null;
+        };
+        let data = await callKeeperEndpoints();
         if (data?.processed?.some(p => !p.complete)) {
           await new Promise(r => setTimeout(r, 1500));
-          const res2 = await fetch(`${keeperUrl}/trigger`, { method: 'POST' });
-          data = await res2.json().catch(() => data);
+          data = (await callKeeperEndpoints()) || data;
         }
         await fetchLiveContractState();
         fetchLiveBalances(true);
         if (showFeedback) {
-          showToast(data?.success ? '✅ Cloud Keeper synced on-chain telemetry!' : 'Keeper check completed.');
+          showToast(data?.success ? '✅ Cloud Keeper synced on-chain telemetry!' : 'Synced latest telemetry directly from NEAR RPC.');
         }
       } catch (_) {
         await fetchLiveContractState();
