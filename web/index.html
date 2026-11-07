@@ -4062,10 +4062,13 @@
         if (onchainEl && !isVaultEvacuatedOrBurned()) {
           onchainEl.classList.remove('hidden');
           onchainEl.innerHTML = `
-            <button onclick="triggerInheritanceNow()" class="w-full mt-2.5 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 font-bold py-2.5 px-4 rounded-xl text-xs flex items-center justify-center gap-2 transition active:scale-98 cursor-pointer">
-              <svg class="w-4 h-4 text-amber-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-              <span>⚡ Execute Push Inheritance (Sweep Assets)</span>
-            </button>
+            <div class="w-full mt-2.5 bg-amber-500/10 border border-amber-500/30 text-amber-300 px-4 py-2.5 rounded-xl text-xs flex items-center justify-between cursor-pointer" onclick="openEvacMonitor()">
+              <span class="flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
+                <span>Autonomous Push Inheritance in Progress</span>
+              </span>
+              <span class="text-[10px] font-mono bg-amber-950/40 px-2 py-0.5 rounded border border-amber-500/30">View Live Sweep</span>
+            </div>
           `;
         }
         return;
