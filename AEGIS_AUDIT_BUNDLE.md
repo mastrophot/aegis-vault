@@ -9596,7 +9596,7 @@ if (typeof window !== "undefined") {
       document.getElementById('evacMonitorModal').classList.add('hidden');
     }
 
-    const DEFAULT_CLOUD_KEEPER_URL = 'https://aegis-keeper.dawn-direction.workers.dev';
+    const DEFAULT_CLOUD_KEEPER_URL = 'https://aegis-keeper.dazzling-picture.workers.dev';
     let lastCloudKeeperNudgeMs = 0;
 
     async function triggerCloudKeeperSweep(showFeedback = false) {
