@@ -21,10 +21,16 @@ class LastKeySweepRelayer {
     this.mpcContractId = config.mpcContractId || (this.networkId === 'testnet' ? 'v1.signer-prod.testnet' : 'v1.signer');
     this.vaultContractId = config.vaultContractId || 'aegis.okgoogleok.testnet';
     this.derivationPath = config.derivationPath || 'aegis/v0';
-    
+    this.nearRpcUrl =
+      config.nearRpcUrl ||
+      process.env.NEAR_RPC_URL ||
+      (this.networkId === 'testnet' ? 'https://test.rpc.fastnear.com' : 'https://free.rpc.fastnear.com');
+    this._derivedCache = new Map();
+
     this.chainSigContract = new chainsig.contracts.ChainSignatureContract({
       networkId: this.networkId,
-      contractId: this.mpcContractId
+      contractId: this.mpcContractId,
+      fallbackRpcUrls: [this.nearRpcUrl]
     });
 
     this.evmAdapter = new chainsig.chainAdapters.evm.EVM({
@@ -45,19 +51,26 @@ class LastKeySweepRelayer {
    * Derive the multichain vault addresses for an owner account
    */
   async deriveAllAddresses(accountId, path = this.derivationPath) {
+    const cacheKey = `${accountId}:${path}`;
+    if (this._derivedCache.has(cacheKey)) {
+      return this._derivedCache.get(cacheKey);
+    }
+
     const [evm, btc, sol] = await Promise.all([
       this.evmAdapter.deriveAddressAndPublicKey(accountId, path),
       this.btcAdapter.deriveAddressAndPublicKey(accountId, path),
       this.solanaAdapter.deriveAddressAndPublicKey(accountId, path)
     ]);
 
-    return {
+    const derived = {
       accountId,
       path,
       evm: { address: evm.address, publicKey: evm.publicKey },
       btc: { address: btc.address, publicKey: btc.publicKey },
       sol: { address: sol.address, publicKey: sol.publicKey }
     };
+    this._derivedCache.set(cacheKey, derived);
+    return derived;
   }
 
   /**

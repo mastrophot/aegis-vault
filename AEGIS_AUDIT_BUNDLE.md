@@ -2357,10 +2357,16 @@ class LastKeySweepRelayer {
     this.mpcContractId = config.mpcContractId || (this.networkId === 'testnet' ? 'v1.signer-prod.testnet' : 'v1.signer');
     this.vaultContractId = config.vaultContractId || 'aegis.okgoogleok.testnet';
     this.derivationPath = config.derivationPath || 'aegis/v0';
-    
+    this.nearRpcUrl =
+      config.nearRpcUrl ||
+      process.env.NEAR_RPC_URL ||
+      (this.networkId === 'testnet' ? 'https://test.rpc.fastnear.com' : 'https://free.rpc.fastnear.com');
+    this._derivedCache = new Map();
+
     this.chainSigContract = new chainsig.contracts.ChainSignatureContract({
       networkId: this.networkId,
-      contractId: this.mpcContractId
+      contractId: this.mpcContractId,
+      fallbackRpcUrls: [this.nearRpcUrl]
     });
 
     this.evmAdapter = new chainsig.chainAdapters.evm.EVM({
@@ -2381,19 +2387,26 @@ class LastKeySweepRelayer {
    * Derive the multichain vault addresses for an owner account
    */
   async deriveAllAddresses(accountId, path = this.derivationPath) {
+    const cacheKey = `${accountId}:${path}`;
+    if (this._derivedCache.has(cacheKey)) {
+      return this._derivedCache.get(cacheKey);
+    }
+
     const [evm, btc, sol] = await Promise.all([
       this.evmAdapter.deriveAddressAndPublicKey(accountId, path),
       this.btcAdapter.deriveAddressAndPublicKey(accountId, path),
       this.solanaAdapter.deriveAddressAndPublicKey(accountId, path)
     ]);
 
-    return {
+    const derived = {
       accountId,
       path,
       evm: { address: evm.address, publicKey: evm.publicKey },
       btc: { address: btc.address, publicKey: btc.publicKey },
       sol: { address: sol.address, publicKey: sol.publicKey }
     };
+    this._derivedCache.set(cacheKey, derived);
+    return derived;
   }
 
   /**
@@ -3085,14 +3098,13 @@ class AegisRelayerService {
 
     this.engine = new LastKeySweepRelayer({
       networkId: this.networkId,
-      vaultContractId: this.contractId
+      vaultContractId: this.contractId,
+      nearRpcUrl: this.nearRpcUrl
     });
 
     this.near = null;
     this.account = null;
     this.hasSignerKey = false;
-    this.evmProvider = null;
-    this.solanaConnection = null;
     this.processedSweeps = new Set();
   }
 
@@ -3126,23 +3138,6 @@ class AegisRelayerService {
       });
       this.account = await this.near.account(this.relayerAccountId);
 
-      try {
-        this.evmProvider = new ethers.JsonRpcProvider(this.evmRpcUrl, undefined, { staticNetwork: true });
-      } catch (e) {
-        console.warn('[Relayer] EVM provider notice:', e.message);
-      }
-
-      try {
-        const boundFetch = typeof globalThis.fetch === 'function' ? globalThis.fetch.bind(globalThis) : undefined;
-        this.solanaConnection = new web3.Connection(this.solanaRpcUrl, {
-          commitment: 'confirmed',
-          disableRetryOnRateLimit: true,
-          ...(boundFetch ? { fetch: boundFetch } : {})
-        });
-      } catch (e) {
-        console.warn('[Relayer] Solana connection notice:', e.message);
-      }
-
       console.log(
         `🛡️  [Aegis Relayer] Initialized (account: ${this.relayerAccountId}, signerLoaded: ${this.hasSignerKey})`
       );
@@ -3153,6 +3148,47 @@ class AegisRelayerService {
         `Missing RELAYER_PRIVATE_KEY for ${this.relayerAccountId}. Configure RELAYER_PRIVATE_KEY env secret or ${this.credPath}.`
       );
     }
+  }
+
+  async evmRpc(method, params = []) {
+    const candidates = [
+      this.evmRpcUrl,
+      'https://sepolia.drpc.org',
+      'https://ethereum-sepolia-rpc.publicnode.com',
+      'https://1rpc.io/sepolia',
+      'https://rpc.sepolia.org'
+    ].filter((u, idx, arr) => u && arr.indexOf(u) === idx);
+
+    let lastErr = null;
+    for (const url of candidates) {
+      try {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'User-Agent': 'AegisVaultRelayer/1.0'
+          },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            id: 1,
+            method,
+            params
+          })
+        });
+        if (!res.ok) {
+          lastErr = new Error(`EVM RPC HTTP ${res.status} (${url})`);
+          continue;
+        }
+        const body = await res.json();
+        if (body.error) {
+          throw new Error(body.error.message || JSON.stringify(body.error));
+        }
+        return body.result;
+      } catch (err) {
+        lastErr = err;
+      }
+    }
+    throw lastErr || new Error('All EVM Sepolia RPC endpoints failed');
   }
 
   async solanaRpc(method, params = []) {
@@ -3403,8 +3439,8 @@ class AegisRelayerService {
     if (destination.evm && destination.evm.trim().length === 42) {
       console.log(`\n[EVM Sweep] Checking ${vaultAddrs.evm.address} -> ${destination.evm}...`);
       try {
-        if (!this.evmProvider) throw new Error('EVM RPC provider unavailable');
-        const liveWei = await this.evmProvider.getBalance(vaultAddrs.evm.address);
+        const balHex = await this.evmRpc('eth_getBalance', [vaultAddrs.evm.address, 'latest']);
+        const liveWei = BigInt(balHex || '0x0');
         console.log(`   • EVM Bunker Balance: ${ethers.formatEther(liveWei)} ETH (${liveWei} wei)`);
 
         if (liveWei === 0n) {
@@ -3415,18 +3451,22 @@ class AegisRelayerService {
             amount: '0.0000 ETH'
           };
         } else {
-          const [nonce, feeData, network] = await Promise.all([
-            this.evmProvider.getTransactionCount(vaultAddrs.evm.address, 'pending'),
-            this.evmProvider.getFeeData(),
-            this.evmProvider.getNetwork()
+          const [nonceHex, gasPriceHex, priorityFeeHex, chainIdHex] = await Promise.all([
+            this.evmRpc('eth_getTransactionCount', [vaultAddrs.evm.address, 'pending']),
+            this.evmRpc('eth_gasPrice', []),
+            this.evmRpc('eth_maxPriorityFeePerGas', []).catch(() => '0x3b9aca00'),
+            this.evmRpc('eth_chainId', [])
           ]);
-          const chainId = Number(network.chainId || 11155111);
+          const nonce = Number(BigInt(nonceHex || '0x0'));
+          const chainId = Number(BigInt(chainIdHex || '0xaa36a7'));
           const MIN_FEE = 1_500_000_000n; // 1.5 Gwei floor
           const MAX_SAFE_FEE = 450_000_000_000n; // 450 Gwei (< 500 Gwei contract cap)
-          let maxFeePerGas = feeData.maxFeePerGas || feeData.gasPrice || 20_000_000_000n;
+          const baseGasPrice = BigInt(gasPriceHex || '0x4a817c800');
+          let maxPriorityFeePerGas = BigInt(priorityFeeHex || '0x3b9aca00');
+          if (maxPriorityFeePerGas <= 0n) maxPriorityFeePerGas = 1_000_000_000n;
+          let maxFeePerGas = baseGasPrice * 2n + maxPriorityFeePerGas;
           if (maxFeePerGas < MIN_FEE) maxFeePerGas = MIN_FEE;
           if (maxFeePerGas > MAX_SAFE_FEE) maxFeePerGas = MAX_SAFE_FEE;
-          let maxPriorityFeePerGas = feeData.maxPriorityFeePerGas || 1_000_000_000n;
           if (maxPriorityFeePerGas > maxFeePerGas) maxPriorityFeePerGas = maxFeePerGas;
 
           const memoBytes = sweepMemo ? ethers.toUtf8Bytes(sweepMemo) : new Uint8Array(0);
@@ -3457,19 +3497,18 @@ class AegisRelayerService {
               memo: sweepMemo
             });
 
-            const outcome = await this.account.functionCall({
-              contractId: this.contractId,
-              methodName: 'request_sweep_signature',
-              args: {
+            const outcome = await this.callContract(
+              'request_sweep_signature',
+              {
                 vault_owner: vaultOwner,
                 chain: 'EVM',
                 payload_hex: evmSweep.unsignedTxHex,
                 target_epoch: epoch,
                 is_eddsa: false
               },
-              gas: '280000000000000',
-              attachedDeposit: '0' // Funded by Vault Gas Escrow / Sponsor Pool
-            });
+              '280000000000000',
+              '0'
+            );
 
             const nearTxHash = outcome.transaction.hash;
             const mpcSignature = this.extractMpcSignatureFromOutcome(outcome);
@@ -3478,8 +3517,11 @@ class AegisRelayerService {
             }
 
             const signedEvmTx = this.engine.assembleSignedEvmTx(evmSweep.rawTx, mpcSignature);
-            const broadcastResp = await this.evmProvider.broadcastTransaction(signedEvmTx.signedTx);
-            const evmHash = broadcastResp?.hash || signedEvmTx.txHash;
+            const rawSignedHex = signedEvmTx.signedTx.startsWith('0x')
+              ? signedEvmTx.signedTx
+              : '0x' + signedEvmTx.signedTx;
+            const broadcastHash = await this.evmRpc('eth_sendRawTransaction', [rawSignedHex]);
+            const evmHash = broadcastHash || signedEvmTx.txHash;
             console.log(`   🚀 EVM Sweep Broadcasted! TxHash: ${evmHash}`);
 
             telemetryRecord.sweeps.evm = {
