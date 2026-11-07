@@ -1017,7 +1017,7 @@
                       <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" /></svg>
                       <span>Private Note to Heirs (Zero Plaintext On-Chain)</span>
                     </div>
-                    <span id="memoByteCount" class="font-mono text-nearGreen text-xs font-bold">0 / 240 B</span>
+                    <span id="memoByteCount" class="font-mono text-nearGreen text-xs font-bold">0 / 512 B</span>
                   </div>
                   <input type="text" id="heirFinalMemo" name="aegis_heirFinalMemo_noautofill" autocomplete="new-password" data-form-type="other" readonly onfocus="if(!this.disabled)this.removeAttribute('readonly');" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" oninput="updateMemoByteCounter(this.value)" placeholder="e.g. Hardware wallet PIN & family vault instructions..." class="w-full bg-transparent pt-0.5 text-xs sm:text-[13px] font-mono text-white placeholder:text-[#585E6A] outline-none">
                   <div class="flex items-center gap-2 pt-1 border-t border-white/[0.06]">
@@ -1111,12 +1111,13 @@
         <!-- Header row -->
         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/[0.08] pb-5">
           <div>
-            <div class="flex items-center gap-2.5">
+            <div class="flex items-center gap-2.5 flex-wrap">
               <span class="w-2.5 h-2.5 rounded-full bg-nearGreen radar-pulse"></span>
               <h3 class="text-base sm:text-lg font-bold text-white tracking-tight">Automated Relayer Alerts</h3>
+              <span class="text-[10px] font-mono font-bold text-amber-300 bg-amber-950/40 border border-amber-500/30 px-2.5 py-0.5 rounded-full">Optional Off-Chain Webhook Preview</span>
             </div>
             <p class="text-xs sm:text-sm text-[#8C929D] mt-1">
-              Multi-channel push notifications dispatched by the decentralized relayer network prior to heartbeat expiry.
+              Optional off-chain notification targets prior to heartbeat expiry. Core Dead-Man's Switch & MPC sweeps execute 100% autonomously on-chain without relying on Telegram or email delivery.
             </p>
           </div>
           <div id="tgStatusBadge" class="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/[0.04] border border-white/[0.08] text-xs font-mono text-[#DFE3E8]">
@@ -1426,16 +1427,16 @@
         <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" /></svg>
       </div>
       <div class="space-y-1.5">
-        <h3 class="text-base font-extrabold text-textWhite">Test Alert Sent</h3>
+        <h3 class="text-base font-extrabold text-textWhite">Webhook Target Preview</h3>
         <p class="text-xs sm:text-sm text-textSilver">
-          A test alert has been dispatched to your configured Telegram handle:
+          Local off-chain alert target saved for optional relayer webhook integration:
         </p>
       </div>
       <div class="p-3.5 rounded-2xl bg-nearElevated border border-nearBorder font-mono text-xs text-nearGreen font-bold">
         <span id="modalTgTarget">@telegram_handle</span>
       </div>
       <div class="text-[11px] text-textGray">
-        Also simulated to: <span id="modalEmailTarget" class="text-textSilver font-mono">backup@example.com</span>
+        Failover target: <span id="modalEmailTarget" class="text-textSilver font-mono">backup@example.com</span> · On-chain sweeps run independently of off-chain alerts.
       </div>
       <button onclick="closeTestAlertModal()" class="w-full bg-nearElevated hover:bg-nearHover text-textWhite font-bold py-3 near-pill-btn text-xs sm:text-sm transition border border-nearBorder">
         Close
@@ -1504,15 +1505,14 @@
               <div id="monitorEvmLink" class="text-[11px] pt-0.5"></div>
             </div>
             <span id="evmTxStatusBadge" class="text-nearGreen font-bold bg-nearGreenMuted border border-nearGreen/30 px-2.5 py-1 rounded-full text-xs">
-              Queued for relayer sweep (<span id="evmGasGwei">25</span> Gwei)
+              Queued for relayer sweep (Dynamic EIP-1559)
             </span>
           </div>
 
           <div class="pt-2 border-t border-nearBorder flex items-center justify-between text-xs font-sans">
-            <span class="text-textGray">Transaction taking too long?</span>
-            <button id="speedUpEvmBtn" onclick="speedUpEvmGas()" class="px-4 py-1.5 near-pill-btn bg-nearGreen/20 hover:bg-nearGreen/30 text-nearGreen font-bold border border-nearGreen/40 transition active:scale-98 flex items-center gap-1.5">
-              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-              <span>Speed Up (+25% Gas / RBF)</span>
+            <span class="text-textGray">24/7 Stateless Cloud Keeper (`keeper.aegis.okgoogleok.testnet`):</span>
+            <button id="syncKeeperBtn" onclick="triggerCloudKeeperSweep(true)" class="px-4 py-1.5 near-pill-btn bg-nearGreen/20 hover:bg-nearGreen/30 text-nearGreen font-bold border border-nearGreen/40 transition active:scale-98 flex items-center gap-1.5 cursor-pointer">
+              <span>⚡ Sync Cloud Keeper</span>
             </button>
           </div>
         </div>
@@ -4124,7 +4124,24 @@
 
       if (remainingSeconds <= 0) {
         if (countdownBox) countdownBox.innerHTML = '<span class="text-red-400">EXPIRED</span>';
-        if (statusDisplay) statusDisplay.innerHTML = 'Status: <strong class="text-red-400 font-bold">Heartbeat Expired</strong>';
+        let graceRemainingSec = 0;
+        if (lastFetchedVaultInfo && lastFetchedVaultInfo.last_ping_ns) {
+          const fullExpiryMs = Number(
+            (BigInt(lastFetchedVaultInfo.last_ping_ns) +
+              BigInt(lastFetchedVaultInfo.heartbeat_interval_ns || '0') +
+              BigInt(lastFetchedVaultInfo.challenge_period_ns || '0')) / 1000000n
+          );
+          graceRemainingSec = Math.max(0, Math.ceil((fullExpiryMs - Date.now()) / 1000));
+          if (Date.now() >= fullExpiryMs + 1500 && Date.now() - lastCloudKeeperNudgeMs > 20000) {
+            lastCloudKeeperNudgeMs = Date.now();
+            triggerCloudKeeperSweep(false);
+          }
+        }
+        if (statusDisplay) {
+          statusDisplay.innerHTML = graceRemainingSec > 0
+            ? `Status: <strong class="text-amber-400 font-bold">Grace Buffer (${graceRemainingSec}s left)</strong>`
+            : 'Status: <strong class="text-red-400 font-bold">Heartbeat & Grace Expired · Sweeping</strong>';
+        }
         if (timerBar) {
           timerBar.style.width = '0%';
           timerBar.className = 'h-full bg-red-500 rounded-full transition-all duration-300';
@@ -4133,11 +4150,14 @@
         if (pingBtnText) pingBtnText.innerText = "I'M ALIVE (Recover & Reset)";
         if (onchainEl && !isVaultEvacuatedOrBurned()) {
           onchainEl.classList.remove('hidden');
+          const bannerLabel = graceRemainingSec > 0
+            ? `Grace Buffer Active (${graceRemainingSec}s before autonomous sweep)`
+            : 'Autonomous Push Inheritance Executing via Cloud Keeper';
           onchainEl.innerHTML = `
             <div class="w-full mt-2.5 bg-amber-500/10 border border-amber-500/30 text-amber-300 px-4 py-2.5 rounded-xl text-xs flex items-center justify-between cursor-pointer" onclick="openEvacMonitor()">
               <span class="flex items-center gap-2">
                 <span class="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
-                <span>Autonomous Push Inheritance in Progress</span>
+                <span>${bannerLabel}</span>
               </span>
               <span class="text-[10px] font-mono bg-amber-950/40 px-2 py-0.5 rounded border border-amber-500/30">View Live Sweep</span>
             </div>
@@ -4197,8 +4217,9 @@
       try {
         const outcome = await dispatchNearTransaction('trigger_push_inheritance', { vault_owner: currentSigner });
         if (outcome) {
-          showToast('Inheritance triggered on-chain! Autonomous sweep unlocked.');
+          showToast('Inheritance triggered on-chain! Dispatching Cloud Keeper...');
           openEvacMonitor();
+          triggerCloudKeeperSweep(false);
           setTimeout(() => fetchLiveBalances(true), 1500);
         }
       } catch (e) {
@@ -4661,8 +4682,9 @@
         renderBunkerAddresses();
         updateCountdownDisplay();
 
-        showToast('PANIC CONFIRMED ON-CHAIN: Vault evacuated.', true);
+        showToast('PANIC CONFIRMED ON-CHAIN: Dispatching Cloud Keeper sweep...', true);
         openEvacMonitor();
+        triggerCloudKeeperSweep(false);
 
         fetchLiveBalances(true);
         setTimeout(() => fetchLiveBalances(true), 2500);
@@ -4840,18 +4862,33 @@
       document.getElementById('evacMonitorModal').classList.add('hidden');
     }
 
-    let currentGasGwei = 25;
-    function speedUpEvmGas() {
-      currentGasGwei = Math.round(currentGasGwei * 1.25);
-      document.getElementById('evmGasGwei').innerText = currentGasGwei;
-      const badge = document.getElementById('evmTxStatusBadge');
-      badge.className = 'text-nearGreen font-bold bg-nearGreenMuted border border-nearGreen/30 px-3 py-1 rounded-full text-xs';
-      badge.innerHTML = `RBF Bumped to ${currentGasGwei} Gwei · Priority #1`;
-      const btn = document.getElementById('speedUpEvmBtn');
-      btn.innerText = 'Highest Priority Set';
-      btn.disabled = true;
-      btn.classList.add('opacity-50');
-      showToast(`Gas bumped to ${currentGasGwei} Gwei! Transaction accelerated.`, false);
+    const DEFAULT_CLOUD_KEEPER_URL = 'https://aegis-keeper.dawn-direction.workers.dev';
+    let lastCloudKeeperNudgeMs = 0;
+
+    async function triggerCloudKeeperSweep(showFeedback = false) {
+      const keeperUrl = (localStorage.getItem('aegis_keeper_url') || DEFAULT_CLOUD_KEEPER_URL).replace(/\/$/, '');
+      const btn = document.getElementById('syncKeeperBtn');
+      if (showFeedback) {
+        if (btn) { btn.disabled = true; btn.innerText = 'Syncing Keeper...'; }
+        showToast('⚡ Dispatching 24/7 Cloud Keeper sweep pass...');
+      }
+      try {
+        const res = await fetch(`${keeperUrl}/trigger`, { method: 'POST' });
+        const data = await res.json().catch(() => null);
+        await fetchLiveContractState();
+        fetchLiveBalances(true);
+        if (showFeedback) {
+          showToast(data?.success ? '✅ Cloud Keeper synced on-chain telemetry!' : 'Keeper check completed.');
+        }
+      } catch (_) {
+        await fetchLiveContractState();
+        if (showFeedback) showToast('Synced latest telemetry directly from NEAR RPC.');
+      } finally {
+        if (showFeedback && btn) {
+          btn.disabled = false;
+          btn.innerText = '⚡ Sync Cloud Keeper';
+        }
+      }
     }
 
     // Alert Settings & Test Dispatch Modal
@@ -4886,11 +4923,14 @@
     // Destination Policies & 72h Timelock
 
     function updateMemoByteCounter(val) {
-      const bytes = new TextEncoder().encode(val || '').length;
+      const text = String(val || '');
+      const bytes = new TextEncoder().encode(text).length;
+      const isCipher = text.startsWith('enc:x25519:') || text.startsWith('enc:aes256:');
+      const limit = isCipher ? 1024 : 512;
       const counter = document.getElementById('memoByteCount');
       if (counter) {
-        counter.innerText = `${bytes} / 240 B`;
-        if (bytes > 240) {
+        counter.innerText = isCipher ? `Sealed (${bytes} / 1024 B)` : `${bytes} / ${limit} B`;
+        if (bytes > limit) {
           counter.className = 'text-[11px] font-mono font-bold text-red-400';
         } else if (bytes > 0) {
           counter.className = 'text-[11px] font-mono font-semibold text-nearGreen';
@@ -5237,47 +5277,14 @@
       showToast('Applying active policy on-chain...');
     }
 
-    // Silent On-Chain Heartbeat on site activity (Dual Heartbeat System)
-    let lastSilentPingAttempt = 0;
-    async function triggerSilentActivityPing() {
-      const now = Date.now();
-      if (now - lastSilentPingAttempt < 60000) return; // Throttle checks to max once per minute
-      lastSilentPingAttempt = now;
-
-      const currentSigner = localStorage.getItem('aegis_signer_account');
-      if (!currentSigner || isVaultEvacuatedOrBurned()) return;
-      if (!hasConfiguredDestinations() || (lastFetchedVaultInfo && lastFetchedVaultInfo.state !== 'Active')) return;
-
-      const lastPing = parseInt(localStorage.getItem('aegis_last_ping_ns') || '0');
-      const nowNs = now * 1000000;
-      // If more than 5 minutes have elapsed since last on-chain ping, silently check-in
-      if (nowNs - lastPing > 300 * 1e9) {
-        console.log('[Aegis] Site activity detected: sending silent on-chain ping()...');
-        try {
-          const outcome = await dispatchNearTransaction('ping');
-          if (outcome) {
-            console.log('[Aegis] Silent on-chain heartbeat successfully registered!');
-            setTimeout(fetchLiveContractState, 1500);
-          }
-        } catch (e) {
-          console.warn('[Aegis] Silent auto-ping note:', e.message);
-        }
-      }
-    }
-
     // Initialize Live On-Chain Polling and Wallet Connection on page load
+    // (Explicit manual check-in only: never auto-fire wallet popups on scroll/click)
     document.addEventListener('DOMContentLoaded', () => {
       initNearWallet();
       updateMultichainConnectedUI();
       renderWalletsGrid('all');
       fetchLiveContractState();
       setInterval(fetchLiveContractState, 15000);
-
-      // Trigger silent heartbeat check on load and on any page interaction
-      setTimeout(triggerSilentActivityPing, 3000);
-      ['click', 'keydown', 'scroll'].forEach(evt => {
-        window.addEventListener(evt, triggerSilentActivityPing, { passive: true });
-      });
 
       // Handle ESC key to close modal
       document.addEventListener('keydown', (e) => {

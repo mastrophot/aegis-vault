@@ -1,35 +1,44 @@
-# 🛡️ Aegis — Autonomous Multichain Dead-Man's Switch & Panic Evacuation Vault
+# 🛡️ Aegis Vault — Autonomous Multichain Dead-Man's Switch & Panic Evacuation Bunker
 
 > **NEAR HACKATHON 2026 Submission**  
 > **Track:** Web3 Infrastructure · Multi-Chain Security · Chain Abstraction  
-> **Core Primitive:** Native NEAR Chain Signatures (`v1.signer` MPC Network) & Pure Rust Smart Contract  
-> **Live Demo:** [https://mastrophot.github.io/aegis-vault/](https://mastrophot.github.io/aegis-vault/)  
-> **NEAR Testnet Contract:** [`aegis.okgoogleok.testnet`](https://testnet.nearblocks.io/address/aegis.okgoogleok.testnet)
+> **Core Primitive:** Native NEAR Chain Signatures (`v1.signer-prod.testnet` MPC Network) & Pure Rust Smart Contract  
+> **Live App:** [https://mastrophot.github.io/aegis-vault/](https://mastrophot.github.io/aegis-vault/)  
+> **NEAR Testnet Contract:** [`aegis.okgoogleok.testnet`](https://testnet.nearblocks.io/address/aegis.okgoogleok.testnet)  
+> **Least-Privilege Keeper Account:** [`keeper.aegis.okgoogleok.testnet`](https://testnet.nearblocks.io/address/keeper.aegis.okgoogleok.testnet)
 
 ---
 
 ## 🎯 The Problem
 
-1. **Billions in Lost Crypto Assets**: When a crypto asset holder unexpectedly passes away or loses access, their family cannot access disparate seed phrases, hardware wallets, or cross-chain accounts. Assets remain permanently stranded on-chain.
-2. **Physical Extortion & Duress ("\$5 Wrench Attack")**: Under physical coercion or home invasion, victims are forced to unlock their primary devices. Existing Web2 dead-man's switches rely on centralized servers or custodial escrow of private keys.
-3. **Cross-Ecosystem Fragmentation**: Traditional inheritance smart contracts operate exclusively within a single EVM or single L1 environment. No non-custodial solution could concurrently manage **Bitcoin (UTXO)**, **EVM (Account/EIP-1559)**, and **Solana (Account/Ed25519)** from a single autonomous decentralized root of trust without intermediaries.
+1. **Billions in Stranded Crypto Assets**: When an asset holder unexpectedly passes away or becomes incapacitated, family members rarely know how to recover seed phrases, hardware wallets, and cross-chain accounts across disparate ecosystems.
+2. **Physical Coercion & Duress ("\$5 Wrench Attack")**: Under physical extortion or device seizure, victims need an immediate, irreversible mechanism to evacuate assets to cold multi-sig/backup storage and burn hot derivation epochs.
+3. **Cross-Ecosystem Fragmentation & Blind-Signing Risks**: Traditional inheritance contracts work only inside a single EVM chain, expose plaintext notes on-chain, or rely on centralized custodial bots with unrestricted signing keys.
 
 ---
 
-## 💡 The Solution: Aegis
+## 💡 The Solution: Aegis Vault
 
-**Aegis** is a non-custodial, multichain dead-man's switch and emergency panic evacuation system powered by **NEAR Protocol Chain Signatures**. It turns a single NEAR smart contract into a universal threshold signer for Bitcoin, EVM, and Solana.
+**Aegis Vault** is a 100% non-custodial multichain dead-man's switch and emergency evacuation bunker powered by **NEAR Protocol Chain Signatures (`v1.signer-prod.testnet`)**. A single Rust smart contract governs threshold ECDSA (`Secp256k1`) and EdDSA (`Ed25519`) sweeps across **Bitcoin (Native SegWit)**, **EVM (Ethereum / Base / Arbitrum)**, **Solana (Native + SPL / Token-2022)**, and **NEAR**.
 
-* **Zero Custody (100% Non-Custodial)**: No private keys ever touch a server. Multichain deposit addresses (Bitcoin Native SegWit, EVM, and Solana) are mathematically derived from NEAR MPC's root public key via deterministic derivation paths (`aegis/{epoch}`).
-* **Proof-of-Life Heartbeat (`ping()`)**: The vault owner maintains active status by sending a periodic lightweight on-chain ping (e.g., every 90 days).
-* **Autonomous Push Inheritance Protocol**: If the inactivity timer expires and the safety grace window elapses without owner check-in, the contract autonomously transitions to `Inheritance` state. The decentralized relayer sweeps assets directly to heirs without heirs having to sign, claim, or pay gas.
-* **Emergency Panic Button (Instant Evacuation)**: Under immediate threat, the owner triggers `panic()` (with 3-second hold buffer or 1-click armed mode). The vault immediately locks, bumps the derivation epoch to burn old addresses, and authorizes evacuation of 100% of all multichain assets directly to pre-configured cold backup wallets.
-* **Anti-Hacking Policy Timelock**: First-time initialization activates immediately to allow zero-friction onboarding and instant testing. Any subsequent modifications to egress destination addresses (`backup` or `heirs`) enforce a strict 72-hour on-chain cooldown. If the owner's NEAR account is compromised, the rogue proposal can be cancelled during the window before it becomes effective.
-* **Cryptographic Anti-Blind-Signing & Structural Payload Verification**:
-  * **EVM**: The smart contract verifies raw transaction bytecode (`> 64` hex characters), verifies that the 20-byte destination strictly matches designated backup/heir addresses, and executes `keccak256` on-chain. Relayers cannot submit blind hashes.
-  * **Solana**: The smart contract parses the binary Solana Message header and account indices, enforcing `unsigned_writable_count == 1` and ensuring `account_1` is strictly the designated destination wallet (preventing substring/decoy injection attacks).
-  * **Bitcoin**: Supports BIP-143 SegWit sighash authorization, automatic dust filtering (< 546 sats), and BIP-125 Opt-in RBF.
-* **Immutable On-Chain Testament**: Embeds arbitrary last words/instructions directly into Bitcoin `OP_RETURN`, EVM calldata, and Solana memo upon execution.
+### Key Capabilities & Hardened Architecture
+
+* **Zero Custody (Deterministic MPC Derivation)**: Deposit addresses are derived directly from `v1.signer-prod.testnet` via `aegis/{vault_owner}/{epoch}`. No private keys ever exist on any server.
+* **Autonomous Push Inheritance (`trigger_push_inheritance`)**: Once `heartbeat_interval_ns + challenge_period_ns` elapses without an owner check-in, anyone or any stateless cloud keeper transitions the vault to `Inheritance` and sweeps 100% of multichain funds directly to designated heirs — heirs never need to connect a wallet, claim, or pay gas.
+* **Emergency Panic Evacuation (`panic`)**: 3-second continuous hold trigger (or armed instant mode) immediately locks the vault into `Evacuated`, routes 100% of assets to cold backup addresses, and archives historical destinations upon `rotate_bunker()` (`archive:{owner}:{epoch}`).
+* **Client-Side E2EE Digital Testament (Zero Plaintext On-Chain)**:
+  * **Asymmetric Mode (`enc:x25519:...`)**: Automatically converts the heir's Solana `Ed25519` public key into a `Curve25519` (`X25519`) public key in the browser (`@noble/curves/ed25519` + `tweetnacl`) and seals the testament before touching NEAR RPC.
+  * **Symmetric Mode (`enc:aes256:...`)**: Optional WebCrypto `PBKDF2-SHA256` (`100,000` iterations) + `AES-256-GCM` authenticated encryption.
+  * Embedded on-chain during sweeps (Solana Memo, EVM calldata, and 80-byte SHA-256 commitment anchor in Bitcoin `OP_RETURN`), unreadable on block explorers, and decryptable 100% offline via UI (`🔓 Decrypt`) or CLI (`node scripts/decrypt_testament.js`).
+* **Self-Sustaining Keeper Economics (Per-Vault Gas Escrow & Refund)**:
+  * Vault owners can fund an isolated `gas_escrow` (`deposit_escrow` / `propose_policy`), backed by the contract's Sponsor Pool fallback.
+  * Stateless keepers invoke `request_sweep_signature` with **`0` attached NEAR deposit**; the contract pays the `v1.signer` MPC fee and automatically refunds **`0.005 NEAR`** execution gas to the keeper inside `on_signature_ready`.
+* **Least-Privilege `FunctionCall` Keeper (`keeper.aegis.okgoogleok.testnet`)**:
+  * Cloud keepers operate with a restricted `FunctionCall` access key (`0` NEAR transfer capability, scoped strictly to `trigger_push_inheritance`, `request_sweep_signature`, `record_sweep_telemetry`, `ping_by_relayer`, and `sweep_near`).
+* **Cryptographic Anti-Blind-Signing & Fee-Drain Protection**:
+  * **Solana Structural Bytecode Parser**: Parses the full binary Solana `Message` header and compiled instructions on-chain; bans `ComputeBudget111111111111111111111111111111` (preventing priority-fee drain to validator colluders), rejects zero blockhashes, and verifies `SystemProgram::Transfer` (`lamports > 0`) or `SPL Token` / `Token-2022` + `ATA` (`amount > 0`) strictly target the policy-locked recipient.
+  * **EVM EIP-1559 RLP Bytecode Parser**: Decodes raw Type-2 RLP transactions on-chain, enforces `gas_limit` (`21,000..=250,000`) and `max_fee_per_gas <= 500 Gwei` caps, verifies native ETH (`value > 0`), `ERC-20 transfer` (`0xa9059cbb`), and `ERC-721 safeTransferFrom` (`0x42842e0e`) recipients, and hashes via `env::keccak256` inside WASM.
+  * **Signed Sponsored Heartbeat (`ping_by_relayer`)**: Verifies owner `Ed25519` / NEP-413 signatures on-chain via `env::ed25519_verify` with monotonic timestamp anti-replay (`ping_ts:{owner}`), preventing hostile relayers from resetting a deceased owner's timer.
 
 ---
 
@@ -37,187 +46,113 @@
 
 ```
                        ┌──────────────────────────────────────────────┐
-                       │           Owner / Designated Heirs           │
+                       │         Vault Owner / Browser Client         │
+                       │  - Local X25519 / AES-256-GCM E2EE Sealing   │
+                       │  - Meteor / Nightly / HERE / Sender Wallets  │
                        └──────────────────────┬───────────────────────┘
-                                              │  ping() / panic() / claim()
+                                              │  propose_policy() / ping() / panic()
                                               ▼
                        ┌──────────────────────────────────────────────┐
-                       │         Aegis Vault Smart Contract           │
-                       │           (Rust / near-sdk 5.5)              │
-                       │  - State Machine: Active / Claim / Evacuated │
-                       │  - Structural Payload Verification (EVM/SOL) │
-                       │  - 72h Policy Cooldown & Epoch Rotation      │
-                       └──────────────────────┬───────────────────────┘
-                                              │  request_sweep_signature()
-                                              │  (Attached Gas: 250 TGas)
-                                              ▼
-                       ┌──────────────────────────────────────────────┐
-                       │          NEAR MPC Network (v1.signer)        │
-                       │  - Threshold Secp256k1 (Bitcoin / EVM)       │
-                       │  - Threshold Ed25519   (Solana / NEAR)       │
-                       └──────┬────────────────┬───────────────┬──────┘
-                              │                │               │
-                              ▼                ▼               ▼
-                       ┌────────────┐   ┌────────────┐  ┌─────────────┐
-                       │  Bitcoin   │   │    EVM     │  │   Solana    │
-                       │  (SegWit)  │   │(Base/Sepol)│  │(Dev/Mainnet)│
-                       │ BIP-143    │   │  EIP-1559  │  │System/SPL22 │
-                       │ P2WPKH     │   │ Raw Byte   │  │Header Check │
-                       └────────────┘   └────────────┘  └─────────────┘
+                       │       Aegis Vault Contract (Rust / WASM)     │
+                       │            aegis.okgoogleok.testnet          │
+                       │  - Multi-Tenant Vaults & 72h Policy Timelock │
+                       │  - EVM RLP & Solana Instruction Verifiers    │
+                       │  - Per-Vault Gas Escrow + 0.005N Refund      │
+                       │  - On-Chain Sweep Telemetry & Epoch Archive  │
+                       └──────────┬───────────────────────┬───────────┘
+       0-Deposit Stateless Sweep  │                       │  Cross-Contract sign()
+   keeper.aegis.okgoogleok.testnet│                       ▼
+┌─────────────────────────────────┴──┐     ┌──────────────────────────────────┐
+│  24/7 Stateless Cloud Keepers      │     │  NEAR MPC (v1.signer-prod)       │
+│  - Cloudflare Worker (Edge HTTP)   │     │  - Threshold Secp256k1 (BTC/EVM) │
+│  - GitHub Actions (*/5m Cron)      │     │  - Threshold Ed25519 (SOL/NEAR)  │
+└─────────────────┬──────────────────┘     └─────────────────┬────────────────┘
+                  │  Assemble & Broadcast Signed Raw Tx      │
+                  └───────────────────┬──────────────────────┘
+                                      ▼
+        ┌─────────────────┬───────────────────────┬─────────────────┐
+        ▼                 ▼                       ▼                 ▼
+ ┌─────────────┐   ┌─────────────┐         ┌─────────────┐   ┌─────────────┐
+ │   Bitcoin   │   │     EVM     │         │   Solana    │   │    NEAR     │
+ │ SegWit PSBT │   │  EIP-1559   │         │ System/SPL  │   │  Implicit & │
+ │ Multi-UTXO  │   │ Dynamic Fee │         │ Base58 Sig  │   │  Isolated   │
+ └─────────────┘   └─────────────┘         └─────────────┘   └─────────────┘
 ```
 
 ---
 
 ## 📁 Repository Structure
 
-* [`contracts/vault/`](contracts/vault/): Production-hardened Rust smart contract (`near-sdk 5.5.0`):
-  * [`src/lib.rs`](contracts/vault/src/lib.rs): State machine, Solana structural bytecode parser, EVM destination verification, BIP-143 Bitcoin sighash authorization, safe `migrate()` upgrade handler, and 9 unit tests.
-* [`relayer/`](relayer/): Autonomous multichain sweep relayer service:
-  * [`sweep_relayer.js`](relayer/sweep_relayer.js): PSBT constructor with BIP-66 DER signature injection, EVM zero-asset queue with L2 rollup buffer, Solana JIT blockhash fetcher, and fault-isolation runner.
-* [`scripts/`](scripts/):
-  * [`derive_addresses.js`](scripts/derive_addresses.js): Cryptographic MPC derivation of Bitcoin, EVM, and Solana addresses from NEAR contract identity.
-  * [`test_sweep_flow.js`](scripts/test_sweep_flow.js): Comprehensive end-to-end simulation verifying all 6 multichain evacuation flows.
-  * [`deploy_testnet.js`](scripts/deploy_testnet.js): Automated NEAR Testnet deployment script.
-* [`web/`](web/): High-performance cyber-hardened user interface:
-  * [`index.html`](web/index.html): Real-time Web3 frontend with live NEAR RPC contract polling, `window.nearApi` transaction dispatcher, MyNearWallet testnet authentication, interactive multichain address derivation display, and hold-to-evacuate panic trigger.
-* [`AEGIS_AUDIT_BUNDLE.md`](AEGIS_AUDIT_BUNDLE.md): Consolidated, single-file audit bundle containing complete codebase, verified security invariants, and test vectors.
+* [`contracts/vault/src/lib.rs`](contracts/vault/src/lib.rs): Hardened Rust smart contract (`near-sdk 5.5.0`) — state machine, Solana compiled-instruction verifier, EVM EIP-1559 RLP verifier, `ed25519_verify` NEP-413 sponsored ping, Per-Vault Gas Escrow + keeper refund, isolated NEAR vault deposits, epoch archiving, and on-chain sweep telemetry.
+* [`relayer/service.js`](relayer/service.js) & [`relayer/sweep_relayer.js`](relayer/sweep_relayer.js): Stateless multichain sweep engine — multi-UTXO Bitcoin SegWit PSBT signing + `OP_RETURN` anchor, dynamic EVM nonce/fee calculation + honeypot fault isolation, real 88-char Base58 Solana signatures, and on-chain `record_sweep_telemetry`.
+* [`workers/keeper/`](workers/keeper/): Serverless Cloudflare Worker (`nodejs_compat`) running at the edge for instant `<1s` `/trigger` sweeps and scheduled autonomous checks.
+* [`.github/workflows/relayer-keeper.yml`](.github/workflows/relayer-keeper.yml): Autonomous GitHub Actions cloud keeper (`*/5 * * * *`) powered by the restricted `FunctionCall` key on `keeper.aegis.okgoogleok.testnet`.
+* [`src/wallet-selector.js`](src/wallet-selector.js) & [`web/index.html`](web/index.html): Static zero-backend Web3 interface with NEAR Wallet Selector, live MPC address derivation, client-side X25519/AES-256 E2EE testament sealing & offline decryption modal, Judge Demo Mode (`2m + 30s`), and real-time on-chain evacuation telemetry.
+* [`scripts/decrypt_testament.js`](scripts/decrypt_testament.js): Zero-server offline CLI decryptor for heirs (`enc:x25519:` & `enc:aes256:`).
+* [`scripts/test_sweep_flow.js`](scripts/test_sweep_flow.js): End-to-end cryptographic test suite validating all 6 multichain sweep pipelines.
+* [`AEGIS_AUDIT_BUNDLE.md`](AEGIS_AUDIT_BUNDLE.md): Complete single-file architectural and source-code audit dossier.
 
 ---
 
 ## ⚡ Quick Start & Verification
 
-### 1. Run Unit Tests (Rust Smart Contract)
+### 1. Run Smart Contract Security Unit Tests (Rust)
 ```bash
 cd contracts/vault
 cargo test
 ```
-*Result: 9/9 unit tests passing (anti-blind-signing, Solana substring rejection, epoch rotation, policy timelock).*
+*Result: `7/7` comprehensive security suites passing (EVM RLP fee/destination caps, Solana `ComputeBudget` & decoy rejection, `ed25519_verify` replay protection, epoch rotation & archiving, 72h policy timelock).*
 
-### 2. Build WebAssembly Contract
+### 2. Run Multichain Relayer Cryptographic Suite
 ```bash
-cargo build --target wasm32-unknown-unknown --release
+npm test
+# or: node scripts/test_sweep_flow.js
 ```
-*Output: `contracts/vault/target/wasm32-unknown-unknown/release/lastkey_vault.wasm` (306 KB)*
+*Result: `100%` of multichain pipelines verified (MPC address derivation on `aegis.okgoogleok.testnet`, EVM EIP-1559 signature recovery, Bitcoin SegWit PSBT + dust guard, Solana SystemProgram & SPL/Token-2022 atomic ATA sweep, NEAR sweep, and EVM fault isolation).*
 
-### 3. Run Multichain Relayer Verification
+### 3. Test Offline E2EE Testament Decryption
 ```bash
-node scripts/test_sweep_flow.js
+node scripts/decrypt_testament.js "<enc:x25519:... | enc:aes256:...>" "<solana_secret_key_or_passphrase>"
 ```
-*Result: 100% of multichain relayer pipelines verified (EVM EIP-1559, Bitcoin BIP-143 PSBT with DER injection, Solana SystemProgram & Token-2022, NEAR Native).*
 
 ### 4. Run Frontend Locally
 ```bash
 npx serve web
-# Or open web/index.html directly in any browser
 ```
 *Live Deployment:* [https://mastrophot.github.io/aegis-vault/](https://mastrophot.github.io/aegis-vault/)
 
 ---
 
-## 🔒 Security & Invariants
+## 🔒 Security Invariants Matrix
 
-| Attack Vector | Defense Mechanism | Invariant Location |
+| Attack Vector | On-Chain / Cryptographic Defense | Implementation |
 | :--- | :--- | :--- |
-| **Relayer Blind-Signing** | Raw transaction bytecode validation; destination must match on-chain policy | [`contracts/vault/src/lib.rs`](contracts/vault/src/lib.rs#L365-L375) |
-| **Solana Substring Injection** | Strict parsing of Solana Message header (`unsigned_writable_count == 1`) | [`contracts/vault/src/lib.rs`](contracts/vault/src/lib.rs#L440-L490) |
-| **Bitcoin Dust Rejection** | Automatic pruning of UTXOs under 546 sats to prevent mempool rejection | [`relayer/sweep_relayer.js`](relayer/sweep_relayer.js#L350-L360) |
-| **Solana Blockhash Expiry** | JIT finalized blockhash refresh immediately prior to MPC signature request | [`relayer/sweep_relayer.js`](relayer/sweep_relayer.js#L585-L600) |
-| **EVM Nonce Stall** | Continuous nonce fault isolation skips broken/honeypot tokens without gaps | [`relayer/sweep_relayer.js`](relayer/sweep_relayer.js#L260-L290) |
-| **Unauthorized Policy Takeover** | 72-hour timelock on destination updates with instant owner cancellation | [`contracts/vault/src/lib.rs`](contracts/vault/src/lib.rs#L210-L245) |
+| **Relayer Blind-Signing (EVM)** | Full EIP-1559 RLP decode; enforces `to == policy_dest`, `gas_limit <= 250k`, `max_fee <= 500 Gwei`, WASM `keccak256` | [`contracts/vault/src/lib.rs`](contracts/vault/src/lib.rs) |
+| **Solana Fee-Drain & Decoy Accounts** | Full compiled-instruction parser; bans `ComputeBudget`, rejects zero blockhash, verifies `lamports/amount > 0` to heir/backup | [`contracts/vault/src/lib.rs`](contracts/vault/src/lib.rs) |
+| **Hostile Relayer Timer Reset** | `ping_by_relayer` requires `env::ed25519_verify` over owner's key + 1h freshness + monotonic `ping_ts:{owner}` anti-replay | [`contracts/vault/src/lib.rs`](contracts/vault/src/lib.rs) |
+| **Keeper Key Compromise** | Dedicated `keeper.aegis.okgoogleok.testnet` uses restricted `FunctionCall` key (`0` transfer rights, 5 whitelisted methods) | On-Chain Access Key |
+| **Keeper Gas Depletion** | `0`-deposit `request_sweep_signature` funded via Per-Vault `gas_escrow` / Sponsor Pool + `0.005 NEAR` automatic gas refund | [`contracts/vault/src/lib.rs`](contracts/vault/src/lib.rs) |
+| **Plaintext Testament Leakage** | Client-side `X25519` (`Ed25519 -> Curve25519`) & `PBKDF2-AES-256-GCM` encryption before RPC submission | [`src/wallet-selector.js`](src/wallet-selector.js) |
+| **Unauthorized Policy Takeover** | 72-hour timelock on egress updates or non-demo timer shortening, with instant owner `cancel_policy_update()` | [`contracts/vault/src/lib.rs`](contracts/vault/src/lib.rs) |
+| **Delayed Sweep After Rotation** | `rotate_bunker()` snapshots `{state, destination}` in `archive:{owner}:{epoch}` so late sweeps remain cryptographically verifiable | [`contracts/vault/src/lib.rs`](contracts/vault/src/lib.rs) |
 
 ---
 
-## 🛡️ Security Architecture: Control Plane vs. Asset Plane Isolation
+## 🚀 24/7 Autonomous Cloud Keeper Infrastructure
 
-Aegis implements strict **Dual-Circuit Isolation** to protect cold bunker funds against hot-wallet compromise:
+Aegis runs completely serverless with **zero local daemons required**:
 
-```
-┌────────────────────────────────────────────────────────┐
-│           ASSET PLANE (Daily Hot Wallets)              │
-│  - Phantom (Solana) · MetaMask (EVM) · UniSat (Bitcoin)│
-│  - Exposed to everyday DeFi, dApp approvals, mints     │
-│  - High risk of phishing drainers and permit exploits   │
-└──────────────────────────┬─────────────────────────────┘
-                           │ ❌ Hot wallet compromise CANNOT alter Vault Policy
-                           ▼
-┌────────────────────────────────────────────────────────┐
-│         CONTROL PLANE (Isolated NEAR Controller)       │
-│  - Dedicated cold/semi-cold governor account           │
-│  - Controls Dead-Man's Switch Heartbeat & Destinations │
-│  - Protected by 72-Hour Timelock on any policy change  │
-└────────────────────────────────────────────────────────┘
-```
-
-> **Why this matters for user safety:**  
-> If an owner falls victim to a phishing drainer on their daily Phantom or MetaMask, the attacker drains only the hot funds currently in that wallet. The attacker **CANNOT** compromise Aegis Vault, cancel inheritance timers, or redirect evacuation funds to their own addresses. Vault management is strictly isolated on the NEAR Control Plane.
-
----
-
-## 🗺️ Roadmap: Production Chain Abstraction (Phase 2)
-
-For mainnet deployment, Aegis will expand from isolated dual-circuit control to fully seamless **Zero-Backend Gasless Chain Abstraction**, allowing external chain users to govern vaults without managing NEAR gas:
-
-1. **In-Contract Foreign Signature Verification (`ed25519_verify` / `ecrecover`):**
-   * Change vault owner mapping to `LookupMap<String, Vault>` supporting Base58 Solana public keys and EVM `0x...` addresses.
-   * Users sign off-chain EIP-712 / Solana `signMessage` payloads with sequential nonces.
-   * Host functions (`near_sdk::env::ed25519_verify` and `near_sdk::env::ecrecover`) verify caller authenticity directly on-chain within 1–2 TGas.
-
-2. **Native Implicit Accounts & NEP-366 Meta-Transactions:**
-   * **Solana Equivalence:** A 32-byte Ed25519 public key in Phantom is mathematically identical to a NEAR Implicit Account ID.
-   * **EVM Equivalence:** Integration with NEP-518 address mappings.
-   * Users sign standard `DelegateAction` messages; public relayers submit `SignedDelegate` transactions, sponsoring execution fees.
-
-3. **Zero-Backend Public Infrastructure:**
-   * Instead of maintaining custodial or custom backend servers, static frontends connect directly to decentralized public RPC relay networks (Pagoda Relayer, FastNEAR, Lava Network) for permissionless, trustless gas sponsorship.
-
-4. **Biometric Passkey / WebAuthn Control Plane:**
-   * Hardware-enclave device authentication (Touch ID, Face ID, YubiKey) generating WebAuthn signatures verified directly by NEAR smart contracts.
-
----
-
-## 🚀 Autonomous Relayer Keeper (24/7 Cloud Execution)
-
-Aegis is completely self-sovereign and resilient. While the web frontend at [https://mastrophot.github.io/aegis-vault/](https://mastrophot.github.io/aegis-vault/) is 100% static and communicates directly with multichain RPCs without any intermediary server, emergency sweeps and inheritance execution are guaranteed by a **Three-Tier Autonomous Keeper Infrastructure**:
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│               AEGIS RELAYER EXECUTION TIERS                     │
-│                                                                 │
-│ 1. 24/7 Cloud Worker (Render / Railway / Docker)                │
-│    • Real-time WebSocket/RPC monitoring (1-second latency)      │
-│    • Serves healthcheck HTTP server & live telemetry API        │
-│                                                                 │
-│ 2. Serverless GitHub Actions Keeper (Fallback)                  │
-│    • Executes scheduled matrix sweep pass every 10 minutes      │
-│    • Zero infrastructure costs; runs autonomously in GitHub     │
-│                                                                 │
-│ 3. Client & Local Daemon (Development & Offline)                │
-│    • Runs locally via `node relayer/service.js --watch`         │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### 1-Click Cloud Deployment
-
-Deploy your own 24/7 Autonomous Relayer Keeper to the cloud for free with zero configuration:
-
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/mastrophot/aegis-vault)
-
-Or run with Docker:
-```bash
-# Build and run with Docker Compose
-docker compose up -d
-
-# Or run standalone
-docker build -t aegis-relayer .
-docker run -d -p 8080:8080 --name aegis-relayer aegis-relayer
-```
-
-### Keeper Health & Live Telemetry Endpoints
-When running in cloud mode, the keeper exposes a zero-overhead HTTP status and telemetry server:
-* `GET /`: Service heartbeat & system uptime
-* `GET /health`: 200 OK for platform healthcheck monitors
-* `GET /telemetry`: Live multichain sweep telemetry JSON with CORS enabled
-* `POST /trigger`: Forces an on-demand sweep evaluation pass
+1. **Cloudflare Edge Worker (`workers/keeper/`)**: Stateless `nodejs_compat` Worker handling instant `<1s` `POST /trigger` sweeps on Panic / Inheritance expiry plus `/health` and `/telemetry` endpoints.
+   ```bash
+   cd workers/keeper
+   npx wrangler deploy
+   npx wrangler secret put RELAYER_PRIVATE_KEY
+   ```
+2. **GitHub Actions Autonomous Keeper (`.github/workflows/relayer-keeper.yml`)**: Runs `node relayer/service.js --sweep-all` every 5 minutes (`*/5 * * * *`) against `aegis.okgoogleok.testnet` (`0` gas burned when `get_actionable_vaults` is empty).
+3. **Docker / Render Self-Hostable Container**:
+   ```bash
+   docker compose up -d
+   ```
 
 ---
 

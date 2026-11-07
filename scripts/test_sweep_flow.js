@@ -21,7 +21,7 @@ async function runSweepSimulation() {
   console.log('====================================================\n');
 
   const relayer = new LastKeySweepRelayer({ networkId: 'testnet' });
-  const vaultContractId = 'lastkey-vault-2151.testnet';
+  const vaultContractId = 'aegis.okgoogleok.testnet';
   const derivationPath = 'aegis/v0';
 
   // 1. Address Derivation

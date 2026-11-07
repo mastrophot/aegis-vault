@@ -2,9 +2,13 @@ name = "aegis-keeper"
 main = "index.js"
 compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
+minify = true
 
 # Set restricted FunctionCall key securely via CLI (never commit secrets):
 # npx wrangler secret put RELAYER_PRIVATE_KEY
+
+[alias]
+"js-sha256" = "./shims/js-sha256.js"
 
 [triggers]
 crons = ["* * * * *"]

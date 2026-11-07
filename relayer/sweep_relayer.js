@@ -7,12 +7,12 @@
  * signatures via the Vault contract's MPC delegate, and broadcasts to foreign chains.
  */
 
+const crypto = require('crypto');
 const { ethers } = require('ethers');
 const bitcoin = require('bitcoinjs-lib');
 const web3 = require('@solana/web3.js');
 const chainsig = require('chainsig.js');
 const bs58Pkg = require('bs58');
-const { sha256 } = require('js-sha256');
 const bs58Encode = bs58Pkg.encode || (bs58Pkg.default && bs58Pkg.default.encode);
 
 class LastKeySweepRelayer {
@@ -347,7 +347,8 @@ class LastKeySweepRelayer {
         memoBytes = rawMemoBuf;
       } else {
         // Bitcoin standardness limits OP_RETURN to 80 bytes: anchor SHA-256 commitment of E2EE ciphertext
-        memoBytes = Buffer.from(`aegis-e2ee:${sha256(memo).slice(0, 36)}`, 'utf8');
+        const hexHash = crypto.createHash('sha256').update(String(memo), 'utf8').digest('hex');
+        memoBytes = Buffer.from(`aegis-e2ee:${hexHash.slice(0, 36)}`, 'utf8');
       }
     }
     const estimatedVSize = Math.ceil(10.5 + effectiveUtxos.length * 68 + 31 + (memoBytes ? memoBytes.length + 11 : 0));

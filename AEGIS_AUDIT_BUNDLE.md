@@ -15,13 +15,13 @@ Aegis - це децентралізований мультичейн Dead-Man's 
 2. **Детерміновані адреси бункера:** Адреси для кожної мережі деривуються за шляхом `aegis/{vault_owner}/{epoch}` за допомогою NEAR MPC (`chainsig.js`). Приватні ключі не існують на жодному сервері.
 3. **Дворівневий Heartbeat (Пінг):**
    - **Прямий ончейн `ping()`:** без депозиту (0 NEAR deposit) через FunctionCall Access Key користувача з мізерним газом (~0.0003 NEAR).
-   - **Спонсорство релеєра `ping_by_relayer(vault_owner)`:** авторизований релеєр (`okgoogleok.testnet`) може сам оплачувати газ за продовження таймера користувача на 90 днів (0 газу для юзера). Перевірено ончейн (Tx: `Ee2mmGwN18Q5iyvWx9iYGbwhVSo27rEUHzkiSrL8MeVw`).
-4. **Миттєве озброєння (Instant Arming):** Якщо бункер новий або після ротації (`Unconfigured`), перший виклик `propose_policy` активує політику негайно без 72-годинного таймлоку. Для вже активного бункера діє 72-годинний захисний таймлок.
-5. **Ротація бункера (`rotate_bunker`):** Після евакуації поточна епоха вважається скомпрометованою. Ротація очищає адреси, переводить сховище в `Unconfigured` та переходить на нову епоху (`epoch + 1`), гарантуючи унікальні нові адреси для депозитів.
-6. **Мультичейн евакуація активів (Panic / Inheritance):**
-   - Релеєр (`relayer/service.js`) готує валідовані транзакції для Bitcoin (SegWit PSBT), EVM (EIP-1559) та Solana (Ed25519).
-   - Смарт-контракт виконує Anti-Blind-Signing валідацію: перевіряє, що сира транзакція дійсно відправляє активи на зафіксовану резервну адресу, і викликає `v1.signer-prod.testnet::sign`.
-   - Релеєр збирає фінальні підписані транзакції та публікує хеші у `web/telemetry.json`.
+   - **Спонсорство релеєра `ping_by_relayer(vault_owner, timestamp_ms, signature_hex, ...)`:** авторизований вузькоспеціалізований кіпер (`keeper.aegis.okgoogleok.testnet`, restricted `FunctionCall` key) верифікує підпис власника через `env::ed25519_verify` (сирий або NEP-413) із захистом від replay-атак.
+4. **Миттєве озброєння (Instant Arming):** Якщо бункер новий або після ротації (`Unconfigured`), перший виклик `propose_policy` активує політику негайно без 72-годинного таймлоку та поповнює `gas_escrow`. Для вже активного бункера діє 72-годинний захисний таймлок.
+5. **Ротація бункера (`rotate_bunker`):** Після евакуації архівує призначення поточної епохи в `archive:{owner}:{old_epoch}`, очищає активні адреси, переводить сховище в `Unconfigured` та переходить на нову епоху (`epoch + 1`).
+6. **Мультичейн евакуація активів та E2EE Заповіт:**
+   - Клієнтське E2EE шифрування заповіту (`enc:x25519:` на базі Solana-ключа спадкоємця або `enc:aes256:` через `PBKDF2 + AES-256-GCM`) без відкритого тексту ончейн.
+   - Смарт-контракт виконує повний структурний парсинг байткоду Solana (бан `ComputeBudget`, перевірка `lamports > 0` та отримувача) та EVM EIP-1559 RLP (ліміт газу `<= 250k`, `max_fee <= 500 Gwei`), фінансує `v1.signer-prod.testnet::sign` із `gas_escrow` / пулу спонсора та повертає `0.005 NEAR` рефанду кіперу.
+   - Релеєр транслює реальні транзакції в мережі та зберігає верифіковані хеші ончейн через `record_sweep_telemetry`.
 7. **Офіційний NEAR Multi-Wallet Selector:** Інтегровано `@near-wallet-selector/modal-ui` із підтримкою Meteor, HERE, Nightly, Sender та Bitte.
 
 ---
@@ -54,6 +54,7 @@ Aegis - це децентралізований мультичейн Dead-Man's 
 ### 1. SMART CONTRACT (contracts/vault/src/lib.rs)
 ```rust
 use near_sdk::borsh::{BorshDeserialize, BorshSerialize};
+use near_sdk::json_types::U64;
 use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::store::LookupMap;
 use near_sdk::{
@@ -64,7 +65,17 @@ const DEFAULT_HEARTBEAT_INTERVAL_NS: u64 = 90 * 24 * 60 * 60 * 1_000_000_000; //
 const DEFAULT_CHALLENGE_PERIOD_NS: u64 = 7 * 24 * 60 * 60 * 1_000_000_000;    // 7 days
 const DEFAULT_POLICY_TIMELOCK_NS: u64 = 3 * 24 * 60 * 60 * 1_000_000_000;     // 72 hours
 const MPC_GAS: Gas = Gas::from_tgas(250);
-const CALLBACK_GAS: Gas = Gas::from_tgas(10);
+const CALLBACK_GAS: Gas = Gas::from_tgas(15);
+
+const MPC_SIGN_DEPOSIT_YOCTO: u128 = 50_000_000_000_000_000_000_000; // 0.05 NEAR
+const KEEPER_GAS_REFUND_YOCTO: u128 = 5_000_000_000_000_000_000_000; // 0.005 NEAR
+const STORAGE_RESERVE_BUFFER_YOCTO: u128 = 500_000_000_000_000_000_000_000; // 0.5 NEAR
+const MAX_MEMO_BYTES: usize = 1024;
+const MAX_TELEMETRY_BYTES: usize = 4096;
+const MAX_EVM_FEE_PER_GAS_WEI: u128 = 500_000_000_000; // 500 Gwei cap
+const MIN_EVM_GAS_LIMIT: u128 = 21_000;
+const MAX_EVM_GAS_LIMIT: u128 = 250_000;
+const NEP413_TAG: u32 = 2_147_484_061; // (1 << 31) + 413
 
 #[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(crate = "near_sdk::serde")]
@@ -91,6 +102,21 @@ impl ChainAddresses {
             near: None,
         }
     }
+
+    /// Checks if applying `new` would replace any non-empty existing address
+    pub fn is_replacing_existing(&self, new: &ChainAddresses) -> bool {
+        let btc_replaced = !self.btc.trim().is_empty()
+            && !new.btc.trim().is_empty()
+            && self.btc.trim() != new.btc.trim();
+        let evm_replaced = !self.evm.trim().is_empty()
+            && !new.evm.trim().is_empty()
+            && !self.evm.trim().eq_ignore_ascii_case(new.evm.trim());
+        let sol_replaced = !self.sol.trim().is_empty()
+            && !new.sol.trim().is_empty()
+            && self.sol.trim() != new.sol.trim();
+        let near_replaced = self.near.is_some() && new.near.is_some() && self.near != new.near;
+        btc_replaced || evm_replaced || sol_replaced || near_replaced
+    }
 }
 
 #[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -111,6 +137,7 @@ pub struct PendingPolicy {
     pub effective_at_ns: u64,
 }
 
+/// Core Borsh layout preserved verbatim for seamless zero-migration upgrades on live vaults.
 #[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Clone, Debug)]
 #[serde(crate = "near_sdk::serde")]
 pub struct UserVault {
@@ -145,6 +172,13 @@ impl UserVault {
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(crate = "near_sdk::serde")]
+pub struct ArchivedEpoch {
+    pub state: VaultState,
+    pub destination: ChainAddresses,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(crate = "near_sdk::serde")]
 pub struct SignRequest {
     pub payload_v2: SignPayloadV2,
     pub path: String,
@@ -174,6 +208,19 @@ pub struct VaultInfo {
     pub current_time_ns: u64,
     pub epoch: u32,
     pub authorized_relayer: Option<AccountId>,
+    pub heir_memo: Option<String>,
+    pub gas_escrow_yocto: String,
+    pub near_deposit_yocto: String,
+    pub is_epoch_swept: bool,
+    pub last_sweep_report: Option<String>,
+}
+
+#[derive(BorshSerialize)]
+struct Nep413Payload {
+    pub message: String,
+    pub nonce: [u8; 32],
+    pub recipient: String,
+    pub callback_url: Option<String>,
 }
 
 #[near(contract_state)]
@@ -187,10 +234,7 @@ pub struct LastKeyVault {
 #[near]
 impl LastKeyVault {
     #[init]
-    pub fn new(
-        mpc_contract: AccountId,
-        default_relayer: Option<AccountId>,
-    ) -> Self {
+    pub fn new(mpc_contract: AccountId, default_relayer: Option<AccountId>) -> Self {
         require!(!env::state_exists(), "Already initialized");
         Self {
             mpc_contract,
@@ -199,44 +243,99 @@ impl LastKeyVault {
         }
     }
 
-    /// Upgrade / Migration entrypoint: safely transitions storage schema to multi-tenant LookupMap.
-    /// Strictly restricted to self-call by the contract account.
+    /// Upgrade / Migration entrypoint: strictly restricted to self-call by the contract account.
     #[private]
     #[init(ignore_state)]
     pub fn migrate() -> Self {
-        #[allow(dead_code)]
-        #[derive(BorshDeserialize)]
-        struct OldLastKeyVault {
-            pub owner: AccountId,
-            pub mpc_contract: AccountId,
-            pub heartbeat_interval_ns: u64,
-            pub challenge_period_ns: u64,
-            pub policy_timelock_ns: u64,
-            pub last_ping_ns: u64,
-            pub state: VaultState,
-            pub backup: ChainAddresses,
-            pub heirs: ChainAddresses,
-            pub pending_policy: Option<PendingPolicy>,
-            pub epoch: u32,
-            pub authorized_relayer: Option<AccountId>,
-        }
-
         let mut vaults = LookupMap::new(b"v");
         let newapp: AccountId = "newapp9955.testnet".parse().unwrap();
         vaults.insert(newapp, UserVault::new_unconfigured());
 
         Self {
             mpc_contract: "v1.signer-prod.testnet".parse().unwrap(),
-            default_relayer: Some("okgoogleok.testnet".parse().unwrap()),
+            default_relayer: Some("keeper.aegis.okgoogleok.testnet".parse().unwrap()),
             vaults,
         }
+    }
+
+    /// Self-only configuration of the default keeper/relayer account.
+    #[private]
+    pub fn set_default_relayer(&mut self, relayer: Option<AccountId>) {
+        require!(
+            env::predecessor_account_id() == env::current_account_id(),
+            "Strictly restricted to contract self-call"
+        );
+        self.default_relayer = relayer.clone();
+        env::log_str(&format!("DEFAULT_RELAYER_UPDATED: {:?}", relayer));
+    }
+
+    /// Self-only helper to mark or unmark a historical epoch sweep status.
+    #[private]
+    pub fn admin_mark_epoch_swept(&mut self, vault_owner: AccountId, epoch: u32, is_complete: bool) {
+        require!(
+            env::predecessor_account_id() == env::current_account_id(),
+            "Strictly restricted to contract self-call"
+        );
+        Self::internal_set_epoch_swept(&vault_owner, epoch, is_complete);
+        env::log_str(&format!(
+            "ADMIN_EPOCH_SWEPT_UPDATED: Vault={}, Epoch={}, Complete={}",
+            vault_owner, epoch, is_complete
+        ));
+    }
+
+    /// Top up per-vault Gas Escrow used to fund zero-deposit autonomous `v1.signer` sweeps
+    /// and `0.005 NEAR` keeper gas refunds.
+    #[payable]
+    pub fn deposit_escrow(&mut self, account_id: Option<AccountId>) {
+        let target = account_id.unwrap_or_else(env::predecessor_account_id);
+        let deposit = env::attached_deposit().as_yoctonear();
+        require!(deposit > 0, "Must attach NEAR deposit to fund gas escrow");
+        Self::internal_credit_escrow(&target, deposit);
+        env::log_str(&format!(
+            "ESCROW_DEPOSITED: Credited {} yoctoNEAR to gas escrow for {}",
+            deposit, target
+        ));
+    }
+
+    /// Deposit native NEAR into an isolated per-user bunker ledger (swept via `sweep_near`).
+    #[payable]
+    pub fn deposit_near_vault(&mut self, account_id: Option<AccountId>) {
+        let target = account_id.unwrap_or_else(env::predecessor_account_id);
+        let deposit = env::attached_deposit().as_yoctonear();
+        require!(deposit > 0, "Must attach NEAR deposit for vault storage");
+        Self::internal_credit_near_deposit(&target, deposit);
+        env::log_str(&format!(
+            "NEAR_VAULT_DEPOSITED: Credited {} yoctoNEAR to isolated vault balance for {}",
+            deposit, target
+        ));
+    }
+
+    /// Owner registers an additional Ed25519 public key (32-byte hex) authorized to sign `ping_by_relayer` payloads.
+    pub fn register_ping_pubkey(&mut self, pubkey_hex: String) {
+        let caller = env::predecessor_account_id();
+        require!(self.vaults.contains_key(&caller), "No vault found for account");
+        let clean = pubkey_hex.trim().trim_start_matches("0x").trim_start_matches("0X");
+        let bytes = hex::decode(clean).unwrap_or_else(|_| env::panic_str("Invalid hex public key"));
+        require!(bytes.len() == 32, "Ed25519 public key must be 32 bytes");
+        let mut arr = [0u8; 32];
+        arr.copy_from_slice(&bytes);
+        Self::internal_record_owner_pubkey(&caller, arr);
+        env::log_str(&format!("PING_PUBKEY_REGISTERED: Added Ed25519 key for {}", caller));
     }
 
     /// Owner heartbeat: resets the timer for the caller's vault and cancels any pending claim from heirs.
     #[payable]
     pub fn ping(&mut self) {
         let caller = env::predecessor_account_id();
-        let vault = self.vaults.get_mut(&caller).expect("No vault found for account. Configure destinations first.");
+        Self::internal_capture_signer_pubkey(&caller);
+        let attached = env::attached_deposit().as_yoctonear();
+        if attached > 1 {
+            Self::internal_credit_escrow(&caller, attached);
+        }
+        let vault = self
+            .vaults
+            .get_mut(&caller)
+            .expect("No vault found for account. Configure destinations first.");
         require!(
             vault.state == VaultState::Active || matches!(vault.state, VaultState::Claiming { .. }),
             "Cannot ping: vault is not Active or Claiming"
@@ -250,8 +349,19 @@ impl LastKeyVault {
         }
     }
 
-    /// Relayer heartbeat sponsorship: callable by authorized relayer on behalf of vault owner
-    pub fn ping_by_relayer(&mut self, vault_owner: AccountId) {
+    /// Cryptographically authenticated relayer heartbeat sponsorship (`[ATTACK-3]` mitigation):
+    /// Requires a valid Ed25519 signature from a registered owner public key over either:
+    /// 1) Raw message `"AEGIS_PING:{vault_owner}:{timestamp_ms}"`, OR
+    /// 2) NEP-413 standard SHA-256 Borsh envelope (`nep413_nonce_hex`, `nep413_recipient`) for that message.
+    /// Enforces freshness (<= 1 hour old, <= 5 min clock skew) and strict monotonic anti-replay.
+    pub fn ping_by_relayer(
+        &mut self,
+        vault_owner: AccountId,
+        timestamp_ms: U64,
+        signature_hex: String,
+        nep413_nonce_hex: Option<String>,
+        nep413_recipient: Option<String>,
+    ) {
         let caller = env::predecessor_account_id();
         let vault = self.vaults.get_mut(&vault_owner).expect("Target vault not found");
         let is_authorized = vault.authorized_relayer.as_ref().map_or(false, |r| r == &caller)
@@ -261,53 +371,186 @@ impl LastKeyVault {
             vault.state == VaultState::Active || matches!(vault.state, VaultState::Claiming { .. }),
             "Cannot ping: vault is not Active or Claiming"
         );
-        vault.last_ping_ns = env::block_timestamp();
+
+        let now_ns = env::block_timestamp();
+        let sig_ts_ns = timestamp_ms.0.saturating_mul(1_000_000);
+        require!(
+            sig_ts_ns <= now_ns.saturating_add(300_000_000_000),
+            "Ping signature timestamp is in the future"
+        );
+        require!(
+            now_ns.saturating_sub(sig_ts_ns) <= 3_600_000_000_000,
+            "Ping signature has expired (>1 hour old)"
+        );
+
+        let last_used_ms = Self::internal_get_last_ping_sig_ms(&vault_owner);
+        require!(
+            timestamp_ms.0 > last_used_ms,
+            "Replay rejected: timestamp_ms must be strictly greater than previous signed ping"
+        );
+
+        let clean_sig = signature_hex.trim().trim_start_matches("0x").trim_start_matches("0X");
+        let sig_vec = hex::decode(clean_sig).unwrap_or_else(|_| env::panic_str("Invalid signature hex"));
+        require!(sig_vec.len() == 64, "Ed25519 signature must be 64 bytes");
+        let mut sig_arr = [0u8; 64];
+        sig_arr.copy_from_slice(&sig_vec);
+
+        let pks = Self::internal_get_owner_pubkeys(&vault_owner);
+        require!(
+            !pks.is_empty(),
+            "No owner Ed25519 public key registered for vault; owner must transact directly first"
+        );
+
+        let expected_msg = format!("AEGIS_PING:{}:{}", vault_owner, timestamp_ms.0);
+        let signed_bytes: Vec<u8> = if let Some(nonce_hex) = nep413_nonce_hex {
+            let clean_nonce = nonce_hex.trim().trim_start_matches("0x").trim_start_matches("0X");
+            let nonce_vec = hex::decode(clean_nonce).unwrap_or_else(|_| env::panic_str("Invalid NEP-413 nonce hex"));
+            require!(nonce_vec.len() == 32, "NEP-413 nonce must be 32 bytes");
+            let mut nonce_arr = [0u8; 32];
+            nonce_arr.copy_from_slice(&nonce_vec);
+            let recipient = nep413_recipient.unwrap_or_else(|| env::current_account_id().to_string());
+            let payload = Nep413Payload {
+                message: expected_msg,
+                nonce: nonce_arr,
+                recipient,
+                callback_url: None,
+            };
+            let mut preimage = Vec::with_capacity(4 + 256);
+            preimage.extend_from_slice(&NEP413_TAG.to_le_bytes());
+            preimage.extend_from_slice(&near_sdk::borsh::to_vec(&payload).expect("Borsh encode failed"));
+            env::sha256(&preimage)
+        } else {
+            expected_msg.into_bytes()
+        };
+
+        let verified = pks
+            .iter()
+            .any(|pk| env::ed25519_verify(&sig_arr, &signed_bytes, pk));
+        require!(verified, "Invalid owner Ed25519 signature for ping_by_relayer");
+
+        Self::internal_set_last_ping_sig_ms(&vault_owner, timestamp_ms.0);
+        vault.last_ping_ns = now_ns;
         if let VaultState::Claiming { .. } = vault.state {
             vault.state = VaultState::Active;
-            env::log_str(&format!("CLAIM_CANCELLED: Relayer {} pinged alive for {}", caller, vault_owner));
+            env::log_str(&format!(
+                "CLAIM_CANCELLED: Verified signed relayer ping from {} for {}",
+                caller, vault_owner
+            ));
         } else {
-            env::log_str(&format!("PING_RECEIVED: Relayer heartbeat reset for {}", vault_owner));
+            env::log_str(&format!(
+                "PING_RECEIVED: Verified signed relayer heartbeat reset for {}",
+                vault_owner
+            ));
         }
     }
 
     /// Emergency Panic button: instantly shifts caller's vault into Evacuated state.
-    /// Drops any pending policy changes to prevent race attacks.
+    /// Strictly blocked if a 72-hour policy cooldown is pending, or if no backup destinations are configured.
     #[payable]
     pub fn panic(&mut self) {
         let caller = env::predecessor_account_id();
+        Self::internal_capture_signer_pubkey(&caller);
         let vault = self.vaults.get_mut(&caller).expect("No vault found for account");
         require!(
             vault.state == VaultState::Active || matches!(vault.state, VaultState::Claiming { .. }),
             "Cannot trigger panic: vault is not Active"
         );
+        require!(
+            vault.pending_policy.is_none(),
+            "Cannot trigger panic during an active 72h policy cooldown. Cancel or wait for pending policy first."
+        );
+        require!(
+            !vault.backup.is_empty(),
+            "Cannot trigger panic: no backup egress destinations are configured in vault policy"
+        );
         vault.pending_policy = None;
         vault.state = VaultState::Evacuated;
-        env::log_str(&format!("PANIC_TRIGGERED: Vault for {} evacuated. Sweeping routed exclusively to backup addresses.", caller));
+        Self::internal_set_epoch_swept(&caller, vault.epoch, false);
+        env::log_str(&format!(
+            "PANIC_TRIGGERED: Vault for {} evacuated. Sweeping routed exclusively to backup addresses.",
+            caller
+        ));
     }
 
     /// Resets the caller's vault after an evacuation or finalized inheritance, advancing the bunker epoch.
-    /// Preserves existing backup and heir destinations so delayed sweeps for prior epochs remain valid.
+    /// Archives prior epoch destinations in `archive:{owner}:{old_epoch}` so delayed sweeps remain verifiable!
     #[payable]
     pub fn rotate_bunker(&mut self) {
         let caller = env::predecessor_account_id();
+        Self::internal_capture_signer_pubkey(&caller);
         let vault = self.vaults.get_mut(&caller).expect("No vault found for account");
         require!(
             vault.state == VaultState::Evacuated || vault.state == VaultState::Inheritance,
             "Can only rotate bunker when vault is Evacuated or Inheritance"
         );
+
+        let old_epoch = vault.epoch;
+        let archived_dest = match vault.state {
+            VaultState::Evacuated => vault.backup.clone(),
+            VaultState::Inheritance => vault.heirs.clone(),
+            _ => ChainAddresses::empty(),
+        };
+        let archive = ArchivedEpoch {
+            state: vault.state.clone(),
+            destination: archived_dest,
+        };
+        if let Ok(bytes) = near_sdk::serde_json::to_vec(&archive) {
+            let key = format!("archive:{}:{}", caller, old_epoch);
+            env::storage_write(key.as_bytes(), &bytes);
+        }
+
         vault.epoch += 1;
         vault.pending_policy = None;
-        // Keep existing backup and heir destinations so late sweeps for previous epochs can still execute
-        vault.state = VaultState::Active;
+        vault.backup = ChainAddresses::empty();
+        vault.heirs = ChainAddresses::empty();
+        vault.state = VaultState::Unconfigured;
         vault.last_ping_ns = env::block_timestamp();
         env::log_str(&format!(
-            "BUNKER_ROTATED: Epoch for {} advanced to v{}, destinations preserved, vault armed and active",
-            caller, vault.epoch
+            "BUNKER_ROTATED: Epoch for {} advanced to v{} (archived v{}), state reset to Unconfigured",
+            caller, vault.epoch, old_epoch
         ));
     }
 
-    /// Sweeps native NEAR tokens from the contract to the configured backup or heir destination account.
-    /// Retains a safety reserve (0.5 NEAR) to maintain contract storage staking.
+    /// Resets caller's vault back to clean Unconfigured state (clears all egress addresses).
+    /// Blocked in Evacuated or Inheritance states (use `rotate_bunker` instead to advance epoch).
+    pub fn reset_my_vault(&mut self) {
+        let caller = env::predecessor_account_id();
+        let vault = self.vaults.get_mut(&caller).expect("No vault found for account");
+        require!(
+            vault.state != VaultState::Evacuated && vault.state != VaultState::Inheritance,
+            "Use rotate_bunker to advance epoch after evacuation or inheritance"
+        );
+        vault.backup = ChainAddresses::empty();
+        vault.heirs = ChainAddresses::empty();
+        vault.state = VaultState::Unconfigured;
+        vault.pending_policy = None;
+        env::log_str(&format!("VAULT_RESET: Vault for {} reset to Unconfigured", caller));
+    }
+
+    /// Strictly self-only administrative reset (relayers are NEVER allowed to reset vaults).
+    #[private]
+    pub fn admin_reset_vault(&mut self, target_account: AccountId) {
+        require!(
+            env::predecessor_account_id() == env::current_account_id(),
+            "Strictly restricted to contract self-call"
+        );
+        let vault = self
+            .vaults
+            .get_mut(&target_account)
+            .expect("No vault found for target account");
+        vault.backup = ChainAddresses::empty();
+        vault.heirs = ChainAddresses::empty();
+        vault.state = VaultState::Unconfigured;
+        vault.pending_policy = None;
+        env::log_str(&format!(
+            "ADMIN_VAULT_RESET: Vault for {} reset to Unconfigured by contract self",
+            target_account
+        ));
+    }
+
+    /// Sweeps strictly the isolated per-user native NEAR deposit (`near_dep:{vault_owner}`)
+    /// to the configured backup or heir destination account. Never touches shared contract reserves
+    /// or other users' escrows/deposits.
     pub fn sweep_near(&mut self, vault_owner: AccountId, destination: Option<AccountId>) -> Promise {
         let caller = env::predecessor_account_id();
         let vault = self.vaults.get(&vault_owner).expect("Target vault not found");
@@ -327,38 +570,75 @@ impl LastKeyVault {
         };
 
         let target_account_id: AccountId = if let Some(override_dest) = destination {
-            require!(caller == vault_owner, "Only owner can override destination");
+            if &Some(override_dest.clone()) != target_dest {
+                require!(caller == vault_owner, "Only owner can override destination");
+            }
             override_dest
         } else {
-            target_dest.clone().expect("No destination NEAR account configured in vault policy")
+            target_dest
+                .clone()
+                .expect("No destination NEAR account configured in vault policy")
         };
 
-        let contract_balance = env::account_balance();
-        let storage_reserve = NearToken::from_millinear(500); // 0.5 NEAR
+        let user_deposit = Self::internal_get_near_deposit(&vault_owner);
         require!(
-            contract_balance > storage_reserve,
-            "Insufficient contract balance above 0.5 NEAR storage reserve"
+            user_deposit > 0,
+            "No isolated NEAR deposit available to sweep for this vault"
         );
-        let sweep_amount = contract_balance.saturating_sub(storage_reserve);
+        Self::internal_debit_near_deposit(&vault_owner, user_deposit);
 
         env::log_str(&format!(
-            "NEAR_SWEPT: Sweeping {} yoctoNEAR to {}",
-            sweep_amount, target_account_id
+            "NEAR_SWEPT: Sweeping {} yoctoNEAR for {} to {}",
+            user_deposit, vault_owner, target_account_id
         ));
 
-        Promise::new(target_account_id).transfer(sweep_amount)
+        Promise::new(target_account_id).transfer(NearToken::from_yoctonear(user_deposit))
     }
 
     /// Propose updating backup or heir addresses for caller's bunker.
-    /// Enforces a 72-hour timelock on changes, or activates immediately on initial setup (pristine/empty destinations).
+    /// Enforces a 72-hour timelock on changes, or activates immediately on initial/additive setup.
+    /// Any attached NEAR deposit (>1 yocto) automatically credits the caller's Gas Escrow.
     #[payable]
-    pub fn propose_policy(&mut self, backup: ChainAddresses, heirs: ChainAddresses) {
+    pub fn propose_policy(
+        &mut self,
+        backup: ChainAddresses,
+        heirs: ChainAddresses,
+        memo: Option<String>,
+    ) {
         let caller = env::predecessor_account_id();
+        Self::internal_capture_signer_pubkey(&caller);
         let is_empty_submission = backup.is_empty() && heirs.is_empty();
-        require!(!is_empty_submission, "At least one backup or heir destination must be provided");
+        require!(
+            !is_empty_submission,
+            "At least one backup or heir destination must be provided"
+        );
+
+        let attached = env::attached_deposit().as_yoctonear();
+        if attached > 1 {
+            Self::internal_credit_escrow(&caller, attached);
+            env::log_str(&format!(
+                "ESCROW_CREDITED_ON_POLICY: {} yoctoNEAR added for {}",
+                attached, caller
+            ));
+        }
+
+        if let Some(ref m) = memo {
+            let trimmed = m.trim();
+            let key = format!("memo:{}", caller);
+            if trimmed.is_empty() {
+                env::storage_remove(key.as_bytes());
+                env::log_str(&format!("HEIR_MEMO_CLEARED: Testament note removed for {}", caller));
+            } else {
+                require!(
+                    trimmed.len() <= MAX_MEMO_BYTES,
+                    "Digital testament exceeds 1024 bytes"
+                );
+                env::storage_write(key.as_bytes(), trimmed.as_bytes());
+                env::log_str(&format!("HEIR_MEMO_SAVED: Testament note updated for {}", caller));
+            }
+        }
 
         if !self.vaults.contains_key(&caller) {
-            // Initial setup for new user
             let new_vault = UserVault {
                 state: VaultState::Active,
                 last_ping_ns: env::block_timestamp(),
@@ -372,11 +652,32 @@ impl LastKeyVault {
                 authorized_relayer: self.default_relayer.clone(),
             };
             self.vaults.insert(caller.clone(), new_vault);
-            env::log_str(&format!("VAULT_CREATED: Bunker initialized and armed for {}", caller));
+            self.internal_register_account(&caller);
+            env::log_str(&format!(
+                "VAULT_CREATED: Bunker initialized and armed for {}",
+                caller
+            ));
             return;
         }
 
         let vault = self.vaults.get_mut(&caller).unwrap();
+
+        if vault.state == VaultState::Evacuated {
+            let is_replacing = vault.backup.is_replacing_existing(&backup);
+            require!(
+                !is_replacing,
+                "Cannot overwrite already established evacuation addresses in Evacuated state"
+            );
+            vault.backup = backup;
+            vault.last_ping_ns = env::block_timestamp();
+            Self::internal_set_epoch_swept(&caller, vault.epoch, false);
+            env::log_str(&format!(
+                "POLICY_UPDATED_EVACUATED: Leftover destinations added for {}",
+                caller
+            ));
+            return;
+        }
+
         require!(
             vault.state == VaultState::Active || vault.state == VaultState::Unconfigured,
             "Can only update policy in Active or Unconfigured state"
@@ -384,14 +685,20 @@ impl LastKeyVault {
 
         let is_initial_setup = vault.state == VaultState::Unconfigured
             || (vault.backup.is_empty() && vault.heirs.is_empty());
+        let is_replacing = vault.backup.is_replacing_existing(&backup)
+            || vault.heirs.is_replacing_existing(&heirs);
 
-        if is_initial_setup {
+        if is_initial_setup || !is_replacing {
             vault.backup = backup;
             vault.heirs = heirs;
             vault.pending_policy = None;
             vault.last_ping_ns = env::block_timestamp();
             vault.state = VaultState::Active;
-            env::log_str(&format!("POLICY_INITIALIZED: First-time destinations activated immediately for {}", caller));
+            self.internal_register_account(&caller);
+            env::log_str(&format!(
+                "POLICY_INITIALIZED_INSTANT: Destinations activated immediately for {}",
+                caller
+            ));
         } else {
             vault.last_ping_ns = env::block_timestamp();
             let effective_at_ns = env::block_timestamp() + vault.policy_timelock_ns;
@@ -400,7 +707,10 @@ impl LastKeyVault {
                 heirs,
                 effective_at_ns,
             });
-            env::log_str(&format!("POLICY_PROPOSED: 72h timelock started for {}", caller));
+            env::log_str(&format!(
+                "POLICY_PROPOSED: 72h timelock started for modifying existing configured addresses for {}",
+                caller
+            ));
         }
     }
 
@@ -408,6 +718,7 @@ impl LastKeyVault {
     #[payable]
     pub fn apply_policy(&mut self) {
         let caller = env::predecessor_account_id();
+        Self::internal_capture_signer_pubkey(&caller);
         let vault = self.vaults.get_mut(&caller).expect("No vault found for account");
         require!(vault.state == VaultState::Active, "Can only apply policy in Active state");
         if let Some(pending) = vault.pending_policy.take() {
@@ -417,6 +728,7 @@ impl LastKeyVault {
             );
             vault.backup = pending.backup;
             vault.heirs = pending.heirs;
+            vault.last_ping_ns = env::block_timestamp();
             env::log_str(&format!("POLICY_APPLIED: New destinations activated for {}", caller));
         } else {
             env::panic_str("No pending policy found");
@@ -427,78 +739,167 @@ impl LastKeyVault {
     #[payable]
     pub fn cancel_policy(&mut self) {
         let caller = env::predecessor_account_id();
+        Self::internal_capture_signer_pubkey(&caller);
         let vault = self.vaults.get_mut(&caller).expect("No vault found for account");
         require!(vault.pending_policy.is_some(), "No pending policy to cancel");
         vault.pending_policy = None;
+        vault.last_ping_ns = env::block_timestamp();
         env::log_str(&format!("POLICY_CANCELLED: Pending policy cancelled for {}", caller));
     }
 
-    /// Update heartbeat interval and challenge (grace) period for caller's bunker
+    /// Update heartbeat interval and challenge (grace) period for caller's bunker.
     #[payable]
     pub fn update_intervals(
         &mut self,
-        heartbeat_interval_ns: Option<u64>,
-        challenge_period_ns: Option<u64>,
+        heartbeat_interval_ns: Option<U64>,
+        challenge_period_ns: Option<U64>,
     ) {
         let caller = env::predecessor_account_id();
+        Self::internal_capture_signer_pubkey(&caller);
         let vault = self.vaults.get_mut(&caller).expect("No vault found for account");
         require!(vault.state == VaultState::Active, "Can only update intervals in Active state");
-        if let Some(hb) = heartbeat_interval_ns {
-            require!(hb >= 86_400_000_000_000, "Heartbeat interval must be at least 1 day");
-            vault.heartbeat_interval_ns = hb;
+        require!(
+            vault.pending_policy.is_none(),
+            "Cannot update intervals during active 72h policy cooldown"
+        );
+        let new_hb = heartbeat_interval_ns
+            .map(|v| v.0)
+            .unwrap_or(vault.heartbeat_interval_ns);
+        let new_cp = challenge_period_ns
+            .map(|v| v.0)
+            .unwrap_or(vault.challenge_period_ns);
+        require!(
+            new_hb >= 15_000_000_000,
+            "Heartbeat interval must be at least 15 seconds"
+        );
+        require!(
+            new_cp >= 15_000_000_000,
+            "Challenge period must be at least 15 seconds"
+        );
+
+        let old_total = vault
+            .heartbeat_interval_ns
+            .saturating_add(vault.challenge_period_ns);
+        let new_total = new_hb.saturating_add(new_cp);
+        let is_shortening = new_total < old_total;
+        let is_configured = !vault.backup.is_empty() || !vault.heirs.is_empty();
+        let is_demo_mode = new_hb <= 300_000_000_000;
+
+        if is_configured && is_shortening && !is_demo_mode {
+            vault.heartbeat_interval_ns = new_hb;
+            vault.challenge_period_ns = new_cp;
+            vault.last_ping_ns = env::block_timestamp();
+            let effective_at_ns = env::block_timestamp() + vault.policy_timelock_ns;
+            vault.pending_policy = Some(PendingPolicy {
+                backup: vault.backup.clone(),
+                heirs: vault.heirs.clone(),
+                effective_at_ns,
+            });
+            env::log_str(&format!(
+                "INTERVALS_SHORTENED_TIMELOCK: Intervals shortened for {}. 72h cooldown armed.",
+                caller
+            ));
+        } else {
+            vault.heartbeat_interval_ns = new_hb;
+            vault.challenge_period_ns = new_cp;
+            vault.last_ping_ns = env::block_timestamp();
+            env::log_str(&format!("INTERVALS_UPDATED: Intervals updated for {}", caller));
         }
-        if let Some(cp) = challenge_period_ns {
-            require!(cp >= 86_400_000_000_000, "Challenge period must be at least 1 day");
-            vault.challenge_period_ns = cp;
-        }
-        env::log_str(&format!("INTERVALS_UPDATED: Intervals updated for {}", caller));
     }
 
     /// Set or revoke authorized relayer for caller's bunker
     #[payable]
     pub fn set_authorized_relayer(&mut self, relayer: Option<AccountId>) {
         let caller = env::predecessor_account_id();
+        Self::internal_capture_signer_pubkey(&caller);
         let vault = self.vaults.get_mut(&caller).expect("No vault found for account");
         vault.authorized_relayer = relayer;
-        env::log_str(&format!("RELAYER_UPDATED: Authorized relayer updated for {}", caller));
+        vault.last_ping_ns = env::block_timestamp();
+        env::log_str(&format!(
+            "RELAYER_UPDATED: Authorized relayer updated for {}",
+            caller
+        ));
     }
 
-    /// Start inheritance claim: callable by designated heirs or relayer if heartbeat interval has elapsed
-    pub fn start_claim(&mut self, vault_owner: AccountId) {
-        let caller = env::predecessor_account_id();
-        let vault = self.vaults.get_mut(&vault_owner).expect("Target vault not found");
-        require!(vault.state == VaultState::Active, "Vault must be Active to start claim");
-        let now = env::block_timestamp();
+    /// Autonomous push inheritance trigger: callable by anyone (relayer, keeper bot, heir)
+    /// once the owner's heartbeat interval + grace period has expired without any owner interaction.
+    pub fn trigger_push_inheritance(&mut self, vault_owner: AccountId) {
+        let vault = self
+            .vaults
+            .get_mut(&vault_owner)
+            .expect("Target vault not found");
         require!(
-            now > vault.last_ping_ns + vault.heartbeat_interval_ns,
-            "Heartbeat interval has not expired yet"
+            vault.state == VaultState::Active || matches!(vault.state, VaultState::Claiming { .. }),
+            "Vault must be Active to trigger push inheritance"
         );
-        let is_heir_or_relayer = vault.heirs.near.as_ref().map_or(false, |h| h == &caller)
+        require!(
+            vault.pending_policy.is_none(),
+            "Cannot trigger push inheritance while 72h policy cooldown is active"
+        );
+        let now = env::block_timestamp();
+        let total_inactivity_ns = vault
+            .heartbeat_interval_ns
+            .saturating_add(vault.challenge_period_ns);
+        require!(
+            now >= vault.last_ping_ns.saturating_add(total_inactivity_ns),
+            "Owner inactivity period (heartbeat + grace) has not elapsed yet"
+        );
+        require!(
+            !vault.heirs.is_empty(),
+            "Cannot trigger inheritance: no heir destination addresses configured"
+        );
+        vault.state = VaultState::Inheritance;
+        Self::internal_set_epoch_swept(&vault_owner, vault.epoch, false);
+        env::log_str(&format!(
+            "PUSH_INHERITANCE_TRIGGERED: Owner {} inactive for full period. Vault shifted to Inheritance.",
+            vault_owner
+        ));
+    }
+
+    /// Backwards compatibility helper for start_claim
+    pub fn start_claim(&mut self, vault_owner: AccountId) {
+        self.trigger_push_inheritance(vault_owner);
+    }
+
+    /// Backwards compatibility helper for finalize_claim
+    pub fn finalize_claim(&mut self, vault_owner: AccountId) {
+        self.trigger_push_inheritance(vault_owner);
+    }
+
+    /// Records verified sweep telemetry on-chain and marks whether all chains for `(vault_owner, epoch)`
+    /// have completed sweeping (`is_complete = true`), stopping redundant keeper loops.
+    pub fn record_sweep_telemetry(
+        &mut self,
+        vault_owner: AccountId,
+        epoch: u32,
+        report_json: String,
+        is_complete: bool,
+    ) {
+        let caller = env::predecessor_account_id();
+        let vault = self.vaults.get(&vault_owner).expect("Target vault not found");
+        let is_authorized = caller == env::current_account_id()
+            || caller == vault_owner
             || vault.authorized_relayer.as_ref().map_or(false, |r| r == &caller)
             || self.default_relayer.as_ref().map_or(false, |r| r == &caller);
-        require!(is_heir_or_relayer, "Only designated heir or authorized relayer can initiate claim");
-        vault.state = VaultState::Claiming { since_ns: now };
-        env::log_str(&format!("CLAIM_STARTED: Challenge window opened for {}", vault_owner));
+        require!(is_authorized, "Unauthorized caller for record_sweep_telemetry");
+        require!(epoch <= vault.epoch, "Cannot record telemetry for future epoch");
+        require!(
+            report_json.len() <= MAX_TELEMETRY_BYTES,
+            "Telemetry report exceeds 4096 bytes"
+        );
+
+        let key = format!("telemetry:{}:{}", vault_owner, epoch);
+        env::storage_write(key.as_bytes(), report_json.as_bytes());
+        Self::internal_set_epoch_swept(&vault_owner, epoch, is_complete);
+        env::log_str(&format!(
+            "SWEEP_TELEMETRY_RECORDED: Vault={}, Epoch={}, Complete={}",
+            vault_owner, epoch, is_complete
+        ));
     }
 
-    /// Finalize claim: transitions vault to Inheritance if challenge period has elapsed without an owner ping
-    pub fn finalize_claim(&mut self, vault_owner: AccountId) {
-        let vault = self.vaults.get_mut(&vault_owner).expect("Target vault not found");
-        if let VaultState::Claiming { since_ns } = vault.state {
-            let now = env::block_timestamp();
-            require!(
-                now >= since_ns + vault.challenge_period_ns,
-                "Challenge period still active"
-            );
-            vault.state = VaultState::Inheritance;
-            env::log_str(&format!("CLAIM_FINALIZED: Inheritance state active for {}. Sweeping unlocked for heirs.", vault_owner));
-        } else {
-            env::panic_str("Vault is not in Claiming state");
-        }
-    }
-
-    /// Requests an MPC threshold signature from v1.signer for a foreign chain transaction
-    /// Cryptographic derivation path is strictly: aegis/{vault_owner}/{epoch_to_sign}
+    /// Requests an MPC threshold signature from `v1.signer` for a foreign chain transaction.
+    /// Supports zero-deposit calls from restricted `FunctionCall` keeper keys funded by
+    /// Per-Vault Gas Escrow (or Contract Sponsor Pool) + `0.005 NEAR` keeper gas refund!
     #[payable]
     pub fn request_sweep_signature(
         &mut self,
@@ -518,49 +919,69 @@ impl LastKeyVault {
         let epoch_to_sign = target_epoch.unwrap_or(vault.epoch);
         require!(epoch_to_sign <= vault.epoch, "Cannot sign for future epoch");
 
-        if epoch_to_sign == vault.epoch {
+        let target_destination: ChainAddresses = if epoch_to_sign == vault.epoch {
             require!(
                 vault.state == VaultState::Evacuated || vault.state == VaultState::Inheritance,
                 "Current epoch can only be swept in Evacuated or Inheritance state"
             );
-        }
-
-        // Strictly isolated multi-user derivation path
-        let path = format!("aegis/{}/{}", vault_owner, epoch_to_sign);
-        let clean_hex = payload_hex.trim().trim_start_matches("0x").trim_start_matches("0X").to_string();
-
-        let target_destination = match vault.state {
-            VaultState::Evacuated => &vault.backup,
-            VaultState::Inheritance => &vault.heirs,
-            VaultState::Active => &vault.backup, // For historical sweeps while active
-            _ => env::panic_str("Invalid state for sweep"),
+            match vault.state {
+                VaultState::Evacuated => vault.backup.clone(),
+                VaultState::Inheritance => vault.heirs.clone(),
+                _ => env::panic_str("Invalid state for sweep"),
+            }
+        } else {
+            // Historical epoch: load archived destination saved at `rotate_bunker()`, fallback to current backup
+            Self::internal_get_archived_epoch(&vault_owner, epoch_to_sign)
+                .map(|a| a.destination)
+                .unwrap_or_else(|| vault.backup.clone())
         };
 
+        let path = format!("aegis/{}/{}", vault_owner, epoch_to_sign);
+        let clean_hex = payload_hex
+            .trim()
+            .trim_start_matches("0x")
+            .trim_start_matches("0X")
+            .to_string();
+
         let (payload_to_sign, domain_id) = if !is_eddsa {
-            // EVM & ECDSA chains (Bitcoin + EVM)
-            let is_btc = chain.eq_ignore_ascii_case("BTC") || chain.eq_ignore_ascii_case("BITCOIN");
+            let is_btc =
+                chain.eq_ignore_ascii_case("BTC") || chain.eq_ignore_ascii_case("BITCOIN");
             let ecdsa_hash = if is_btc {
+                require!(
+                    !target_destination.btc.trim().is_empty(),
+                    "No target Bitcoin address configured for this epoch"
+                );
                 require!(
                     clean_hex.len() == 64 && hex::decode(&clean_hex).is_ok(),
                     "Bitcoin payload must be a 32-byte BIP-143 sighash (64 hex characters)"
                 );
                 clean_hex
             } else if clean_hex.len() > 64 {
-                // Verifiable Raw EVM transaction payload
-                let raw_tx_bytes = hex::decode(&clean_hex).unwrap_or_else(|_| env::panic_str("Invalid EVM tx hex"));
-                let clean_evm_addr = target_destination.evm.trim().trim_start_matches("0x").trim_start_matches("0X");
-                let target_evm_bytes = hex::decode(clean_evm_addr).unwrap_or_else(|_| env::panic_str("Invalid target EVM hex"));
-                require!(target_evm_bytes.len() == 20, "Target EVM address must be 20 bytes");
-                let parsed_to = extract_evm_to_address(&raw_tx_bytes)
-                    .unwrap_or_else(|| env::panic_str("Failed to parse EVM recipient address from transaction payload"));
+                let raw_tx_bytes = hex::decode(&clean_hex)
+                    .unwrap_or_else(|_| env::panic_str("Invalid EVM tx hex"));
+                let clean_evm_addr = target_destination
+                    .evm
+                    .trim()
+                    .trim_start_matches("0x")
+                    .trim_start_matches("0X");
+                let target_evm_bytes = hex::decode(clean_evm_addr)
+                    .unwrap_or_else(|_| env::panic_str("Invalid target EVM hex"));
                 require!(
-                    parsed_to.as_slice() == target_evm_bytes.as_slice(),
-                    "EVM transaction recipient does not match designated target address"
+                    target_evm_bytes.len() == 20,
+                    "Target EVM address must be 20 bytes"
                 );
+                let mut expected_addr = [0u8; 20];
+                expected_addr.copy_from_slice(&target_evm_bytes);
+                if let Err(reason) = verify_evm_sweep_payload(&raw_tx_bytes, &expected_addr) {
+                    env::panic_str(reason);
+                }
                 let hash_bytes = env::keccak256(&raw_tx_bytes);
                 hex::encode(hash_bytes)
             } else if clean_hex.len() == 64 {
-                require!(caller == vault_owner, "Relayers must submit verifiable raw EVM transaction bytes, not blind hashes");
+                require!(
+                    caller == vault_owner,
+                    "Relayers must submit verifiable raw EVM transaction bytes, not blind hashes"
+                );
                 require!(hex::decode(&clean_hex).is_ok(), "Invalid 32-byte ECDSA hex");
                 clean_hex
             } else {
@@ -568,23 +989,72 @@ impl LastKeyVault {
             };
             (SignPayloadV2::Ecdsa(ecdsa_hash), 0)
         } else {
-            // Solana & EdDSA chains
-            require!(!clean_hex.is_empty() && clean_hex.len() <= 2464 && hex::decode(&clean_hex).is_ok(), "Invalid EdDSA hex");
-            let raw_msg_bytes = hex::decode(&clean_hex).unwrap_or_else(|_| env::panic_str("Invalid EdDSA hex"));
             require!(
-                verify_solana_sweep_payload(&raw_msg_bytes, &target_destination.sol),
-                "Solana transaction message failed security validation against target recipient"
+                !clean_hex.is_empty() && clean_hex.len() <= 2464 && hex::decode(&clean_hex).is_ok(),
+                "Invalid EdDSA hex"
             );
+            let is_near = chain.eq_ignore_ascii_case("NEAR");
+            if is_near {
+                require!(
+                    target_destination.near.is_some(),
+                    "No target NEAR account configured for this epoch"
+                );
+                require!(
+                    clean_hex.len() == 64,
+                    "NEAR implicit sweep payload must be a 32-byte SHA-256 transaction hash"
+                );
+            } else {
+                let raw_msg_bytes = hex::decode(&clean_hex)
+                    .unwrap_or_else(|_| env::panic_str("Invalid EdDSA hex"));
+                require!(
+                    verify_solana_sweep_payload(&raw_msg_bytes, &target_destination.sol),
+                    "Solana transaction message failed security validation against target recipient"
+                );
+            }
             (SignPayloadV2::Eddsa(clean_hex), 1)
         };
 
-        env::log_str(&format!(
-            "SWEEP_REQUEST: Vault={}, Epoch={}, Chain={}, Path={}",
-            vault_owner, epoch_to_sign, chain, path
-        ));
+        // Funding resolution: Caller deposit -> Per-Vault Gas Escrow -> Contract Sponsor Pool
+        let attached_yocto = env::attached_deposit().as_yoctonear();
+        let reward_keeper = caller != vault_owner;
+        let keeper_refund_yocto = if reward_keeper { KEEPER_GAS_REFUND_YOCTO } else { 0 };
 
-        let attached_deposit = env::attached_deposit();
-        require!(!attached_deposit.is_zero(), "Caller must attach deposit for v1.signer");
+        let (sign_deposit_yocto, escrow_debited_yocto, refund_caller_yocto) = if attached_yocto > 0 {
+            require!(
+                attached_yocto >= MPC_SIGN_DEPOSIT_YOCTO,
+                "Attached deposit must be 0 (use escrow/sponsor) or at least 0.05 NEAR"
+            );
+            (attached_yocto, 0u128, 0u128)
+        } else {
+            let needed = MPC_SIGN_DEPOSIT_YOCTO.saturating_add(keeper_refund_yocto);
+            let user_escrow = Self::internal_get_escrow(&vault_owner);
+            if user_escrow >= needed {
+                Self::internal_debit_escrow(&vault_owner, needed);
+                (MPC_SIGN_DEPOSIT_YOCTO, needed, keeper_refund_yocto)
+            } else {
+                // Fallback to Contract Sponsor Pool (replenished automatically by v1.signer refunds!)
+                let min_storage = env::storage_byte_cost()
+                    .as_yoctonear()
+                    .saturating_mul(env::storage_usage() as u128);
+                let total_escrow = Self::internal_read_u128(b"total_escrow");
+                let total_near_dep = Self::internal_read_u128(b"total_near_dep");
+                let locked = min_storage
+                    .saturating_add(total_escrow)
+                    .saturating_add(total_near_dep)
+                    .saturating_add(STORAGE_RESERVE_BUFFER_YOCTO);
+                let available_sponsor = env::account_balance().as_yoctonear().saturating_sub(locked);
+                require!(
+                    available_sponsor >= needed,
+                    "Vault gas escrow depleted and contract sponsor pool insufficient; top up via deposit_escrow"
+                );
+                (MPC_SIGN_DEPOSIT_YOCTO, 0u128, keeper_refund_yocto)
+            }
+        };
+
+        env::log_str(&format!(
+            "SWEEP_REQUEST: Vault={}, Epoch={}, Chain={}, Path={}, EscrowDebited={}",
+            vault_owner, epoch_to_sign, chain, path, escrow_debited_yocto
+        ));
 
         let request = SignRequest {
             payload_v2: payload_to_sign,
@@ -599,41 +1069,66 @@ impl LastKeyVault {
                     "request": request
                 }))
                 .expect("Failed to serialize sign request"),
-                attached_deposit,
+                NearToken::from_yoctonear(sign_deposit_yocto),
                 MPC_GAS,
             )
             .then(
                 Self::ext(env::current_account_id())
                     .with_static_gas(CALLBACK_GAS)
-                    .on_signature_ready(chain, is_eddsa),
+                    .on_signature_ready(
+                        vault_owner,
+                        caller,
+                        chain,
+                        is_eddsa,
+                        U64((escrow_debited_yocto / 1_000_000_000_000_000_000) as u64), // in milli-micro units (10^18)
+                        U64((refund_caller_yocto / 1_000_000_000_000_000_000) as u64),
+                    ),
             )
     }
 
     #[private]
     pub fn on_signature_ready(
         &mut self,
+        vault_owner: AccountId,
+        caller: AccountId,
         chain: String,
         is_eddsa: bool,
+        escrow_debited_e18: U64,
+        keeper_refund_e18: U64,
         #[callback_result] result: Result<near_sdk::serde_json::Value, PromiseError>,
     ) -> near_sdk::serde_json::Value {
+        let escrow_debited = (escrow_debited_e18.0 as u128).saturating_mul(1_000_000_000_000_000_000);
+        let keeper_refund = (keeper_refund_e18.0 as u128).saturating_mul(1_000_000_000_000_000_000);
+
         match result {
             Ok(val) => {
+                if keeper_refund > 0 {
+                    // Fire-and-forget gas compensation receipt to keeper while still returning `val` in SuccessValue!
+                    let promise_idx = env::promise_batch_create(&caller);
+                    env::promise_batch_action_transfer(
+                        promise_idx,
+                        NearToken::from_yoctonear(keeper_refund),
+                    );
+                }
                 env::log_str(&format!(
-                    "SIGNATURE_SUCCESS: Chain={}, is_eddsa={}",
-                    chain, is_eddsa
+                    "SIGNATURE_SUCCESS: Vault={}, Chain={}, is_eddsa={}, KeeperRefund={}",
+                    vault_owner, chain, is_eddsa, keeper_refund
                 ));
                 val
             }
-            Err(_) => env::panic_str("MPC signature generation failed"),
+            Err(_) => {
+                if escrow_debited > 0 {
+                    Self::internal_credit_escrow(&vault_owner, escrow_debited);
+                }
+                env::panic_str("MPC signature generation failed")
+            }
         }
     }
 
     // --- Views ---
 
-    /// Returns vault information for the requested account_id (or caller if omitted).
-    /// Returns None if the account does not have a configured vault.
     pub fn get_vault_info(&self, account_id: Option<AccountId>) -> Option<VaultInfo> {
-        let target = account_id.unwrap_or_else(|| env::predecessor_account_id());
+        let target = account_id?;
         self.vaults.get(&target).map(|vault| VaultInfo {
             owner: target.clone(),
             mpc_contract: self.mpc_contract.clone(),
@@ -648,46 +1143,363 @@ impl LastKeyVault {
             current_time_ns: env::block_timestamp(),
             epoch: vault.epoch,
             authorized_relayer: vault.authorized_relayer.clone(),
+            heir_memo: self.get_heir_memo(target.clone()),
+            gas_escrow_yocto: Self::internal_get_escrow(&target).to_string(),
+            near_deposit_yocto: Self::internal_get_near_deposit(&target).to_string(),
+            is_epoch_swept: Self::internal_is_epoch_swept(&target, vault.epoch),
+            last_sweep_report: Self::internal_get_sweep_telemetry(&target, vault.epoch),
         })
+    }
+
+    /// Single-call view method for stateless serverless keepers:
+    /// - Skips already-swept epochs (`is_epoch_swept == true`) to prevent infinite loops
+    /// - Requires `pending_policy.is_none() && !heirs.is_empty()` for expired `Active` vaults
+    pub fn get_actionable_vaults(&self) -> Vec<VaultInfo> {
+        let now = env::block_timestamp();
+        self.get_registered_accounts()
+            .into_iter()
+            .filter_map(|owner| self.get_vault_info(Some(owner)))
+            .filter(|v| {
+                let needs_sweep =
+                    matches!(v.state, VaultState::Evacuated | VaultState::Inheritance)
+                        && !v.is_epoch_swept;
+                let needs_inheritance_trigger =
+                    (v.state == VaultState::Active || matches!(v.state, VaultState::Claiming { .. }))
+                        && v.pending_policy.is_none()
+                        && !v.heirs.is_empty()
+                        && now
+                            >= v.last_ping_ns.saturating_add(
+                                v.heartbeat_interval_ns.saturating_add(v.challenge_period_ns),
+                            );
+                needs_sweep || needs_inheritance_trigger
+            })
+            .collect()
+    }
+
+    /// Sets or clears the custom testament memo (plaintext or client-side E2EE ciphertext up to 1024 bytes).
+    #[payable]
+    pub fn set_heir_memo(&mut self, memo: String) {
+        let caller = env::predecessor_account_id();
+        Self::internal_capture_signer_pubkey(&caller);
+        let trimmed = memo.trim();
+        let key = format!("memo:{}", caller);
+        if trimmed.is_empty() {
+            env::storage_remove(key.as_bytes());
+            env::log_str(&format!("HEIR_MEMO_CLEARED: Testament note removed for {}", caller));
+        } else {
+            require!(
+                trimmed.len() <= MAX_MEMO_BYTES,
+                "Digital testament exceeds 1024 bytes"
+            );
+            env::storage_write(key.as_bytes(), trimmed.as_bytes());
+            env::log_str(&format!("HEIR_MEMO_SAVED: Testament note updated for {}", caller));
+        }
+    }
+
+    pub fn get_heir_memo(&self, account_id: AccountId) -> Option<String> {
+        let key = format!("memo:{}", account_id);
+        env::storage_read(key.as_bytes()).map(|bytes| String::from_utf8(bytes).unwrap_or_default())
+    }
+
+    pub fn get_sweep_telemetry(&self, account_id: AccountId, epoch: Option<u32>) -> Option<String> {
+        let ep = epoch.or_else(|| self.vaults.get(&account_id).map(|v| v.epoch))?;
+        Self::internal_get_sweep_telemetry(&account_id, ep)
+    }
+
+    pub fn register_account(&mut self, account_id: Option<AccountId>) {
+        let acc = account_id.unwrap_or_else(env::predecessor_account_id);
+        self.internal_register_account(&acc);
+    }
+
+    pub fn get_registered_accounts(&self) -> Vec<AccountId> {
+        env::storage_read(b"reg_accounts")
+            .and_then(|bytes| near_sdk::serde_json::from_slice(&bytes).ok())
+            .unwrap_or_else(|| {
+                vec![
+                    "okgoogleok.testnet".parse().unwrap(),
+                    "fewvilla8059.testnet".parse().unwrap(),
+                    "mastrophot.testnet".parse().unwrap(),
+                    "newapp9955.testnet".parse().unwrap(),
+                ]
+            })
+    }
+
+    // --- Internal Storage Helpers (Zero Borsh Migration Impact) ---
+
+    fn internal_register_account(&self, account_id: &AccountId) {
+        let mut list = self.get_registered_accounts();
+        if !list.contains(account_id) {
+            list.push(account_id.clone());
+        }
+        if let Ok(bytes) = near_sdk::serde_json::to_vec(&list) {
+            env::storage_write(b"reg_accounts", &bytes);
+        }
+    }
+
+    fn internal_read_u128(key: &[u8]) -> u128 {
+        env::storage_read(key)
+            .and_then(|b| b.try_into().ok().map(u128::from_le_bytes))
+            .unwrap_or(0)
+    }
+
+    fn internal_write_u128(key: &[u8], val: u128) {
+        env::storage_write(key, &val.to_le_bytes());
+    }
+
+    fn internal_get_escrow(owner: &AccountId) -> u128 {
+        let key = format!("escrow:{}", owner);
+        Self::internal_read_u128(key.as_bytes())
+    }
+
+    fn internal_credit_escrow(owner: &AccountId, amount: u128) {
+        let key = format!("escrow:{}", owner);
+        let cur = Self::internal_read_u128(key.as_bytes());
+        Self::internal_write_u128(key.as_bytes(), cur.saturating_add(amount));
+        let tot = Self::internal_read_u128(b"total_escrow");
+        Self::internal_write_u128(b"total_escrow", tot.saturating_add(amount));
+    }
+
+    fn internal_debit_escrow(owner: &AccountId, amount: u128) {
+        let key = format!("escrow:{}", owner);
+        let cur = Self::internal_read_u128(key.as_bytes());
+        require!(cur >= amount, "Insufficient vault gas escrow");
+        Self::internal_write_u128(key.as_bytes(), cur - amount);
+        let tot = Self::internal_read_u128(b"total_escrow");
+        Self::internal_write_u128(b"total_escrow", tot.saturating_sub(amount));
+    }
+
+    fn internal_get_near_deposit(owner: &AccountId) -> u128 {
+        let key = format!("near_dep:{}", owner);
+        Self::internal_read_u128(key.as_bytes())
+    }
+
+    fn internal_credit_near_deposit(owner: &AccountId, amount: u128) {
+        let key = format!("near_dep:{}", owner);
+        let cur = Self::internal_read_u128(key.as_bytes());
+        Self::internal_write_u128(key.as_bytes(), cur.saturating_add(amount));
+        let tot = Self::internal_read_u128(b"total_near_dep");
+        Self::internal_write_u128(b"total_near_dep", tot.saturating_add(amount));
+    }
+
+    fn internal_debit_near_deposit(owner: &AccountId, amount: u128) {
+        let key = format!("near_dep:{}", owner);
+        let cur = Self::internal_read_u128(key.as_bytes());
+        require!(cur >= amount, "Insufficient isolated NEAR deposit");
+        Self::internal_write_u128(key.as_bytes(), cur - amount);
+        let tot = Self::internal_read_u128(b"total_near_dep");
+        Self::internal_write_u128(b"total_near_dep", tot.saturating_sub(amount));
+    }
+
+    fn internal_capture_signer_pubkey(caller: &AccountId) {
+        if &env::signer_account_id() == caller {
+            let pk = env::signer_account_pk();
+            let raw = pk.as_bytes();
+            if raw.len() == 33 && raw[0] == 0 {
+                let mut arr = [0u8; 32];
+                arr.copy_from_slice(&raw[1..33]);
+                Self::internal_record_owner_pubkey(caller, arr);
+            }
+        }
+    }
+
+    fn internal_get_owner_pubkeys(owner: &AccountId) -> Vec<[u8; 32]> {
+        let key = format!("pks:{}", owner);
+        env::storage_read(key.as_bytes())
+            .and_then(|bytes| near_sdk::borsh::from_slice::<Vec<[u8; 32]>>(&bytes).ok())
+            .unwrap_or_default()
+    }
+
+    fn internal_record_owner_pubkey(owner: &AccountId, pk: [u8; 32]) {
+        let mut pks = Self::internal_get_owner_pubkeys(owner);
+        if !pks.contains(&pk) {
+            if pks.len() >= 16 {
+                pks.remove(0);
+            }
+            pks.push(pk);
+            let key = format!("pks:{}", owner);
+            if let Ok(bytes) = near_sdk::borsh::to_vec(&pks) {
+                env::storage_write(key.as_bytes(), &bytes);
+            }
+        }
+    }
+
+    fn internal_get_last_ping_sig_ms(owner: &AccountId) -> u64 {
+        let key = format!("ping_ts:{}", owner);
+        env::storage_read(key.as_bytes())
+            .and_then(|b| b.try_into().ok().map(u64::from_le_bytes))
+            .unwrap_or(0)
+    }
+
+    fn internal_set_last_ping_sig_ms(owner: &AccountId, ts_ms: u64) {
+        let key = format!("ping_ts:{}", owner);
+        env::storage_write(key.as_bytes(), &ts_ms.to_le_bytes());
+    }
+
+    fn internal_set_epoch_swept(owner: &AccountId, epoch: u32, is_complete: bool) {
+        let key = format!("swept:{}:{}", owner, epoch);
+        if is_complete {
+            env::storage_write(key.as_bytes(), &[1u8]);
+        } else {
+            env::storage_remove(key.as_bytes());
+        }
+    }
+
+    fn internal_is_epoch_swept(owner: &AccountId, epoch: u32) -> bool {
+        let key = format!("swept:{}:{}", owner, epoch);
+        env::storage_read(key.as_bytes())
+            .map(|b| b == vec![1u8])
+            .unwrap_or(false)
+    }
+
+    fn internal_get_sweep_telemetry(owner: &AccountId, epoch: u32) -> Option<String> {
+        let key = format!("telemetry:{}:{}", owner, epoch);
+        env::storage_read(key.as_bytes()).and_then(|b| String::from_utf8(b).ok())
+    }
+
+    fn internal_get_archived_epoch(owner: &AccountId, epoch: u32) -> Option<ArchivedEpoch> {
+        let key = format!("archive:{}:{}", owner, epoch);
+        env::storage_read(key.as_bytes())
+            .and_then(|b| near_sdk::serde_json::from_slice(&b).ok())
     }
 }
 
-/// Extracts the 20-byte `to` recipient address from an EIP-1559 or Legacy RLP-encoded transaction.
-fn extract_evm_to_address(raw_tx: &[u8]) -> Option<[u8; 20]> {
-    let (payload, items_before_to) = if raw_tx.first() == Some(&0x02) {
-        // EIP-1559 envelope: 0x02 || rlp([chain_id, nonce, max_priority_fee, max_fee, gas_limit, to, value, data, access_list])
-        (&raw_tx[1..], 5)
+/// Full structural & economic verification of EIP-1559 (type 0x02) and Legacy EVM sweep payloads.
+/// Mitigates `[ATTACK-1]` parameter poisoning (fee-burn griefing, gas-limit stuffing, recipient spoofing)
+/// while securely permitting Native ETH, ERC-20 `transfer`, and ERC-721 `safeTransferFrom` sweeps.
+fn verify_evm_sweep_payload(
+    raw_tx: &[u8],
+    expected_recipient: &[u8; 20],
+) -> Result<(), &'static str> {
+    if raw_tx.is_empty() {
+        return Err("Empty EVM transaction payload");
+    }
+
+    let is_eip1559 = raw_tx[0] == 0x02;
+    let payload = if is_eip1559 { &raw_tx[1..] } else { raw_tx };
+    if payload.is_empty() {
+        return Err("Empty RLP list in EVM payload");
+    }
+
+    let (list_header_len, list_content_len) =
+        decode_rlp_header(payload).ok_or("Invalid RLP list header")?;
+    if payload.len() != list_header_len + list_content_len {
+        return Err("EVM RLP payload has trailing or truncated bytes");
+    }
+
+    let mut items: Vec<&[u8]> = Vec::with_capacity(10);
+    let mut offset = list_header_len;
+    while offset < payload.len() {
+        let slice = payload.get(offset..).ok_or("RLP slice out of bounds")?;
+        let (h_len, i_len) = decode_rlp_item(slice).ok_or("Invalid RLP item")?;
+        let end = offset
+            .checked_add(h_len)
+            .and_then(|v| v.checked_add(i_len))
+            .ok_or("RLP length overflow")?;
+        if end > payload.len() {
+            return Err("RLP item exceeds list boundary");
+        }
+        items.push(&payload[offset + h_len..end]);
+        offset = end;
+    }
+
+    let (max_priority_fee, max_fee, gas_limit, to_bytes, value_wei, data) = if is_eip1559 {
+        if items.len() != 9 {
+            return Err("Unsigned EIP-1559 transaction must have exactly 9 RLP fields");
+        }
+        (
+            rlp_bytes_to_u128(items[2]).ok_or("maxPriorityFeePerGas overflow")?,
+            rlp_bytes_to_u128(items[3]).ok_or("maxFeePerGas overflow")?,
+            rlp_bytes_to_u128(items[4]).ok_or("gasLimit overflow")?,
+            items[5],
+            rlp_bytes_to_u128(items[6]).ok_or("value overflow")?,
+            items[7],
+        )
     } else {
-        // Legacy: rlp([nonce, gas_price, gas_limit, to, value, data, v, r, s])
-        (raw_tx, 3)
+        if items.len() != 6 && items.len() != 9 {
+            return Err("Unsigned Legacy EVM transaction must have 6 or 9 RLP fields");
+        }
+        let gp = rlp_bytes_to_u128(items[1]).ok_or("gasPrice overflow")?;
+        (
+            gp,
+            gp,
+            rlp_bytes_to_u128(items[2]).ok_or("gasLimit overflow")?,
+            items[3],
+            rlp_bytes_to_u128(items[4]).ok_or("value overflow")?,
+            items[5],
+        )
     };
 
-    if payload.is_empty() {
+    if to_bytes.len() != 20 {
+        return Err("EVM `to` field must be a 20-byte address (contract creation forbidden)");
+    }
+    if gas_limit < MIN_EVM_GAS_LIMIT || gas_limit > MAX_EVM_GAS_LIMIT {
+        return Err("EVM gasLimit out of safe sweep bounds (21,000..=250,000)");
+    }
+    if max_fee == 0 || max_fee > MAX_EVM_FEE_PER_GAS_WEI {
+        return Err("EVM maxFeePerGas exceeds 500 Gwei safety cap or is zero");
+    }
+    if max_priority_fee > max_fee {
+        return Err("EVM maxPriorityFeePerGas cannot exceed maxFeePerGas");
+    }
+
+    if to_bytes == expected_recipient.as_slice() {
+        // Native ETH sweep directly to configured backup/heir recipient
+        if value_wei == 0 {
+            return Err("Native EVM sweep must transfer non-zero ETH value");
+        }
+        if data.len() > MAX_MEMO_BYTES {
+            return Err("Native EVM memo calldata exceeds 1024 bytes");
+        }
+        return Ok(());
+    }
+
+    // Token / NFT contract sweep: `value` MUST be 0 and recipient inside ABI calldata MUST match `expected_recipient`
+    if value_wei != 0 {
+        return Err("EVM recipient mismatch (non-zero ETH sent to unknown address)");
+    }
+
+    // ERC-20 `transfer(address,uint256)` selector `0xa9059cbb`
+    if data.len() == 68 && data[0..4] == [0xa9, 0x05, 0x9c, 0xbb] {
+        if data[4..16].iter().any(|&b| b != 0) {
+            return Err("Malformed ABI address padding in ERC-20 transfer");
+        }
+        if &data[16..36] != expected_recipient.as_slice() {
+            return Err("ERC-20 transfer recipient does not match designated target address");
+        }
+        if data[36..68].iter().all(|&b| b == 0) {
+            return Err("ERC-20 transfer amount must be greater than zero");
+        }
+        return Ok(());
+    }
+
+    // ERC-721 `safeTransferFrom(address,address,uint256)` selector `0x42842e0e`
+    if data.len() == 100 && data[0..4] == [0x42, 0x84, 0x2e, 0x0e] {
+        if data[36..48].iter().any(|&b| b != 0) {
+            return Err("Malformed ABI recipient padding in ERC-721 safeTransferFrom");
+        }
+        if &data[48..68] != expected_recipient.as_slice() {
+            return Err("ERC-721 safeTransferFrom recipient does not match designated target address");
+        }
+        return Ok(());
+    }
+
+    Err("EVM transaction recipient does not match designated target address")
+}
+
+fn rlp_bytes_to_u128(bytes: &[u8]) -> Option<u128> {
+    if bytes.len() > 16 {
         return None;
     }
-
-    let (list_header_len, _) = decode_rlp_header(payload)?;
-    let mut offset = list_header_len;
-
-    for _ in 0..items_before_to {
-        let (item_header_len, item_len) = decode_rlp_item(payload.get(offset..)?)?;
-        offset += item_header_len + item_len;
+    let mut acc = 0u128;
+    for &b in bytes {
+        acc = (acc << 8) | (b as u128);
     }
-
-    let (to_header_len, to_len) = decode_rlp_item(payload.get(offset..)?)?;
-    if to_len == 20 {
-        let to_bytes = payload.get(offset + to_header_len..offset + to_header_len + 20)?;
-        let mut addr = [0u8; 20];
-        addr.copy_from_slice(to_bytes);
-        Some(addr)
-    } else {
-        None
-    }
+    Some(acc)
 }
 
 fn decode_rlp_header(data: &[u8]) -> Option<(usize, usize)> {
     let first = *data.first()?;
-    if first >= 0xc0 && first <= 0xf7 {
+    if (0xc0..=0xf7).contains(&first) {
         Some((1, (first - 0xc0) as usize))
     } else if first >= 0xf8 {
         let len_of_len = (first - 0xf7) as usize;
@@ -722,66 +1534,258 @@ fn decode_rlp_item(data: &[u8]) -> Option<(usize, usize)> {
         }
         Some((1 + len_of_len, len))
     } else {
-        let (h_len, l_len) = decode_rlp_header(data)?;
-        Some((h_len, l_len))
+        decode_rlp_header(data)
     }
 }
 
-/// Strict structural validation of Solana serialized message headers
-/// Protects against substring injection and unauthorized recipient accounts.
+fn read_compact_u16(data: &[u8], pos: &mut usize) -> Option<usize> {
+    let b0 = *data.get(*pos)? as usize;
+    *pos += 1;
+    if (b0 & 0x80) == 0 {
+        return Some(b0);
+    }
+    let b1 = *data.get(*pos)? as usize;
+    *pos += 1;
+    if (b1 & 0x80) == 0 {
+        return Some((b0 & 0x7f) | (b1 << 7));
+    }
+    let b2 = *data.get(*pos)? as usize;
+    *pos += 1;
+    if (b2 & 0xfc) != 0 {
+        return None;
+    }
+    Some((b0 & 0x7f) | ((b1 & 0x7f) << 7) | (b2 << 14))
+}
+
+// Well-known Solana Program IDs (32-byte decoded constants)
+// ComputeBudget111111111111111111111111111111 -> BANNED (blocks priority-fee drain [ATTACK-1])
+const SOL_COMPUTE_BUDGET_ID: &str = "ComputeBudget111111111111111111111111111111";
+const SOL_MEMO_V2_ID: &str = "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr";
+const SOL_MEMO_V1_ID: &str = "Memo1UhkJRfHyvLMcVucJwxXeuD728EqVDDwQDxFMNo";
+const SOL_ATA_PROGRAM_ID: &str = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL";
+const SOL_TOKEN_PROGRAM_ID: &str = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
+const SOL_TOKEN_2022_ID: &str = "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb";
+
+/// Full instruction-level verification of Solana Legacy Message bytes (`[ATTACK-1]` mitigation):
+/// - Rejects `ComputeBudget` program (prevents priority-fee drain to block validators)
+/// - Rejects zero blockhash & trailing bytes
+/// - Whitelists strictly SystemProgram::Transfer (`lamports > 0` to `expected_recipient`),
+///   SPL Token / Token-2022 transfers to recipient's ATA, ATA CreateIdempotent for `expected_recipient`,
+///   CloseAccount returning rent to vault/recipient, and SPL Memo.
 fn verify_solana_sweep_payload(raw_msg_bytes: &[u8], expected_recipient_sol: &str) -> bool {
     if raw_msg_bytes.len() < 3 {
         return false;
     }
     let num_required_signatures = raw_msg_bytes[0];
     let num_readonly_signed = raw_msg_bytes[1];
-    let num_readonly_unsigned = raw_msg_bytes[2];
+    let _num_readonly_unsigned = raw_msg_bytes[2];
 
     if num_required_signatures != 1 || num_readonly_signed != 0 {
         return false;
     }
 
-    let (account_count, offset) = match raw_msg_bytes[3] {
-        len if len < 0x80 => (len as usize, 4usize),
-        len1 => {
-            if raw_msg_bytes.len() < 5 {
-                return false;
-            }
-            let len2 = raw_msg_bytes[4];
-            (((len2 as usize) << 7) | ((len1 & 0x7f) as usize), 5usize)
-        }
-    };
-
-    let accounts_byte_len = account_count.saturating_mul(32);
-    if raw_msg_bytes.len() < offset + accounts_byte_len {
-        return false;
-    }
-
-    let Ok(expected_recipient_bytes) = bs58::decode(expected_recipient_sol).into_vec() else {
+    let Ok(expected_recipient_bytes) = bs58::decode(expected_recipient_sol.trim()).into_vec() else {
         return false;
     };
     if expected_recipient_bytes.len() != 32 {
         return false;
     }
 
-    let unsigned_writable_count = account_count
-        .saturating_sub(num_required_signatures as usize)
-        .saturating_sub(num_readonly_unsigned as usize);
-
-    let account_1 = &raw_msg_bytes[offset + 32..offset + 64];
-
-    if unsigned_writable_count == 1 {
-        return account_1 == expected_recipient_bytes.as_slice();
+    let mut pos = 3usize;
+    let Some(account_count) = read_compact_u16(raw_msg_bytes, &mut pos) else {
+        return false;
+    };
+    if account_count < 2 || account_count > 16 {
+        return false;
     }
 
-    if unsigned_writable_count == 2 {
-        return (0..account_count).any(|i| {
-            let key = &raw_msg_bytes[offset + i * 32..offset + (i + 1) * 32];
-            key == expected_recipient_bytes.as_slice()
-        });
+    let accounts_end = match account_count
+        .checked_mul(32)
+        .and_then(|len| pos.checked_add(len))
+    {
+        Some(e) if e <= raw_msg_bytes.len() => e,
+        _ => return false,
+    };
+
+    let mut accounts: Vec<[u8; 32]> = Vec::with_capacity(account_count);
+    for i in 0..account_count {
+        let mut key = [0u8; 32];
+        key.copy_from_slice(&raw_msg_bytes[pos + i * 32..pos + (i + 1) * 32]);
+        accounts.push(key);
+    }
+    pos = accounts_end;
+
+    // 32-byte recentBlockhash MUST exist and MUST NOT be all zeros
+    if pos + 32 > raw_msg_bytes.len() {
+        return false;
+    }
+    let blockhash = &raw_msg_bytes[pos..pos + 32];
+    if blockhash.iter().all(|&b| b == 0) {
+        return false;
+    }
+    pos += 32;
+
+    let Some(ix_count) = read_compact_u16(raw_msg_bytes, &mut pos) else {
+        return false;
+    };
+    if ix_count == 0 || ix_count > 6 {
+        return false;
     }
 
-    false
+    let compute_budget = bs58::decode(SOL_COMPUTE_BUDGET_ID).into_vec().unwrap();
+    let memo_v2 = bs58::decode(SOL_MEMO_V2_ID).into_vec().unwrap();
+    let memo_v1 = bs58::decode(SOL_MEMO_V1_ID).into_vec().unwrap();
+    let ata_prog = bs58::decode(SOL_ATA_PROGRAM_ID).into_vec().unwrap();
+    let token_prog = bs58::decode(SOL_TOKEN_PROGRAM_ID).into_vec().unwrap();
+    let token_2022 = bs58::decode(SOL_TOKEN_2022_ID).into_vec().unwrap();
+    let system_prog = [0u8; 32];
+
+    // Explicitly forbid ComputeBudget anywhere in account keys as defense-in-depth
+    if accounts.iter().any(|k| k.as_slice() == compute_budget.as_slice()) {
+        return false;
+    }
+
+    let vault_pubkey = accounts[0];
+    let mut verified_recipient_ata: Option<[u8; 32]> = None;
+    let mut has_valid_transfer = false;
+
+    for _ in 0..ix_count {
+        let Some(&prog_idx) = raw_msg_bytes.get(pos) else {
+            return false;
+        };
+        pos += 1;
+        let Some(prog_id) = accounts.get(prog_idx as usize) else {
+            return false;
+        };
+
+        let Some(acct_idx_len) = read_compact_u16(raw_msg_bytes, &mut pos) else {
+            return false;
+        };
+        if pos + acct_idx_len > raw_msg_bytes.len() {
+            return false;
+        }
+        let acct_indices = &raw_msg_bytes[pos..pos + acct_idx_len];
+        if acct_indices.iter().any(|&idx| (idx as usize) >= account_count) {
+            return false;
+        }
+        pos += acct_idx_len;
+
+        let Some(data_len) = read_compact_u16(raw_msg_bytes, &mut pos) else {
+            return false;
+        };
+        if pos + data_len > raw_msg_bytes.len() {
+            return false;
+        }
+        let data = &raw_msg_bytes[pos..pos + data_len];
+        pos += data_len;
+
+        if prog_id == &system_prog {
+            // SystemProgram::Transfer (opcode 2u32 LE + u64 lamports LE)
+            if data.len() != 12 || acct_indices.len() < 2 {
+                return false;
+            }
+            let opcode = u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
+            let lamports = u64::from_le_bytes([
+                data[4], data[5], data[6], data[7], data[8], data[9], data[10], data[11],
+            ]);
+            if opcode != 2 || lamports == 0 {
+                return false;
+            }
+            let from_key = &accounts[acct_indices[0] as usize];
+            let to_key = &accounts[acct_indices[1] as usize];
+            if from_key != &vault_pubkey || to_key.as_slice() != expected_recipient_bytes.as_slice()
+            {
+                return false;
+            }
+            has_valid_transfer = true;
+        } else if prog_id.as_slice() == memo_v2.as_slice()
+            || prog_id.as_slice() == memo_v1.as_slice()
+        {
+            if data.len() > MAX_MEMO_BYTES {
+                return false;
+            }
+        } else if prog_id.as_slice() == ata_prog.as_slice() {
+            // AssociatedTokenAccount Create (empty or [0]) or CreateIdempotent ([1])
+            // Accounts: [0: payer, 1: ata, 2: wallet_owner, 3: mint, 4: system, 5: token_prog]
+            if acct_indices.len() < 6 || data.len() > 1 {
+                return false;
+            }
+            if data.len() == 1 && data[0] > 1 {
+                return false;
+            }
+            let owner_key = &accounts[acct_indices[2] as usize];
+            if owner_key.as_slice() != expected_recipient_bytes.as_slice() {
+                return false;
+            }
+            verified_recipient_ata = Some(accounts[acct_indices[1] as usize]);
+        } else if prog_id.as_slice() == token_prog.as_slice()
+            || prog_id.as_slice() == token_2022.as_slice()
+        {
+            if data.is_empty() {
+                return false;
+            }
+            match data[0] {
+                3 => {
+                    // SPL Transfer: [0: source, 1: dest_ata, 2: authority]
+                    if data.len() != 9 || acct_indices.len() < 3 {
+                        return false;
+                    }
+                    let amount = u64::from_le_bytes([
+                        data[1], data[2], data[3], data[4], data[5], data[6], data[7], data[8],
+                    ]);
+                    if amount == 0 {
+                        return false;
+                    }
+                    let dest_key = accounts[acct_indices[1] as usize];
+                    let valid_dest = verified_recipient_ata
+                        .map(|ata| ata == dest_key)
+                        .unwrap_or(false)
+                        || dest_key.as_slice() == expected_recipient_bytes.as_slice();
+                    if !valid_dest {
+                        return false;
+                    }
+                    has_valid_transfer = true;
+                }
+                12 => {
+                    // SPL TransferChecked: [0: source, 1: mint, 2: dest_ata, 3: authority]
+                    if data.len() != 10 || acct_indices.len() < 4 {
+                        return false;
+                    }
+                    let amount = u64::from_le_bytes([
+                        data[1], data[2], data[3], data[4], data[5], data[6], data[7], data[8],
+                    ]);
+                    if amount == 0 {
+                        return false;
+                    }
+                    let dest_key = accounts[acct_indices[2] as usize];
+                    let valid_dest = verified_recipient_ata
+                        .map(|ata| ata == dest_key)
+                        .unwrap_or(false);
+                    if !valid_dest {
+                        return false;
+                    }
+                    has_valid_transfer = true;
+                }
+                9 => {
+                    // SPL CloseAccount: [0: account, 1: rent_dest, 2: authority]
+                    if data.len() != 1 || acct_indices.len() < 3 {
+                        return false;
+                    }
+                    let rent_dest = &accounts[acct_indices[1] as usize];
+                    if rent_dest != &vault_pubkey
+                        && rent_dest.as_slice() != expected_recipient_bytes.as_slice()
+                    {
+                        return false;
+                    }
+                }
+                _ => return false,
+            }
+        } else {
+            return false;
+        }
+    }
+
+    pos == raw_msg_bytes.len() && has_valid_transfer
 }
 
 #[cfg(test)]
@@ -789,11 +1793,12 @@ mod tests {
     use super::*;
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::testing_env;
-    use near_sdk::NearToken;
 
     fn get_context(predecessor: AccountId) -> VMContextBuilder {
         let mut builder = VMContextBuilder::new();
-        builder.predecessor_account_id(predecessor);
+        builder
+            .predecessor_account_id(predecessor.clone())
+            .signer_account_id(predecessor);
         builder
     }
 
@@ -801,20 +1806,134 @@ mod tests {
         let backup = ChainAddresses {
             btc: "tb1qbackup".to_string(),
             evm: "0x1111111111111111111111111111111111111111".to_string(),
-            sol: "SolanaBackup1111111111111111111111111111".to_string(),
+            sol: "4uQeVj5tqViQh7yWWGStvkEG1Zmhx6uasJtWCJziofM".to_string(),
             near: Some("backup.testnet".parse().unwrap()),
         };
         let heirs = ChainAddresses {
             btc: "tb1qheir".to_string(),
             evm: "0x2222222222222222222222222222222222222222".to_string(),
-            sol: "SolanaHeir111111111111111111111111111111".to_string(),
+            sol: "8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR".to_string(),
             near: Some("heir.testnet".parse().unwrap()),
         };
         (backup, heirs)
     }
 
+    fn encode_rlp_bytes(bytes: &[u8]) -> Vec<u8> {
+        if bytes.is_empty() {
+            vec![0x80]
+        } else if bytes.len() == 1 && bytes[0] < 0x80 {
+            vec![bytes[0]]
+        } else if bytes.len() <= 55 {
+            let mut out = vec![0x80 + bytes.len() as u8];
+            out.extend_from_slice(bytes);
+            out
+        } else {
+            let len_bytes = (bytes.len() as u64)
+                .to_be_bytes()
+                .into_iter()
+                .skip_while(|&b| b == 0)
+                .collect::<Vec<_>>();
+            let mut out = vec![0xb7 + len_bytes.len() as u8];
+            out.extend_from_slice(&len_bytes);
+            out.extend_from_slice(bytes);
+            out
+        }
+    }
+
+    fn encode_rlp_u128(val: u128) -> Vec<u8> {
+        if val == 0 {
+            return vec![0x80];
+        }
+        let be = val
+            .to_be_bytes()
+            .into_iter()
+            .skip_while(|&b| b == 0)
+            .collect::<Vec<_>>();
+        encode_rlp_bytes(&be)
+    }
+
+    fn build_eip1559_tx(
+        max_priority_fee: u128,
+        max_fee: u128,
+        gas_limit: u128,
+        to: &[u8; 20],
+        value: u128,
+        data: &[u8],
+    ) -> Vec<u8> {
+        let mut list = Vec::new();
+        list.extend_from_slice(&encode_rlp_u128(11155111)); // chain_id
+        list.extend_from_slice(&encode_rlp_u128(0)); // nonce
+        list.extend_from_slice(&encode_rlp_u128(max_priority_fee));
+        list.extend_from_slice(&encode_rlp_u128(max_fee));
+        list.extend_from_slice(&encode_rlp_u128(gas_limit));
+        list.extend_from_slice(&encode_rlp_bytes(to));
+        list.extend_from_slice(&encode_rlp_u128(value));
+        list.extend_from_slice(&encode_rlp_bytes(data));
+        list.push(0xc0); // empty access_list
+
+        let mut tx = vec![0x02];
+        if list.len() <= 55 {
+            tx.push(0xc0 + list.len() as u8);
+        } else {
+            let len_bytes = (list.len() as u64)
+                .to_be_bytes()
+                .into_iter()
+                .skip_while(|&b| b == 0)
+                .collect::<Vec<_>>();
+            tx.push(0xf7 + len_bytes.len() as u8);
+            tx.extend_from_slice(&len_bytes);
+        }
+        tx.extend_from_slice(&list);
+        tx
+    }
+
+    fn build_solana_native_msg(
+        vault_key: [u8; 32],
+        recipient_key: [u8; 32],
+        blockhash: [u8; 32],
+        lamports: u64,
+        include_compute_budget: bool,
+    ) -> Vec<u8> {
+        let mut msg = Vec::new();
+        msg.push(1u8); // num_required_signatures
+        msg.push(0u8); // num_readonly_signed
+        if include_compute_budget {
+            let cb = bs58::decode(SOL_COMPUTE_BUDGET_ID).into_vec().unwrap();
+            msg.push(2u8); // readonly unsigned: system + compute_budget
+            msg.push(4u8); // 4 accounts
+            msg.extend_from_slice(&vault_key);
+            msg.extend_from_slice(&recipient_key);
+            msg.extend_from_slice(&[0u8; 32]); // SystemProgram
+            msg.extend_from_slice(&cb);
+            msg.extend_from_slice(&blockhash);
+            msg.push(2u8); // 2 instructions
+            // ix 0: ComputeBudget SetComputeUnitPrice
+            msg.push(3u8);
+            msg.push(0u8);
+            msg.push(9u8);
+            msg.extend_from_slice(&[3, 0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0]);
+        } else {
+            msg.push(1u8); // readonly unsigned: system
+            msg.push(3u8); // 3 accounts
+            msg.extend_from_slice(&vault_key);
+            msg.extend_from_slice(&recipient_key);
+            msg.extend_from_slice(&[0u8; 32]); // SystemProgram
+            msg.extend_from_slice(&blockhash);
+            msg.push(1u8); // 1 instruction
+        }
+        // SystemProgram::Transfer(lamports)
+        msg.push(2u8); // program_id_index = 2
+        msg.push(2u8); // 2 accounts
+        msg.push(0u8); // from = 0
+        msg.push(1u8); // to = 1
+        msg.push(12u8); // data_len = 12
+        msg.extend_from_slice(&2u32.to_le_bytes());
+        msg.extend_from_slice(&lamports.to_le_bytes());
+        msg
+    }
+
     #[test]
-    fn test_multi_user_isolation_and_initialization() {
+    fn test_multi_user_isolation_and_epoch_archival() {
         let alice: AccountId = "alice.testnet".parse().unwrap();
         let bob: AccountId = "bob.testnet".parse().unwrap();
         let mpc: AccountId = "v1.signer-prod.testnet".parse().unwrap();
@@ -824,49 +1943,41 @@ mod tests {
         testing_env!(context.build());
 
         let mut contract = LastKeyVault::new(mpc, None);
+        contract.propose_policy(backup.clone(), heirs.clone(), None);
 
-        // Before setup, get_vault_info returns None
-        assert!(contract.get_vault_info(Some(alice.clone())).is_none());
-        assert!(contract.get_vault_info(Some(bob.clone())).is_none());
+        testing_env!(context
+            .predecessor_account_id(bob.clone())
+            .signer_account_id(bob.clone())
+            .build());
+        contract.propose_policy(backup.clone(), heirs.clone(), None);
 
-        // Alice initializes policy
-        contract.propose_policy(backup.clone(), heirs.clone());
-        let alice_info = contract.get_vault_info(Some(alice.clone())).expect("Alice vault should exist");
-        assert_eq!(alice_info.state, VaultState::Active);
-        assert_eq!(alice_info.owner, alice);
-        assert_eq!(alice_info.epoch, 0);
-
-        // Bob is still untouched
-        assert!(contract.get_vault_info(Some(bob.clone())).is_none());
-
-        // Bob initializes his own policy
-        testing_env!(context.predecessor_account_id(bob.clone()).build());
-        let (bob_backup, bob_heirs) = sample_addresses();
-        contract.propose_policy(bob_backup, bob_heirs);
-
-        let bob_info = contract.get_vault_info(Some(bob.clone())).expect("Bob vault should exist");
-        assert_eq!(bob_info.owner, bob);
-        assert_eq!(bob_info.state, VaultState::Active);
-
-        // Alice triggers panic - only Alice's vault is evacuated
-        testing_env!(context.predecessor_account_id(alice.clone()).build());
+        testing_env!(context
+            .predecessor_account_id(alice.clone())
+            .signer_account_id(alice.clone())
+            .build());
         contract.panic();
-        assert_eq!(contract.get_vault_info(Some(alice.clone())).unwrap().state, VaultState::Evacuated);
-        assert_eq!(contract.get_vault_info(Some(bob.clone())).unwrap().state, VaultState::Active);
+        assert_eq!(
+            contract.get_vault_info(Some(alice.clone())).unwrap().state,
+            VaultState::Evacuated
+        );
+        assert_eq!(
+            contract.get_vault_info(Some(bob.clone())).unwrap().state,
+            VaultState::Active
+        );
 
-        // Alice rotates bunker -> epoch advances to 1, addresses are preserved, vault remains Active
+        // Rotate Alice's bunker -> epoch 0 destinations MUST be archived while current epoch 1 is clean
         contract.rotate_bunker();
         let alice_rot = contract.get_vault_info(Some(alice.clone())).unwrap();
-        assert_eq!(alice_rot.state, VaultState::Active);
-        assert!(!alice_rot.backup.is_empty());
+        assert_eq!(alice_rot.state, VaultState::Unconfigured);
         assert_eq!(alice_rot.epoch, 1);
-        assert_eq!(contract.get_vault_info(Some(bob.clone())).unwrap().epoch, 0);
+        let archived = LastKeyVault::internal_get_archived_epoch(&alice, 0).expect("Epoch 0 archived");
+        assert_eq!(archived.destination, backup);
     }
 
     #[test]
     fn test_claim_lifecycle_and_ping_recovery() {
         let owner: AccountId = "alice.testnet".parse().unwrap();
-        let heir_caller: AccountId = "heir.testnet".parse().unwrap();
+        let anyone_caller: AccountId = "random_relayer.testnet".parse().unwrap();
         let mpc: AccountId = "v1.signer-prod.testnet".parse().unwrap();
         let (backup, heirs) = sample_addresses();
 
@@ -878,273 +1989,344 @@ mod tests {
         let challenge_ns = 7 * 24 * 3600 * 1_000_000_000;
 
         let mut contract = LastKeyVault::new(mpc, None);
-        contract.propose_policy(backup, heirs);
+        contract.propose_policy(backup, heirs, None);
 
-        // Advance time before heartbeat -> claim should fail
         testing_env!(context
-            .predecessor_account_id(heir_caller.clone())
-            .block_timestamp(t0 + heartbeat_ns - 100)
+            .predecessor_account_id(anyone_caller.clone())
+            .block_timestamp(t0 + heartbeat_ns + challenge_ns - 100)
             .build());
-        
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            // Cannot start claim before heartbeat
-        }));
-        assert!(result.is_ok());
+        assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            contract.trigger_push_inheritance(owner.clone());
+        }))
+        .is_err());
 
-        // Advance time past heartbeat -> start claim
-        let claim_time = t0 + heartbeat_ns + 1000;
-        testing_env!(context
-            .predecessor_account_id(heir_caller.clone())
-            .block_timestamp(claim_time)
-            .build());
-        contract.start_claim(owner.clone());
-        assert_eq!(contract.get_vault_info(Some(owner.clone())).unwrap().state, VaultState::Claiming { since_ns: claim_time });
-
-        // Owner pings alive -> cancels claim
+        let ping_time = t0 + heartbeat_ns;
         testing_env!(context
             .predecessor_account_id(owner.clone())
-            .block_timestamp(claim_time + 100)
+            .signer_account_id(owner.clone())
+            .block_timestamp(ping_time)
             .build());
         contract.ping();
-        assert_eq!(contract.get_vault_info(Some(owner.clone())).unwrap().state, VaultState::Active);
+        assert_eq!(
+            contract.get_vault_info(Some(owner.clone())).unwrap().last_ping_ns,
+            ping_time
+        );
 
-        // Finalize claim after challenge period
-        let new_claim_time = claim_time + heartbeat_ns + 5000;
+        let final_expire_time = ping_time + heartbeat_ns + challenge_ns + 1;
         testing_env!(context
-            .predecessor_account_id(heir_caller.clone())
-            .block_timestamp(new_claim_time)
+            .predecessor_account_id(anyone_caller)
+            .block_timestamp(final_expire_time)
             .build());
-        contract.start_claim(owner.clone());
-
-        testing_env!(context
-            .predecessor_account_id(heir_caller.clone())
-            .block_timestamp(new_claim_time + challenge_ns + 1)
-            .build());
-        contract.finalize_claim(owner.clone());
-        assert_eq!(contract.get_vault_info(Some(owner.clone())).unwrap().state, VaultState::Inheritance);
+        contract.trigger_push_inheritance(owner.clone());
+        assert_eq!(
+            contract.get_vault_info(Some(owner)).unwrap().state,
+            VaultState::Inheritance
+        );
     }
 
     #[test]
-    fn test_policy_timelock_and_cancellation() {
-        let owner: AccountId = "alice.testnet".parse().unwrap();
-        let mpc: AccountId = "v1.signer-prod.testnet".parse().unwrap();
-        let (backup, heirs) = sample_addresses();
+    fn test_solana_instruction_verification_and_compute_budget_ban() {
+        let recipient_sol = "4uQeVj5tqViQh7yWWGStvkEG1Zmhx6uasJtWCJziofM";
+        let mut recipient_bytes = [0u8; 32];
+        recipient_bytes.copy_from_slice(&bs58::decode(recipient_sol).into_vec().unwrap());
+        let vault_bytes = [0xaa; 32];
+        let valid_bh = [0x55; 32];
 
-        let mut context = get_context(owner.clone());
-        let t0 = 1_000_000_000_000_000_000;
-        testing_env!(context.block_timestamp(t0).build());
+        // 1. Valid native transfer passes
+        let valid_msg =
+            build_solana_native_msg(vault_bytes, recipient_bytes, valid_bh, 995_000, false);
+        assert!(verify_solana_sweep_payload(&valid_msg, recipient_sol));
 
-        let mut contract = LastKeyVault::new(mpc, None);
-        contract.propose_policy(backup, heirs);
+        // 2. ComputeBudget priority-fee drain MUST be rejected
+        let poisoned_cb =
+            build_solana_native_msg(vault_bytes, recipient_bytes, valid_bh, 1, true);
+        assert!(
+            !verify_solana_sweep_payload(&poisoned_cb, recipient_sol),
+            "ComputeBudget fee-drain payload must be rejected"
+        );
 
-        let new_backup = ChainAddresses {
-            btc: "tb1qnewbackup".to_string(),
-            evm: "0x3333333333333333333333333333333333333333".to_string(),
-            sol: "SolanaNewBackup33333333333333333333333333".to_string(),
-            near: None,
-        };
-        let new_heirs = ChainAddresses {
-            btc: "tb1qnewheirs".to_string(),
-            evm: "0x4444444444444444444444444444444444444444".to_string(),
-            sol: "SolanaNewHeir444444444444444444444444444".to_string(),
-            near: None,
-        };
+        // 3. Zero-lamport transfer MUST be rejected
+        let zero_lamports =
+            build_solana_native_msg(vault_bytes, recipient_bytes, valid_bh, 0, false);
+        assert!(!verify_solana_sweep_payload(&zero_lamports, recipient_sol));
 
-        // Owner proposes update
-        contract.propose_policy(new_backup.clone(), new_heirs.clone());
-        assert!(contract.get_vault_info(Some(owner.clone())).unwrap().pending_policy.is_some());
+        // 4. All-zero blockhash MUST be rejected
+        let zero_bh =
+            build_solana_native_msg(vault_bytes, recipient_bytes, [0u8; 32], 995_000, false);
+        assert!(!verify_solana_sweep_payload(&zero_bh, recipient_sol));
 
-        // Cancel policy
-        contract.cancel_policy();
-        assert!(contract.get_vault_info(Some(owner.clone())).unwrap().pending_policy.is_none());
-
-        // Owner proposes again and applies after timelock
-        contract.propose_policy(new_backup.clone(), new_heirs.clone());
-
-        testing_env!(context.block_timestamp(t0 + DEFAULT_POLICY_TIMELOCK_NS + 1).build());
-        contract.apply_policy();
-        let info = contract.get_vault_info(Some(owner.clone())).unwrap();
-        assert_eq!(info.backup, new_backup);
-        assert_eq!(info.heirs, new_heirs);
+        // 5. Wrong recipient MUST be rejected
+        let attacker_bytes = [0x77; 32];
+        let spoofed_recipient =
+            build_solana_native_msg(vault_bytes, attacker_bytes, valid_bh, 995_000, false);
+        assert!(!verify_solana_sweep_payload(&spoofed_recipient, recipient_sol));
     }
 
     #[test]
-    fn test_sweep_signature_security_guards() {
-        let owner: AccountId = "alice.testnet".parse().unwrap();
-        let attacker: AccountId = "eve.testnet".parse().unwrap();
-        let relayer: AccountId = "relayer.testnet".parse().unwrap();
-        let mpc: AccountId = "v1.signer-prod.testnet".parse().unwrap();
-        let (backup, heirs) = sample_addresses();
+    fn test_evm_sweep_verification_native_erc20_and_fee_cap() {
+        let target = [0x7au8; 20];
+        let attacker = [0x66u8; 20];
+        let usdc_contract = [0x99u8; 20];
 
-        let mut context = get_context(owner.clone());
-        testing_env!(context.attached_deposit(NearToken::from_yoctonear(1)).build());
+        // 1. Valid Native ETH sweep passes
+        let valid_eth = build_eip1559_tx(
+            1_000_000_000,
+            20_000_000_000,
+            25_000,
+            &target,
+            1_000_000_000_000_000,
+            b"enc:x25519:test",
+        );
+        assert!(verify_evm_sweep_payload(&valid_eth, &target).is_ok());
 
-        let mut contract = LastKeyVault::new(mpc, Some(relayer.clone()));
-        contract.propose_policy(backup, heirs);
+        // 2. Excessive fee (>500 Gwei) MUST fail ([ATTACK-1] fee-burn mitigation)
+        let fee_burn_tx = build_eip1559_tx(
+            1_000_000_000,
+            900_000_000_000, // 900 Gwei!
+            21_000,
+            &target,
+            1000,
+            &[],
+        );
+        assert!(verify_evm_sweep_payload(&fee_burn_tx, &target).is_err());
 
-        // Cannot request sweep while Active
-        let res1 = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            // Sweep while active fails
-        }));
-        assert!(res1.is_ok());
+        // 3. Zero-value native spam MUST fail
+        let zero_val_tx = build_eip1559_tx(1_000_000_000, 20_000_000_000, 21_000, &target, 0, &[]);
+        assert!(verify_evm_sweep_payload(&zero_val_tx, &target).is_err());
 
-        // Trigger panic
-        contract.panic();
+        // 4. Spoofed recipient in calldata while sending ETH to attacker MUST fail
+        let spoof_eth = build_eip1559_tx(
+            1_000_000_000,
+            20_000_000_000,
+            25_000,
+            &attacker,
+            1_000_000,
+            &target,
+        );
+        assert!(verify_evm_sweep_payload(&spoof_eth, &target).is_err());
 
-        // Attacker calling request_sweep_signature for Alice should fail
-        testing_env!(context.predecessor_account_id(attacker).attached_deposit(NearToken::from_yoctonear(1)).build());
-        let res2 = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            // Attacker cannot sweep
-        }));
-        assert!(res2.is_ok());
+        // 5. Valid ERC-20 `transfer(target, 1000)` passes
+        let mut erc20_data = vec![0xa9, 0x05, 0x9c, 0xbb];
+        erc20_data.extend_from_slice(&[0u8; 12]);
+        erc20_data.extend_from_slice(&target);
+        let mut amt = [0u8; 32];
+        amt[31] = 250;
+        erc20_data.extend_from_slice(&amt);
+        let valid_erc20 = build_eip1559_tx(
+            1_000_000_000,
+            20_000_000_000,
+            65_000,
+            &usdc_contract,
+            0,
+            &erc20_data,
+        );
+        assert!(verify_evm_sweep_payload(&valid_erc20, &target).is_ok());
+
+        // 6. ERC-20 `transfer(attacker, 250)` MUST fail
+        let mut bad_erc20 = vec![0xa9, 0x05, 0x9c, 0xbb];
+        bad_erc20.extend_from_slice(&[0u8; 12]);
+        bad_erc20.extend_from_slice(&attacker);
+        bad_erc20.extend_from_slice(&amt);
+        let stolen_erc20 = build_eip1559_tx(
+            1_000_000_000,
+            20_000_000_000,
+            65_000,
+            &usdc_contract,
+            0,
+            &bad_erc20,
+        );
+        assert!(verify_evm_sweep_payload(&stolen_erc20, &target).is_err());
     }
 
     #[test]
-    fn test_unconfigured_vault_logic() {
+    fn test_gas_escrow_isolated_near_sweep_and_telemetry_completion() {
         let alice: AccountId = "alice.testnet".parse().unwrap();
-        let mpc: AccountId = "v1.signer-prod.testnet".parse().unwrap();
-
-        let context = get_context(alice.clone());
-        testing_env!(context.build());
-
-        let mut contract = LastKeyVault::new(mpc, None);
-
-        // Ping without configuring destinations panics
-        let ping_res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            contract.ping();
-        }));
-        assert!(ping_res.is_err());
-
-        // Panic without configuring destinations panics
-        let panic_res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            contract.panic();
-        }));
-        assert!(panic_res.is_err());
-
-        // Proposing empty policy panics
-        let empty_policy_res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            contract.propose_policy(ChainAddresses::empty(), ChainAddresses::empty());
-        }));
-        assert!(empty_policy_res.is_err());
-    }
-
-    #[test]
-    fn test_solana_structural_verification_and_substring_bypass_rejection() {
-        let recipient_sol = "11111111111111111111111111111111";
-        let recipient_bytes = bs58::decode(recipient_sol).into_vec().unwrap();
-
-        let mut valid_native_msg = Vec::new();
-        valid_native_msg.push(1u8);
-        valid_native_msg.push(0u8);
-        valid_native_msg.push(1u8);
-        valid_native_msg.push(3u8);
-        valid_native_msg.extend_from_slice(&[0xaa; 32]);
-        valid_native_msg.extend_from_slice(&recipient_bytes);
-        valid_native_msg.extend_from_slice(&[0x00; 32]);
-        assert!(verify_solana_sweep_payload(&valid_native_msg, recipient_sol));
-    }
-
-    #[test]
-    fn test_ping_by_relayer() {
-        let alice: AccountId = "alice.testnet".parse().unwrap();
-        let relayer: AccountId = "relayer.testnet".parse().unwrap();
-        let unauthorized: AccountId = "eve.testnet".parse().unwrap();
+        let bob: AccountId = "bob.testnet".parse().unwrap();
+        let keeper: AccountId = "keeper.testnet".parse().unwrap();
+        let contract_id: AccountId = "aegis.okgoogleok.testnet".parse().unwrap();
         let mpc: AccountId = "v1.signer-prod.testnet".parse().unwrap();
         let (backup, heirs) = sample_addresses();
 
         let mut context = get_context(alice.clone());
+        context
+            .current_account_id(contract_id.clone())
+            .account_balance(NearToken::from_near(5))
+            .attached_deposit(NearToken::from_millinear(250)); // 0.25 NEAR initial escrow!
         testing_env!(context.build());
 
-        let mut contract = LastKeyVault::new(mpc, Some(relayer.clone()));
-        contract.propose_policy(backup, heirs);
+        let mut contract = LastKeyVault::new(mpc, Some(keeper.clone()));
+        contract.propose_policy(backup.clone(), heirs.clone(), Some("enc:x25519:ciphertext".to_string()));
 
-        let initial_info = contract.get_vault_info(Some(alice.clone())).unwrap();
-        assert_eq!(initial_info.state, VaultState::Active);
+        let info = contract.get_vault_info(Some(alice.clone())).unwrap();
+        assert_eq!(info.gas_escrow_yocto, NearToken::from_millinear(250).as_yoctonear().to_string());
 
-        // Relayer pings on behalf of Alice
-        testing_env!(context.predecessor_account_id(relayer).block_timestamp(1_000_000_000).build());
-        contract.ping_by_relayer(alice.clone());
+        // Deposit 1 NEAR into Alice's isolated NEAR vault and 2 NEAR into Bob's
+        testing_env!(context
+            .predecessor_account_id(alice.clone())
+            .attached_deposit(NearToken::from_near(1))
+            .build());
+        contract.deposit_near_vault(None);
 
-        let updated_info = contract.get_vault_info(Some(alice.clone())).unwrap();
-        assert_eq!(updated_info.last_ping_ns, 1_000_000_000);
+        testing_env!(context
+            .predecessor_account_id(bob.clone())
+            .signer_account_id(bob.clone())
+            .attached_deposit(NearToken::from_near(2))
+            .build());
+        contract.propose_policy(backup, heirs, None);
+        contract.deposit_near_vault(None);
 
-        // Unauthorized caller pings on behalf of Alice fails
-        testing_env!(context.predecessor_account_id(unauthorized).build());
-        let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            contract.ping_by_relayer(alice.clone());
-        }));
-        assert!(res.is_err());
+        // Alice triggers panic
+        testing_env!(context
+            .predecessor_account_id(alice.clone())
+            .signer_account_id(alice.clone())
+            .attached_deposit(NearToken::from_yoctonear(0))
+            .build());
+        contract.panic();
+
+        // Actionable vaults returns Alice (1 vault)
+        assert_eq!(contract.get_actionable_vaults().len(), 1);
+
+        // Keeper calls `request_sweep_signature` with ZERO deposit -> funded by Alice's 0.25 NEAR escrow!
+        testing_env!(context
+            .predecessor_account_id(keeper.clone())
+            .attached_deposit(NearToken::from_yoctonear(0))
+            .build());
+        let _ = contract.request_sweep_signature(
+            alice.clone(),
+            "BTC".to_string(),
+            "aa".repeat(32),
+            Some(0),
+            false,
+        );
+        // Escrow debited by 0.055 NEAR (0.05 MPC + 0.005 keeper refund) -> 0.195 NEAR remaining
+        let after_sig = contract.get_vault_info(Some(alice.clone())).unwrap();
+        assert_eq!(
+            after_sig.gas_escrow_yocto,
+            NearToken::from_millinear(195).as_yoctonear().to_string()
+        );
+
+        // Keeper sweeps Alice's NEAR -> sweeps strictly Alice's 1 NEAR, Bob's 2 NEAR stays intact!
+        let _ = contract.sweep_near(alice.clone(), None);
+        assert_eq!(
+            contract.get_vault_info(Some(alice.clone())).unwrap().near_deposit_yocto,
+            "0"
+        );
+        assert_eq!(
+            contract.get_vault_info(Some(bob)).unwrap().near_deposit_yocto,
+            NearToken::from_near(2).as_yoctonear().to_string()
+        );
+
+        // Second `sweep_near` for Alice fails cleanly because Alice's isolated balance is 0
+        assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _ = contract.sweep_near(alice.clone(), None);
+        }))
+        .is_err());
+
+        // Keeper records telemetry with `is_complete = true` -> Alice disappears from `get_actionable_vaults`!
+        contract.record_sweep_telemetry(
+            alice.clone(),
+            0,
+            r#"{"status":"complete"}"#.to_string(),
+            true,
+        );
+        let final_info = contract.get_vault_info(Some(alice)).unwrap();
+        assert!(final_info.is_epoch_swept);
+        assert_eq!(
+            final_info.last_sweep_report,
+            Some(r#"{"status":"complete"}"#.to_string())
+        );
+        assert!(
+            contract.get_actionable_vaults().is_empty(),
+            "Completed epoch must not loop in get_actionable_vaults"
+        );
     }
 
     #[test]
-    fn test_extract_evm_to_address_and_spoof_rejection() {
-        // Construct a genuine EIP-1559 tx
-        let to_addr = [0x7au8; 20];
-        let mut rlp_list = Vec::new();
-        // chain_id = 11155111 (0xaa36a7) -> len 3 -> 0x83, 0xaa, 0x36, 0xa7
-        rlp_list.extend_from_slice(&[0x83, 0xaa, 0x36, 0xa7]);
-        // nonce = 0 -> 0x80
-        rlp_list.push(0x80);
-        // max_priority_fee = 1 Gwei -> 0x84, 0x3b, 0x9a, 0xca, 0x00
-        rlp_list.extend_from_slice(&[0x84, 0x3b, 0x9a, 0xca, 0x00]);
-        // max_fee = 20 Gwei -> 0x85, 0x04, 0xa8, 0x17, 0xc8, 0x00
-        rlp_list.extend_from_slice(&[0x85, 0x04, 0xa8, 0x17, 0xc8, 0x00]);
-        // gas_limit = 21000 -> 0x82, 0x52, 0x08
-        rlp_list.extend_from_slice(&[0x82, 0x52, 0x08]);
-        // to = 20 bytes -> 0x94 followed by to_addr
-        rlp_list.push(0x94);
-        rlp_list.extend_from_slice(&to_addr);
-        // value = 0 -> 0x80
-        rlp_list.push(0x80);
-        // data = empty -> 0x80
-        rlp_list.push(0x80);
-        // access_list = empty -> 0xc0
-        rlp_list.push(0xc0);
+    fn test_relayer_cannot_call_admin_reset_and_unauthenticated_ping_blocked() {
+        let alice: AccountId = "alice.testnet".parse().unwrap();
+        let keeper: AccountId = "keeper.testnet".parse().unwrap();
+        let contract_id: AccountId = "aegis.okgoogleok.testnet".parse().unwrap();
+        let mpc: AccountId = "v1.signer-prod.testnet".parse().unwrap();
+        let (backup, heirs) = sample_addresses();
 
-        let mut tx_bytes = vec![0x02]; // EIP-1559 type
-        // RLP list header
-        let list_len = rlp_list.len();
-        if list_len <= 55 {
-            tx_bytes.push(0xc0 + list_len as u8);
-        } else {
-            tx_bytes.push(0xf8);
-            tx_bytes.push(list_len as u8);
-        }
-        tx_bytes.extend_from_slice(&rlp_list);
+        let mut context = get_context(alice.clone());
+        context.current_account_id(contract_id);
+        testing_env!(context.build());
 
-        let extracted = extract_evm_to_address(&tx_bytes);
-        assert_eq!(extracted, Some(to_addr));
+        let mut contract = LastKeyVault::new(mpc, Some(keeper.clone()));
+        contract.propose_policy(backup, heirs, None);
 
-        // Attempting to spoof by putting the target address inside data and changing `to`
-        let attacker_addr = [0x66u8; 20];
-        let mut spoofed_list = Vec::new();
-        spoofed_list.extend_from_slice(&[0x83, 0xaa, 0x36, 0xa7]); // chain_id
-        spoofed_list.push(0x80); // nonce
-        spoofed_list.extend_from_slice(&[0x84, 0x3b, 0x9a, 0xca, 0x00]); // priority fee
-        spoofed_list.extend_from_slice(&[0x85, 0x04, 0xa8, 0x17, 0xc8, 0x00]); // max fee
-        spoofed_list.extend_from_slice(&[0x82, 0x52, 0x08]); // gas limit
-        spoofed_list.push(0x94);
-        spoofed_list.extend_from_slice(&attacker_addr); // ATTACKER in `to`!
-        spoofed_list.push(0x80); // value
-        // Data contains victim's address
-        spoofed_list.push(0x94);
-        spoofed_list.extend_from_slice(&to_addr);
-        spoofed_list.push(0xc0); // access list
+        // Owner registers her Ed25519 pubkey
+        testing_env!(context
+            .predecessor_account_id(alice.clone())
+            .signer_account_id(alice.clone())
+            .build());
+        contract.register_ping_pubkey(
+            "8119c2811b758728b341f9279c25064df770ef13d63e583acdebe9590f31c43a".to_string(),
+        );
 
-        let mut spoofed_tx = vec![0x02];
-        let spoofed_len = spoofed_list.len();
-        if spoofed_len <= 55 {
-            spoofed_tx.push(0xc0 + spoofed_len as u8);
-        } else {
-            spoofed_tx.push(0xf8);
-            spoofed_tx.push(spoofed_len as u8);
-        }
-        spoofed_tx.extend_from_slice(&spoofed_list);
+        // Keeper attempting `admin_reset_vault` MUST panic (`#[private]` + explicit self-check)
+        testing_env!(context
+            .predecessor_account_id(keeper.clone())
+            .block_timestamp(10_000_000_000)
+            .build());
+        assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            contract.admin_reset_vault(alice.clone());
+        }))
+        .is_err());
 
-        let extracted_spoofed = extract_evm_to_address(&spoofed_tx);
-        assert_eq!(extracted_spoofed, Some(attacker_addr));
-        // Ensures the extractor didn't mistake the data payload for the `to` recipient!
-        assert_ne!(extracted_spoofed, Some(to_addr));
+        // Keeper attempting `ping_by_relayer` with a forged signature MUST panic
+        assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            contract.ping_by_relayer(
+                alice.clone(),
+                U64(10_000),
+                "00".repeat(64),
+                None,
+                None,
+            );
+        }))
+        .is_err());
+
+        // Valid owner Ed25519 signature over `"AEGIS_PING:alice.testnet:10000"` succeeds!
+        let valid_sig = "781bdedd325e3c85c2cfe69aaf4aedd2a10f44cc7f0710b2796152ad7b30ba3a89e9231f6419a4d530c782dc17d35e270744ad477e3b8a7e2c7aaf5b26b23800".to_string();
+        contract.ping_by_relayer(
+            alice.clone(),
+            U64(10_000),
+            valid_sig.clone(),
+            None,
+            None,
+        );
+        assert_eq!(
+            contract.get_vault_info(Some(alice.clone())).unwrap().last_ping_ns,
+            10_000_000_000
+        );
+
+        // Replaying the exact same signed ping MUST fail (`[ATTACK-3]` replay protection)
+        assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            contract.ping_by_relayer(alice.clone(), U64(10_000), valid_sig, None, None);
+        }))
+        .is_err());
+    }
+
+    #[test]
+    fn test_e2ee_1024_byte_testament_memo_limit() {
+        let owner: AccountId = "alice.testnet".parse().unwrap();
+        let mpc: AccountId = "v1.signer-prod.testnet".parse().unwrap();
+        let (backup, heirs) = sample_addresses();
+        let context = get_context(owner.clone());
+        testing_env!(context.build());
+
+        let mut contract = LastKeyVault::new(mpc, None);
+        let long_e2ee = format!("enc:x25519:{}", "A".repeat(420));
+        contract.propose_policy(backup, heirs, Some(long_e2ee.clone()));
+        assert_eq!(contract.get_heir_memo(owner.clone()), Some(long_e2ee));
+
+        // Over 1024 bytes panics
+        let oversized = "X".repeat(1025);
+        assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            contract.set_heir_memo(oversized);
+        }))
+        .is_err());
     }
 }
 
@@ -1161,10 +2343,13 @@ mod tests {
  * signatures via the Vault contract's MPC delegate, and broadcasts to foreign chains.
  */
 
+const crypto = require('crypto');
 const { ethers } = require('ethers');
 const bitcoin = require('bitcoinjs-lib');
 const web3 = require('@solana/web3.js');
 const chainsig = require('chainsig.js');
+const bs58Pkg = require('bs58');
+const bs58Encode = bs58Pkg.encode || (bs58Pkg.default && bs58Pkg.default.encode);
 
 class LastKeySweepRelayer {
   constructor(config = {}) {
@@ -1491,7 +2676,17 @@ class LastKeySweepRelayer {
       totalIn += utxo.value;
     }
 
-    const memoBytes = memo ? Buffer.from(memo, 'utf8').slice(0, 80) : null;
+    let memoBytes = null;
+    if (memo) {
+      const rawMemoBuf = Buffer.from(memo, 'utf8');
+      if (rawMemoBuf.length <= 80) {
+        memoBytes = rawMemoBuf;
+      } else {
+        // Bitcoin standardness limits OP_RETURN to 80 bytes: anchor SHA-256 commitment of E2EE ciphertext
+        const hexHash = crypto.createHash('sha256').update(String(memo), 'utf8').digest('hex');
+        memoBytes = Buffer.from(`aegis-e2ee:${hexHash.slice(0, 36)}`, 'utf8');
+      }
+    }
     const estimatedVSize = Math.ceil(10.5 + effectiveUtxos.length * 68 + 31 + (memoBytes ? memoBytes.length + 11 : 0));
     const feeSats = feeSatsOverride !== null ? Math.ceil(feeSatsOverride) : Math.max(1000, Math.ceil(estimatedVSize * feeRateSatPerVb));
 
@@ -1773,12 +2968,19 @@ class LastKeySweepRelayer {
     const fromPubkey = new web3.PublicKey(fromPubkeyStr);
     const message = web3.Message.from(Buffer.from(serializedMessageBase64, 'base64'));
     const tx = web3.Transaction.populate(message);
-    const sigBytes = Buffer.isBuffer(mpcEddsaSignature)
-      ? mpcEddsaSignature
-      : Buffer.from((mpcEddsaSignature.signature || mpcEddsaSignature).replace(/^0x/, ''), 'hex');
+    const rawSig = mpcEddsaSignature?.signature || mpcEddsaSignature;
+    const sigBytes = Buffer.isBuffer(rawSig)
+      ? rawSig
+      : Array.isArray(rawSig)
+        ? Buffer.from(rawSig)
+        : Buffer.from(String(rawSig).replace(/^0x/, ''), 'hex');
     tx.addSignature(fromPubkey, sigBytes);
+    const serialized = tx.serialize({ verifySignatures: false, requireAllSignatures: false });
+    const signatureBase58 = bs58Encode ? bs58Encode(Uint8Array.from(sigBytes)) : sigBytes.toString('hex');
     return {
-      signedTxBase64: tx.serialize({ verifySignatures: false, requireAllSignatures: false }).toString('base64'),
+      txHex: Buffer.from(serialized).toString('hex'),
+      signedTxBase64: Buffer.from(serialized).toString('base64'),
+      signatureBase58,
       signatureHex: sigBytes.toString('hex')
     };
   }
@@ -1833,17 +3035,19 @@ module.exports = { LastKeySweepRelayer };
 ### 3. AUTONOMOUS RELAYER SERVICE & DAEMON (relayer/service.js)
 ```javascript
 /**
- * Aegis Autonomous Relayer Service
- * 
- * Functions:
- * 1. Zero-Gas Heartbeat Sponsorship: Calls `ping_by_relayer(vault_owner)` on behalf of user
- * 2. Multichain MPC Sweep Dispatcher: Detects 'Evacuated' / 'Inheritance' and executes real
- *    threshold-signed sweeps for Bitcoin, EVM, Solana, and NEAR.
- * 3. Live Telemetry Publisher: Writes output to `web/telemetry.json` for frontend monitoring.
+ * Aegis Autonomous Relayer & Stateless Keeper Service
+ *
+ * Security & Architecture Guarantees:
+ * - Zero hardcoded private keys; runs with a least-privilege `FunctionCall` key on `keeper.aegis.okgoogleok.testnet`
+ * - Zero-deposit `request_sweep_signature` calls funded by Per-Vault Gas Escrow / Sponsor Pool + 0.005 NEAR keeper refund
+ * - Multi-UTXO Bitcoin signing + OP_RETURN testament, dynamic EVM nonce/EIP-1559 fee calculation, real Base58 Solana tx signatures
+ * - Zero fake fallback hashes; strict broadcast verification with automatic retry if any RPC broadcast fails
+ * - On-chain telemetry persistence (`record_sweep_telemetry`) + multi-tenant `web/telemetry.json` mirror
  */
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const nearAPI = require('near-api-js');
 const { ethers } = require('ethers');
 const web3 = require('@solana/web3.js');
@@ -1852,14 +3056,32 @@ const { LastKeySweepRelayer } = require('./sweep_relayer');
 
 class AegisRelayerService {
   constructor(config = {}) {
-    this.networkId = config.networkId || 'testnet';
-    this.contractId = config.contractId || 'aegis.okgoogleok.testnet';
-    this.relayerAccountId = config.relayerAccountId || 'okgoogleok.testnet';
-    this.credPath = config.credPath || path.resolve(__dirname, '../.credentials/okgoogleok.testnet.json');
-    this.telemetryPath = config.telemetryPath || path.resolve(__dirname, '../web/telemetry.json');
-    this.nearRpcUrl = config.nearRpcUrl || 'https://test.rpc.fastnear.com';
-    this.evmRpcUrl = config.evmRpcUrl || 'https://ethereum-sepolia-rpc.publicnode.com';
-    this.solanaRpcUrl = config.solanaRpcUrl || 'https://api.devnet.solana.com';
+    this.networkId = config.networkId || process.env.NEAR_NETWORK || 'testnet';
+    this.contractId = config.contractId || process.env.CONTRACT_ID || 'aegis.okgoogleok.testnet';
+    this.relayerAccountId =
+      config.relayerAccountId ||
+      process.env.RELAYER_ACCOUNT_ID ||
+      'keeper.aegis.okgoogleok.testnet';
+    this.privateKey = config.privateKey || '';
+    this.disableLocalFileCache = Boolean(config.disableLocalFileCache);
+    this.credPath =
+      config.credPath ||
+      (typeof __dirname !== 'undefined'
+        ? path.resolve(__dirname, `../.credentials/${this.relayerAccountId}.json`)
+        : '');
+    this.telemetryPath =
+      config.telemetryPath ||
+      (typeof __dirname !== 'undefined' ? path.resolve(__dirname, '../web/telemetry.json') : '');
+    this.nearRpcUrl =
+      config.nearRpcUrl || process.env.NEAR_RPC_URL || 'https://test.rpc.fastnear.com';
+    this.evmRpcUrl =
+      config.evmRpcUrl ||
+      process.env.EVM_RPC_URL ||
+      'https://ethereum-sepolia-rpc.publicnode.com';
+    this.solanaRpcUrl =
+      config.solanaRpcUrl ||
+      process.env.SOLANA_RPC_URL ||
+      'https://api.devnet.solana.com';
 
     this.engine = new LastKeySweepRelayer({
       networkId: this.networkId,
@@ -1868,90 +3090,187 @@ class AegisRelayerService {
 
     this.near = null;
     this.account = null;
+    this.hasSignerKey = false;
     this.evmProvider = null;
     this.solanaConnection = null;
     this.processedSweeps = new Set();
   }
 
-  async init() {
-    if (this.account) return;
+  async init({ requireSigner = false } = {}) {
+    if (!this.near) {
+      const keyStore = new nearAPI.keyStores.InMemoryKeyStore();
+      let privKey = (this.privateKey || process.env.RELAYER_PRIVATE_KEY || '').trim();
 
-    if (!fs.existsSync(this.credPath)) {
-      throw new Error(`Credentials not found at ${this.credPath}`);
+      if (!privKey && this.credPath && fs && typeof fs.existsSync === 'function' && fs.existsSync(this.credPath)) {
+        try {
+          const cred = JSON.parse(fs.readFileSync(this.credPath, 'utf8'));
+          privKey = (cred.privateKey || cred.private_key || '').trim();
+          if (cred.accountId || cred.account_id) {
+            this.relayerAccountId = cred.accountId || cred.account_id;
+          }
+        } catch (e) {
+          console.warn(`[Aegis Relayer] Could not parse ${this.credPath}:`, e.message);
+        }
+      }
+
+      if (privKey) {
+        const keyPair = nearAPI.KeyPair.fromString(privKey);
+        await keyStore.setKey(this.networkId, this.relayerAccountId, keyPair);
+        this.hasSignerKey = true;
+      }
+
+      this.near = await nearAPI.connect({
+        networkId: this.networkId,
+        keyStore,
+        nodeUrl: this.nearRpcUrl
+      });
+      this.account = await this.near.account(this.relayerAccountId);
+
+      try {
+        this.evmProvider = new ethers.JsonRpcProvider(this.evmRpcUrl);
+      } catch (e) {
+        console.warn('[Relayer] EVM provider notice:', e.message);
+      }
+
+      try {
+        this.solanaConnection = new web3.Connection(this.solanaRpcUrl, 'confirmed');
+      } catch (e) {
+        console.warn('[Relayer] Solana connection notice:', e.message);
+      }
+
+      console.log(
+        `🛡️  [Aegis Relayer] Initialized (account: ${this.relayerAccountId}, signerLoaded: ${this.hasSignerKey})`
+      );
     }
-    const cred = JSON.parse(fs.readFileSync(this.credPath, 'utf8'));
-    const keyStore = new nearAPI.keyStores.InMemoryKeyStore();
-    const keyPair = nearAPI.KeyPair.fromString(cred.privateKey || cred.private_key);
-    await keyStore.setKey(this.networkId, this.relayerAccountId, keyPair);
 
-    this.near = await nearAPI.connect({
-      networkId: this.networkId,
-      keyStore,
-      nodeUrl: this.nearRpcUrl
+    if (requireSigner && !this.hasSignerKey) {
+      throw new Error(
+        `Missing RELAYER_PRIVATE_KEY for ${this.relayerAccountId}. Configure RELAYER_PRIVATE_KEY env secret or ${this.credPath}.`
+      );
+    }
+  }
+
+  async viewContract(methodName, args = {}) {
+    await this.init({ requireSigner: false });
+    const raw = await this.near.connection.provider.query({
+      request_type: 'call_function',
+      finality: 'optimistic',
+      account_id: this.contractId,
+      method_name: methodName,
+      args_base64: Buffer.from(JSON.stringify(args)).toString('base64')
     });
-    this.account = await this.near.account(this.relayerAccountId);
+    return JSON.parse(Buffer.from(raw.result).toString('utf8'));
+  }
 
-    try {
-      this.evmProvider = new ethers.JsonRpcProvider(this.evmRpcUrl);
-    } catch (e) {
-      console.warn('[Relayer] EVM provider notice:', e.message);
+  extractMpcSignatureFromOutcome(outcome) {
+    for (const out of outcome.receipts_outcome || []) {
+      if (out.outcome && out.outcome.status && out.outcome.status.SuccessValue) {
+        const raw = Buffer.from(out.outcome.status.SuccessValue, 'base64').toString('utf8');
+        try {
+          const parsed = JSON.parse(raw);
+          if (parsed && (parsed.big_r || parsed.signature || parsed.r)) {
+            return parsed;
+          }
+        } catch (_) {}
+      }
     }
-
-    try {
-      this.solanaConnection = new web3.Connection(this.solanaRpcUrl, 'confirmed');
-    } catch (e) {
-      console.warn('[Relayer] Solana connection notice:', e.message);
-    }
-
-    console.log(`🛡️  [Aegis Relayer] Initialized with relayer account: ${this.relayerAccountId}`);
+    return null;
   }
 
   /**
-   * Sponsoring zero-gas heartbeat for a user
+   * Sponsor zero-gas heartbeat using cryptographic owner Ed25519 signature (`[ATTACK-3]` compliant)
    */
-  async sponsorPing(vaultOwner) {
-    await this.init();
-    console.log(`⏱️  [Aegis Relayer] Sponsoring heartbeat for ${vaultOwner}...`);
+  async sponsorPing(vaultOwner, { timestampMs, signatureHex, nep413NonceHex = null, nep413Recipient = null } = {}) {
+    await this.init({ requireSigner: true });
+    if (!timestampMs || !signatureHex) {
+      return {
+        success: false,
+        error: 'ping_by_relayer requires cryptographic owner signature (timestampMs + signatureHex)'
+      };
+    }
+    console.log(`⏱️  [Aegis Relayer] Broadcasting verified signed heartbeat for ${vaultOwner}...`);
     try {
       const outcome = await this.account.functionCall({
         contractId: this.contractId,
         methodName: 'ping_by_relayer',
-        args: { vault_owner: vaultOwner },
-        gas: '30000000000000', // 30 TGas (~0.0003 NEAR)
+        args: {
+          vault_owner: vaultOwner,
+          timestamp_ms: String(timestampMs),
+          signature_hex: signatureHex,
+          nep413_nonce_hex: nep413NonceHex,
+          nep413_recipient: nep413Recipient
+        },
+        gas: '30000000000000',
         attachedDeposit: '0'
       });
       const txHash = outcome.transaction.hash;
-      console.log(`✅ [Aegis Relayer] Heartbeat sponsored! Tx: ${txHash}`);
+      console.log(`✅ [Aegis Relayer] Signed heartbeat confirmed! Tx: ${txHash}`);
       return { success: true, txHash };
     } catch (err) {
-      console.error(`❌ [Aegis Relayer] Failed to sponsor heartbeat for ${vaultOwner}:`, err.message);
+      console.error(`❌ [Aegis Relayer] Failed signed heartbeat for ${vaultOwner}:`, err.message);
       return { success: false, error: err.message };
     }
   }
 
-  /**
-   * Fetch current vault state from smart contract
-   */
   async getVaultInfo(vaultOwner) {
-    await this.init();
     try {
-      const info = await this.account.viewFunction({
-        contractId: this.contractId,
-        methodName: 'get_vault_info',
-        args: { account_id: vaultOwner }
-      });
-      return info;
+      return await this.viewContract('get_vault_info', { account_id: vaultOwner });
     } catch (err) {
       console.warn(`[Aegis Relayer] get_vault_info error for ${vaultOwner}:`, err.message);
       return null;
     }
   }
 
+  async getActionableVaults() {
+    try {
+      const vaults = await this.viewContract('get_actionable_vaults', {});
+      return Array.isArray(vaults) ? vaults : [];
+    } catch (err) {
+      console.warn(`[Aegis Relayer] get_actionable_vaults error:`, err.message);
+      return [];
+    }
+  }
+
+  /**
+   * Persist telemetry to multi-tenant `web/telemetry.json` without clobbering other vaults
+   */
+  writeLocalTelemetry(telemetryRecord) {
+    let store = { vaults: {} };
+    if (fs.existsSync(this.telemetryPath)) {
+      try {
+        const existing = JSON.parse(fs.readFileSync(this.telemetryPath, 'utf8'));
+        if (existing && typeof existing === 'object') {
+          store.vaults = existing.vaults && typeof existing.vaults === 'object' ? existing.vaults : {};
+          if (existing.vault_owner && existing.sweeps) {
+            store.vaults[`${existing.vault_owner}:${existing.epoch ?? 0}`] = {
+              vault_owner: existing.vault_owner,
+              epoch: existing.epoch ?? 0,
+              state: existing.state,
+              updated_at: existing.updated_at,
+              sweeps: existing.sweeps
+            };
+            store.vaults[existing.vault_owner] = store.vaults[`${existing.vault_owner}:${existing.epoch ?? 0}`];
+          }
+        }
+      } catch (_) {}
+    }
+
+    const epochKey = `${telemetryRecord.vault_owner}:${telemetryRecord.epoch}`;
+    store.vaults[epochKey] = telemetryRecord;
+    store.vaults[telemetryRecord.vault_owner] = telemetryRecord;
+
+    const merged = {
+      ...telemetryRecord,
+      vaults: store.vaults
+    };
+    fs.writeFileSync(this.telemetryPath, JSON.stringify(merged, null, 2));
+  }
+
   /**
    * Execute Multichain Panic / Inheritance Sweep
    */
   async sweepVault(vaultOwner) {
-    await this.init();
+    await this.init({ requireSigner: true });
     console.log(`\n🚨 [Aegis Relayer] Executing multichain sweep for ${vaultOwner}...`);
 
     const vault = await this.getVaultInfo(vaultOwner);
@@ -1966,18 +3285,28 @@ class AegisRelayerService {
       return null;
     }
 
-    const epoch = vault.epoch;
-    const sweepId = `${vaultOwner}:${epoch}:${state}`;
-    const destination = state === 'Evacuated' ? vault.backup : vault.heirs;
-    const derivationPath = `aegis/${vaultOwner}/${epoch}`;
+    if (vault.is_epoch_swept) {
+      console.log(`ℹ️  Vault ${vaultOwner} epoch ${vault.epoch} is already marked swept on-chain.`);
+      return vault.last_sweep_report ? JSON.parse(vault.last_sweep_report) : null;
+    }
 
+    const epoch = vault.epoch;
+    const destination = state === 'Evacuated' ? vault.backup : vault.heirs;
+    const actionLabel = state === 'Inheritance' ? 'Inheritance' : 'Evacuation';
+    let sweepMemo = `Aegis ${actionLabel}: ${vaultOwner} Epoch ${epoch}`;
+
+    if (state === 'Inheritance' && vault.heir_memo && vault.heir_memo.trim()) {
+      sweepMemo = vault.heir_memo.trim();
+      console.log(
+        `   📜 Heir testament loaded (${sweepMemo.startsWith('enc:') ? 'E2EE Ciphertext' : 'Plaintext'}, ${Buffer.byteLength(sweepMemo, 'utf8')} B)`
+      );
+    }
+
+    const derivationPath = `aegis/${vaultOwner}/${epoch}`;
     console.log(`   • Vault State:       ${state}`);
     console.log(`   • Bunker Epoch:      ${epoch}`);
     console.log(`   • Derivation Path:   ${derivationPath}`);
-    console.log(`   • Backup Dest:       `, JSON.stringify(destination));
 
-    // 1. Derive Bunker Addresses
-    console.log(`   • Deriving bunker deposit addresses via NEAR MPC...`);
     const vaultAddrs = await this.engine.deriveAllAddresses(this.contractId, derivationPath);
     console.log(`     - EVM Bunker:  ${vaultAddrs.evm.address}`);
     console.log(`     - BTC Bunker:  ${vaultAddrs.btc.address}`);
@@ -1985,320 +3314,709 @@ class AegisRelayerService {
 
     const telemetryRecord = {
       vault_owner: vaultOwner,
-      epoch: epoch,
-      state: state,
+      epoch,
+      state,
       updated_at: new Date().toISOString(),
       sweeps: {}
     };
+    let hasRetriableFailure = false;
 
-    // 2. EVM Sweep (Ethereum / Base / Arbitrum)
+    // 1. EVM Sweep (Sepolia / Base / Arbitrum)
     if (destination.evm && destination.evm.trim().length === 42) {
-      console.log(`\n[EVM Sweep] Preparing sweep to ${destination.evm}...`);
+      console.log(`\n[EVM Sweep] Checking ${vaultAddrs.evm.address} -> ${destination.evm}...`);
       try {
-        const evmSweep = await this.engine.prepareEvmSweep({
-          fromAddress: vaultAddrs.evm.address,
-          toAddress: destination.evm.trim(),
-          valueWei: ethers.parseEther('0.1'), // 0.1 ETH
-          nonce: 0,
-          chainId: 11155111, // Sepolia
-          memo: `Aegis Evacuation: ${vaultOwner} Epoch ${epoch}`
-        });
+        if (!this.evmProvider) throw new Error('EVM RPC provider unavailable');
+        const liveWei = await this.evmProvider.getBalance(vaultAddrs.evm.address);
+        console.log(`   • EVM Bunker Balance: ${ethers.formatEther(liveWei)} ETH (${liveWei} wei)`);
 
-        console.log(`   • Calling request_sweep_signature on ${this.contractId} with raw EVM payload...`);
-        const outcome = await this.account.functionCall({
-          contractId: this.contractId,
-          methodName: 'request_sweep_signature',
-          args: {
-            vault_owner: vaultOwner,
-            chain: 'EVM',
-            payload_hex: evmSweep.unsignedTxHex,
-            target_epoch: epoch,
-            is_eddsa: false
-          },
-          gas: '280000000000000', // 280 TGas
-          attachedDeposit: '50000000000000000000000' // 0.05 NEAR for v1.signer
-        });
-
-        const nearTxHash = outcome.transaction.hash;
-        console.log(`   ✅ NEAR MPC Signature Request Confirmed! Tx: ${nearTxHash}`);
-
-        // Extract signature result from execution outcome
-        let mpcSignature = null;
-        for (const out of outcome.receipts_outcome) {
-          if (out.outcome.status.SuccessValue) {
-            const raw = Buffer.from(out.outcome.status.SuccessValue, 'base64').toString('utf8');
-            try { mpcSignature = JSON.parse(raw); } catch (e) {}
-          }
-        }
-
-        let signedEvmTx = null;
-        let evmHash = null;
-        if (mpcSignature) {
-          signedEvmTx = this.engine.assembleSignedEvmTx(evmSweep.rawTx, mpcSignature);
-          evmHash = ethers.keccak256(signedEvmTx.signedTx);
-          console.log(`   ✅ EVM Transaction Assembled! TxHash: ${evmHash}`);
-          try {
-            const provider = new ethers.JsonRpcProvider('https://ethereum-sepolia-rpc.publicnode.com');
-            await provider.broadcastTransaction(signedEvmTx.signedTx);
-            console.log(`   🚀 EVM Transaction Broadcasted to Sepolia!`);
-          } catch (broadcastErr) {
-            console.warn(`   ⚠️ EVM Broadcast Notice: ${broadcastErr.message.slice(0, 80)}`);
-          }
+        if (liveWei === 0n) {
+          telemetryRecord.sweeps.evm = {
+            status: 'Skipped (Zero Balance)',
+            chain: 'Ethereum / Base (Sepolia)',
+            target: destination.evm,
+            amount: '0.0000 ETH'
+          };
         } else {
-          evmHash = evmSweep.txHash;
-        }
+          const [nonce, feeData, network] = await Promise.all([
+            this.evmProvider.getTransactionCount(vaultAddrs.evm.address, 'pending'),
+            this.evmProvider.getFeeData(),
+            this.evmProvider.getNetwork()
+          ]);
+          const chainId = Number(network.chainId || 11155111);
+          const MIN_FEE = 1_500_000_000n; // 1.5 Gwei floor
+          const MAX_SAFE_FEE = 450_000_000_000n; // 450 Gwei (< 500 Gwei contract cap)
+          let maxFeePerGas = feeData.maxFeePerGas || feeData.gasPrice || 20_000_000_000n;
+          if (maxFeePerGas < MIN_FEE) maxFeePerGas = MIN_FEE;
+          if (maxFeePerGas > MAX_SAFE_FEE) maxFeePerGas = MAX_SAFE_FEE;
+          let maxPriorityFeePerGas = feeData.maxPriorityFeePerGas || 1_000_000_000n;
+          if (maxPriorityFeePerGas > maxFeePerGas) maxPriorityFeePerGas = maxFeePerGas;
 
-        telemetryRecord.sweeps.evm = {
-          status: 'Broadcasted',
-          chain: 'Ethereum / Base (Sepolia)',
-          target: destination.evm,
-          amount: '0.1000 ETH',
-          tx_hash: evmHash,
-          explorer: `https://sepolia.etherscan.io/tx/${evmHash}`,
-          near_mpc_tx: `https://testnet.nearblocks.io/tx/${nearTxHash}`
-        };
+          const memoBytes = sweepMemo ? ethers.toUtf8Bytes(sweepMemo) : new Uint8Array(0);
+          let calldataGas = 0n;
+          for (const b of memoBytes) calldataGas += b === 0 ? 4n : 16n;
+          const gasLimit = 21000n + calldataGas;
+          const isL2 = [8453, 84532, 10, 42161, 421614].includes(chainId);
+          const l1Buffer = isL2 ? 15_000_000_000_000n : 0n;
+          const totalGasCost = gasLimit * maxFeePerGas + l1Buffer;
+
+          if (liveWei <= totalGasCost) {
+            telemetryRecord.sweeps.evm = {
+              status: 'Skipped (Dust Below Gas Fee)',
+              chain: 'Ethereum / Base (Sepolia)',
+              target: destination.evm,
+              amount: `${ethers.formatEther(liveWei)} ETH`
+            };
+          } else {
+            const sweepValueWei = liveWei - totalGasCost;
+            const evmSweep = await this.engine.prepareEvmSweep({
+              fromAddress: vaultAddrs.evm.address,
+              toAddress: destination.evm.trim(),
+              valueWei: sweepValueWei,
+              nonce,
+              maxFeePerGas,
+              maxPriorityFeePerGas,
+              chainId,
+              memo: sweepMemo
+            });
+
+            const outcome = await this.account.functionCall({
+              contractId: this.contractId,
+              methodName: 'request_sweep_signature',
+              args: {
+                vault_owner: vaultOwner,
+                chain: 'EVM',
+                payload_hex: evmSweep.unsignedTxHex,
+                target_epoch: epoch,
+                is_eddsa: false
+              },
+              gas: '280000000000000',
+              attachedDeposit: '0' // Funded by Vault Gas Escrow / Sponsor Pool
+            });
+
+            const nearTxHash = outcome.transaction.hash;
+            const mpcSignature = this.extractMpcSignatureFromOutcome(outcome);
+            if (!mpcSignature) {
+              throw new Error(`MPC signature missing in NEAR receipt ${nearTxHash}`);
+            }
+
+            const signedEvmTx = this.engine.assembleSignedEvmTx(evmSweep.rawTx, mpcSignature);
+            const broadcastResp = await this.evmProvider.broadcastTransaction(signedEvmTx.signedTx);
+            const evmHash = broadcastResp?.hash || signedEvmTx.txHash;
+            console.log(`   🚀 EVM Sweep Broadcasted! TxHash: ${evmHash}`);
+
+            telemetryRecord.sweeps.evm = {
+              status: 'Broadcasted (Sepolia)',
+              chain: 'Ethereum / Base (Sepolia)',
+              target: destination.evm,
+              amount: `${ethers.formatEther(sweepValueWei)} ETH`,
+              tx_hash: evmHash,
+              explorer: `https://sepolia.etherscan.io/tx/${evmHash}`,
+              near_mpc_tx: `https://testnet.nearblocks.io/txns/${nearTxHash}`
+            };
+          }
+        }
       } catch (err) {
         console.error(`   ❌ EVM Sweep Error:`, err.message);
+        hasRetriableFailure = true;
         telemetryRecord.sweeps.evm = {
-          status: 'Queued (Error: ' + err.message.slice(0, 40) + ')',
+          status: `Error (${err.message.slice(0, 60)})`,
+          chain: 'Ethereum / Base (Sepolia)',
           target: destination.evm,
           amount: '0.0000 ETH'
         };
       }
     }
 
-    // 3. Bitcoin Sweep (Native SegWit)
+    // 2. Bitcoin Sweep (Native SegWit — Multi-UTXO + OP_RETURN)
     if (destination.btc && destination.btc.trim().length > 10) {
-      console.log(`\n[Bitcoin Sweep] Preparing SegWit sweep to ${destination.btc}...`);
+      console.log(`\n[Bitcoin Sweep] Checking ${vaultAddrs.btc.address} -> ${destination.btc}...`);
       try {
-        const mockUtxo = [{ txid: 'a'.repeat(64), vout: 0, value: 5000000 }]; // 0.05 BTC
-        const btcSweep = this.engine.prepareBtcSweep({
-          utxos: mockUtxo,
-          fromAddress: vaultAddrs.btc.address,
-          toAddress: destination.btc.trim(),
-          feeSatsOverride: 2500,
-          network: bitcoin.networks.testnet
-        });
-
-        console.log(`   • Calling request_sweep_signature for Bitcoin sighash...`);
-        const outcome = await this.account.functionCall({
-          contractId: this.contractId,
-          methodName: 'request_sweep_signature',
-          args: {
-            vault_owner: vaultOwner,
-            chain: 'BTC',
-            payload_hex: btcSweep.sighashes[0].sighashHex,
-            target_epoch: epoch,
-            is_eddsa: false
-          },
-          gas: '280000000000000',
-          attachedDeposit: '50000000000000000000000'
-        });
-
-        const nearTxHash = outcome.transaction.hash;
-        console.log(`   ✅ NEAR MPC Signature Request Confirmed! Tx: ${nearTxHash}`);
-
-        let mpcSignature = null;
-        for (const out of outcome.receipts_outcome) {
-          if (out.outcome.status.SuccessValue) {
-            const raw = Buffer.from(out.outcome.status.SuccessValue, 'base64').toString('utf8');
-            try { mpcSignature = JSON.parse(raw); } catch (e) {}
-          }
+        const mempoolRes = await fetch(
+          `https://mempool.space/testnet/api/address/${vaultAddrs.btc.address}/utxo`
+        );
+        if (!mempoolRes.ok) {
+          throw new Error(`Mempool UTXO HTTP ${mempoolRes.status}`);
         }
+        const liveUtxos = await mempoolRes.json();
 
-        let btcTxId = 'btc_' + nearTxHash.slice(0, 16);
-        if (mpcSignature) {
-          const r = mpcSignature.big_r?.affine_point?.slice(2) || mpcSignature.r;
-          const s = mpcSignature.s?.scalar || mpcSignature.s;
-          const finalized = this.engine.finalizeBtcSweepPsbt(btcSweep.psbtHex, [{
-            r: Buffer.from(r, 'hex'),
-            s: Buffer.from(s, 'hex'),
-            publicKey: Buffer.from(vaultAddrs.btc.publicKey, 'hex')
-          }]);
-          btcTxId = finalized.txId;
-          console.log(`   ✅ Bitcoin PSBT Finalized! TxId: ${btcTxId}`);
+        if (!Array.isArray(liveUtxos) || liveUtxos.length === 0) {
+          telemetryRecord.sweeps.btc = {
+            status: 'Skipped (Zero Balance)',
+            chain: 'Bitcoin Native SegWit',
+            target: destination.btc,
+            amount: '0.00000000 BTC'
+          };
+        } else {
+          let feeRateSatPerVb = 10;
           try {
-            const mempoolRes = await fetch('https://mempool.space/testnet/api/tx', {
+            const feeRes = await fetch('https://mempool.space/testnet/api/v1/fees/recommended');
+            if (feeRes.ok) {
+              const fees = await feeRes.json();
+              feeRateSatPerVb = Math.max(2, Math.min(200, Number(fees.fastestFee || 10)));
+            }
+          } catch (_) {}
+
+          let btcSweep;
+          try {
+            btcSweep = this.engine.prepareBtcSweep({
+              utxos: liveUtxos,
+              fromAddress: vaultAddrs.btc.address,
+              toAddress: destination.btc.trim(),
+              memo: sweepMemo,
+              feeRateSatPerVb,
+              network: bitcoin.networks.testnet
+            });
+          } catch (dustErr) {
+            if (dustErr.message.includes('dust')) {
+              telemetryRecord.sweeps.btc = {
+                status: 'Skipped (Dust UTXOs)',
+                chain: 'Bitcoin Native SegWit',
+                target: destination.btc,
+                amount: '0.00000000 BTC'
+              };
+              btcSweep = null;
+            } else {
+              throw dustErr;
+            }
+          }
+
+          if (btcSweep) {
+            const btcSignatures = [];
+            let lastNearTxHash = null;
+
+            for (const sh of btcSweep.sighashes) {
+              console.log(
+                `   • Requesting MPC ECDSA signature for BTC input #${sh.inputIndex}/${btcSweep.sighashes.length - 1}...`
+              );
+              const outcome = await this.account.functionCall({
+                contractId: this.contractId,
+                methodName: 'request_sweep_signature',
+                args: {
+                  vault_owner: vaultOwner,
+                  chain: 'BTC',
+                  payload_hex: sh.sighashHex,
+                  target_epoch: epoch,
+                  is_eddsa: false
+                },
+                gas: '280000000000000',
+                attachedDeposit: '0'
+              });
+              lastNearTxHash = outcome.transaction.hash;
+              const mpcSig = this.extractMpcSignatureFromOutcome(outcome);
+              if (!mpcSig) {
+                throw new Error(`MPC signature missing for BTC input #${sh.inputIndex}`);
+              }
+              const rHex = mpcSig.big_r?.affine_point?.slice(2) || mpcSig.r;
+              const sHex = mpcSig.s?.scalar || mpcSig.s;
+              btcSignatures.push({
+                inputIndex: sh.inputIndex,
+                r: Buffer.from(rHex.replace(/^0x/, ''), 'hex'),
+                s: Buffer.from(sHex.replace(/^0x/, ''), 'hex'),
+                publicKey: Buffer.from(vaultAddrs.btc.publicKey.replace(/^0x/, ''), 'hex')
+              });
+            }
+
+            const finalized = this.engine.finalizeBtcSweepPsbt(
+              btcSweep.psbtHex,
+              btcSignatures,
+              bitcoin.networks.testnet
+            );
+            const mempoolBroadcast = await fetch('https://mempool.space/testnet/api/tx', {
               method: 'POST',
               body: finalized.txHex
             });
-            if (mempoolRes.ok) {
-              console.log(`   🚀 Bitcoin Tx broadcasted to Mempool Testnet: ${btcTxId}`);
+            if (!mempoolBroadcast.ok) {
+              const errBody = await mempoolBroadcast.text();
+              throw new Error(`Mempool broadcast rejected (${mempoolBroadcast.status}): ${errBody.slice(0, 80)}`);
             }
-          } catch (bErr) {
-            console.warn(`   ⚠️ Bitcoin Broadcast Notice: ${bErr.message.slice(0, 80)}`);
+            const broadcastedTxId = (await mempoolBroadcast.text()).trim() || finalized.txId;
+            console.log(`   🚀 Bitcoin Tx broadcasted to Testnet: ${broadcastedTxId}`);
+
+            telemetryRecord.sweeps.btc = {
+              status: 'Broadcasted (Testnet)',
+              chain: 'Bitcoin Native SegWit',
+              target: destination.btc,
+              amount: `${(btcSweep.sendAmount / 1e8).toFixed(8)} BTC`,
+              tx_id: broadcastedTxId,
+              explorer: `https://mempool.space/testnet/tx/${broadcastedTxId}`,
+              near_mpc_tx: `https://testnet.nearblocks.io/txns/${lastNearTxHash}`
+            };
           }
         }
-
-        telemetryRecord.sweeps.btc = {
-          status: 'Mined (Testnet)',
-          chain: 'Bitcoin Native SegWit',
-          target: destination.btc,
-          amount: '0.0499 BTC',
-          tx_id: btcTxId,
-          explorer: `https://mempool.space/testnet/tx/${btcTxId}`,
-          near_mpc_tx: `https://testnet.nearblocks.io/tx/${nearTxHash}`
-        };
       } catch (err) {
         console.error(`   ❌ Bitcoin Sweep Error:`, err.message);
+        hasRetriableFailure = true;
         telemetryRecord.sweeps.btc = {
-          status: 'Queued (Error: ' + err.message.slice(0, 40) + ')',
+          status: `Error (${err.message.slice(0, 60)})`,
+          chain: 'Bitcoin Native SegWit',
           target: destination.btc,
-          amount: '0.0000 BTC'
+          amount: '0.00000000 BTC'
         };
       }
     }
 
-    // 4. Solana Sweep (Devnet)
+    // 3. Solana Sweep (Devnet — Real Base58 Signature & Verified RPC Broadcast)
     if (destination.sol && destination.sol.trim().length > 20) {
-      console.log(`\n[Solana Sweep] Preparing Ed25519 sweep to ${destination.sol}...`);
+      console.log(`\n[Solana Sweep] Checking ${vaultAddrs.sol.address} -> ${destination.sol}...`);
       try {
-        const solSweep = this.engine.prepareSolanaSweep({
-          fromPubkey: vaultAddrs.sol.address,
-          toPubkey: destination.sol.trim(),
-          lamports: 1000000000n, // 1 SOL
-          memo: `Aegis Evacuation: ${vaultOwner} Epoch ${epoch}`
-        });
+        const solConn = this.solanaConnection || new web3.Connection(this.solanaRpcUrl, 'confirmed');
+        const bal = await solConn.getBalance(new web3.PublicKey(vaultAddrs.sol.address));
+        const liveLamports = BigInt(bal);
+        console.log(
+          `   • Solana Bunker Balance: ${Number(liveLamports) / 1e9} SOL (${liveLamports} lamports)`
+        );
 
-        console.log(`   • Calling request_sweep_signature for Solana message...`);
-        const outcome = await this.account.functionCall({
-          contractId: this.contractId,
-          methodName: 'request_sweep_signature',
-          args: {
-            vault_owner: vaultOwner,
-            chain: 'SOL',
-            payload_hex: solSweep.rawPayloadHex,
-            target_epoch: epoch,
-            is_eddsa: true
-          },
-          gas: '280000000000000',
-          attachedDeposit: '50000000000000000000000'
-        });
+        if (liveLamports <= 5000n) {
+          telemetryRecord.sweeps.sol = {
+            status: 'Skipped (Zero/Dust Balance)',
+            chain: 'Solana Devnet (Ed25519)',
+            target: destination.sol,
+            amount: `${(Number(liveLamports) / 1e9).toFixed(4)} SOL`
+          };
+        } else {
+          const latest = await solConn.getLatestBlockhash('confirmed');
+          const solSweep = this.engine.prepareSolanaSweep({
+            fromPubkey: vaultAddrs.sol.address,
+            toPubkey: destination.sol.trim(),
+            lamports: liveLamports,
+            memo: sweepMemo,
+            recentBlockhash: latest.blockhash
+          });
 
-        const nearTxHash = outcome.transaction.hash;
-        console.log(`   ✅ NEAR MPC Signature Request Confirmed! Tx: ${nearTxHash}`);
+          const outcome = await this.account.functionCall({
+            contractId: this.contractId,
+            methodName: 'request_sweep_signature',
+            args: {
+              vault_owner: vaultOwner,
+              chain: 'SOL',
+              payload_hex: solSweep.rawPayloadHex,
+              target_epoch: epoch,
+              is_eddsa: true
+            },
+            gas: '280000000000000',
+            attachedDeposit: '0'
+          });
 
-        let mpcSignature = null;
-        for (const out of outcome.receipts_outcome) {
-          if (out.outcome.status.SuccessValue) {
-            const raw = Buffer.from(out.outcome.status.SuccessValue, 'base64').toString('utf8');
-            try { mpcSignature = JSON.parse(raw); } catch (e) {}
+          const nearTxHash = outcome.transaction.hash;
+          const mpcSignature = this.extractMpcSignatureFromOutcome(outcome);
+          if (!mpcSignature) {
+            throw new Error(`MPC signature missing in NEAR receipt ${nearTxHash}`);
           }
-        }
 
-        let solSig = 'sol_' + nearTxHash.slice(0, 16);
-        if (mpcSignature) {
-          const sigBytes = Buffer.from(mpcSignature.signature || mpcSignature, 'hex');
-          const signedSol = this.engine.assembleSignedSolanaTx(solSweep.serializedMessage, vaultAddrs.sol.address, sigBytes);
-          solSig = signedSol.signatureHex.slice(0, 32);
-          console.log(`   ✅ Solana Transaction Assembled! Sig: ${solSig}`);
-          try {
-            const conn = new web3.Connection('https://api.devnet.solana.com');
-            await conn.sendRawTransaction(Buffer.from(signedSol.txHex, 'hex'), { skipPreflight: true });
-            console.log(`   🚀 Solana Tx broadcasted to Devnet: ${solSig}`);
-          } catch (sErr) {
-            console.warn(`   ⚠️ Solana Broadcast Notice: ${sErr.message.slice(0, 80)}`);
-          }
-        }
+          const signedSol = this.engine.assembleSignedSolanaTx(
+            solSweep.serializedMessage,
+            vaultAddrs.sol.address,
+            mpcSignature
+          );
 
-        telemetryRecord.sweeps.sol = {
-          status: 'Confirmed (Devnet)',
-          chain: 'Solana Devnet (Ed25519)',
-          target: destination.sol,
-          amount: '1.0000 SOL',
-          signature: solSig,
-          explorer: `https://solscan.io/tx/${solSig}?cluster=devnet`,
-          near_mpc_tx: `https://testnet.nearblocks.io/tx/${nearTxHash}`
-        };
+          const rpcSig = await solConn.sendRawTransaction(Buffer.from(signedSol.txHex, 'hex'), {
+            skipPreflight: false,
+            preflightCommitment: 'confirmed'
+          });
+          const solSig = rpcSig || signedSol.signatureBase58;
+          console.log(`   🚀 Solana Tx broadcasted to Devnet: ${solSig}`);
+
+          telemetryRecord.sweeps.sol = {
+            status: 'Confirmed (Devnet)',
+            chain: 'Solana Devnet (Ed25519)',
+            target: destination.sol,
+            amount: `${(Number(liveLamports - 5000n) / 1e9).toFixed(4)} SOL`,
+            signature: solSig,
+            explorer: `https://solscan.io/tx/${solSig}?cluster=devnet`,
+            near_mpc_tx: `https://testnet.nearblocks.io/txns/${nearTxHash}`
+          };
+        }
       } catch (err) {
         console.error(`   ❌ Solana Sweep Error:`, err.message);
+        hasRetriableFailure = true;
         telemetryRecord.sweeps.sol = {
-          status: 'Queued (Error: ' + err.message.slice(0, 40) + ')',
+          status: `Error (${err.message.slice(0, 60)})`,
+          chain: 'Solana Devnet (Ed25519)',
           target: destination.sol,
           amount: '0.0000 SOL'
         };
       }
     }
 
-    // 5. NEAR Native Sweep
+    // 4. NEAR Native Implicit Bunker & Isolated Vault Deposit Sweep (Zero Fake Fallbacks)
     if (destination.near && destination.near.trim().length > 2) {
-      console.log(`\n[NEAR Sweep] Preparing on-chain transfer to ${destination.near}...`);
+      const destNear = destination.near.trim();
+      console.log(`\n[NEAR Sweep] Checking implicit & isolated NEAR deposits -> ${destNear}...`);
+      let totalSweptYocto = 0n;
+      let nearSweepTx = null;
+      let nearMpcTx = null;
+
       try {
+        const nearPubKeyObj = nearAPI.utils.PublicKey.from('ed25519:' + vaultAddrs.sol.address);
+        const implicitAccountId = Buffer.from(nearPubKeyObj.data).toString('hex');
+        const nearPubKeyStr = 'ed25519:' + vaultAddrs.sol.address;
+
+        const accInfo = await this.near.connection.provider
+          .query({
+            request_type: 'view_account',
+            finality: 'final',
+            account_id: implicitAccountId
+          })
+          .catch(() => null);
+
+        if (accInfo && BigInt(accInfo.amount) > 10_000_000_000_000_000_000_000n) {
+          const keyInfo = await this.near.connection.provider.query({
+            request_type: 'view_access_key',
+            finality: 'final',
+            account_id: implicitAccountId,
+            public_key: nearPubKeyStr
+          });
+          const block = await this.near.connection.provider.block({ finality: 'final' });
+          const blockHash = nearAPI.utils.serialize.base_decode(block.header.hash);
+
+          const totalBal = BigInt(accInfo.amount);
+          const feeReserve = 5_000_000_000_000_000_000_000n; // 0.005 NEAR transfer fee buffer
+          const sweepYocto = totalBal > feeReserve ? totalBal - feeReserve : 0n;
+
+          if (sweepYocto > 0n) {
+            const nonce = Number(keyInfo.nonce) + 1;
+            const actions = [nearAPI.transactions.transfer(sweepYocto.toString())];
+            const transaction = nearAPI.transactions.createTransaction(
+              implicitAccountId,
+              nearPubKeyObj,
+              destNear,
+              nonce,
+              actions,
+              blockHash
+            );
+            const serializedTx = transaction.encode();
+            const txHash = crypto.createHash('sha256').update(Buffer.from(serializedTx)).digest();
+
+            const sigRes = await this.account.functionCall({
+              contractId: this.contractId,
+              methodName: 'request_sweep_signature',
+              args: {
+                vault_owner: vaultOwner,
+                chain: 'NEAR',
+                payload_hex: txHash.toString('hex'),
+                target_epoch: epoch,
+                is_eddsa: true
+              },
+              gas: '280000000000000',
+              attachedDeposit: '0'
+            });
+            nearMpcTx = sigRes.transaction.hash;
+            const parsedSig = this.extractMpcSignatureFromOutcome(sigRes);
+            const rawSigBytes = parsedSig?.signature || parsedSig;
+            if (!rawSigBytes) {
+              throw new Error('Missing Ed25519 signature for NEAR implicit transfer');
+            }
+            const sigUint8 = Array.isArray(rawSigBytes)
+              ? new Uint8Array(rawSigBytes)
+              : new Uint8Array(Buffer.from(String(rawSigBytes).replace(/^0x/, ''), 'hex'));
+
+            const signature = new nearAPI.transactions.Signature({
+              keyType: 0,
+              data: sigUint8
+            });
+            const signedTx = new nearAPI.transactions.SignedTransaction({
+              transaction,
+              signature
+            });
+            const broadcast = await this.near.connection.provider.sendTransaction(signedTx);
+            nearSweepTx = broadcast.transaction.hash;
+            totalSweptYocto += sweepYocto;
+            console.log(`   🚀 NEAR Implicit Bunker Swept! Tx: ${nearSweepTx}`);
+          }
+        }
+
+        // Sweep isolated per-user contract deposit ONLY if non-zero
+        const isolatedNearDeposit = BigInt(vault.near_deposit_yocto || '0');
+        if (isolatedNearDeposit > 0n) {
+          const sweepOutcome = await this.account.functionCall({
+            contractId: this.contractId,
+            methodName: 'sweep_near',
+            args: { vault_owner: vaultOwner },
+            gas: '100000000000000',
+            attachedDeposit: '0'
+          });
+          if (!nearSweepTx) nearSweepTx = sweepOutcome.transaction.hash;
+          totalSweptYocto += isolatedNearDeposit;
+          console.log(`   🚀 NEAR Isolated Vault Deposit Swept! Tx: ${sweepOutcome.transaction.hash}`);
+        }
+
+        if (nearSweepTx && totalSweptYocto > 0n) {
+          const formattedNear = nearAPI.utils.format.formatNearAmount(totalSweptYocto.toString(), 4);
+          telemetryRecord.sweeps.near = {
+            status: 'Confirmed (NEAR Testnet)',
+            chain: 'NEAR Protocol Testnet (Ed25519)',
+            target: destNear,
+            amount: `${formattedNear} NEAR`,
+            tx_hash: nearSweepTx,
+            explorer: `https://testnet.nearblocks.io/txns/${nearSweepTx}`,
+            ...(nearMpcTx ? { near_mpc_tx: `https://testnet.nearblocks.io/txns/${nearMpcTx}` } : {})
+          };
+        } else {
+          telemetryRecord.sweeps.near = {
+            status: 'Skipped (Zero Balance)',
+            chain: 'NEAR Protocol Testnet (Ed25519)',
+            target: destNear,
+            amount: '0.0000 NEAR'
+          };
+        }
+      } catch (nearErr) {
+        console.error(`   ❌ NEAR Sweep Error:`, nearErr.message);
+        hasRetriableFailure = true;
         telemetryRecord.sweeps.near = {
-          status: 'Swept (On-Chain)',
-          chain: 'NEAR Protocol Testnet',
-          target: destination.near,
-          amount: '3.5000 NEAR',
-          explorer: `https://testnet.nearblocks.io/address/${destination.near}`
+          status: `Error (${nearErr.message.slice(0, 60)})`,
+          chain: 'NEAR Protocol Testnet (Ed25519)',
+          target: destNear,
+          amount: '0.0000 NEAR'
         };
-      } catch (e) {}
+      }
     }
 
-    // Save telemetry to file for frontend UI live sync
-    this.processedSweeps.add(sweepId);
-    fs.writeFileSync(this.telemetryPath, JSON.stringify(telemetryRecord, null, 2));
-    console.log(`\n📡 [Aegis Relayer] Telemetry written to ${this.telemetryPath}`);
+    const isComplete = !hasRetriableFailure;
+    telemetryRecord.is_complete = isComplete;
+
+    // Persist verified telemetry directly on-chain (`aegis.okgoogleok.testnet`)
+    try {
+      const recOut = await this.account.functionCall({
+        contractId: this.contractId,
+        methodName: 'record_sweep_telemetry',
+        args: {
+          vault_owner: vaultOwner,
+          epoch,
+          report_json: JSON.stringify(telemetryRecord),
+          is_complete: isComplete
+        },
+        gas: '50000000000000',
+        attachedDeposit: '0'
+      });
+      console.log(
+        `📡 [Aegis Relayer] Telemetry stored on-chain (is_complete=${isComplete})! Tx: ${recOut.transaction.hash}`
+      );
+    } catch (recErr) {
+      console.warn(`⚠️ [Aegis Relayer] Could not record telemetry on-chain:`, recErr.message);
+    }
+
+    if (!this.disableLocalFileCache && this.telemetryPath) {
+      try {
+        this.writeLocalTelemetry(telemetryRecord);
+        console.log(`📁 [Aegis Relayer] Local telemetry cache updated at ${this.telemetryPath}`);
+      } catch (fsErr) {
+        console.warn(`⚠️ [Aegis Relayer] Local telemetry write skipped:`, fsErr.message);
+      }
+    }
+
+    if (isComplete) {
+      this.processedSweeps.add(`${vaultOwner}:${epoch}:${state}`);
+    }
     return telemetryRecord;
   }
 
-  /**
-   * Monitor loop
-   */
-  async startMonitoring(monitoredAccounts = ['newapp9955.testnet', 'okgoogleok.testnet'], intervalMs = 10000) {
-    await this.init();
-    console.log(`🔍 [Aegis Relayer] Polling contract ${this.contractId} every ${intervalMs / 1000}s for accounts:`, monitoredAccounts);
+  async getRegisteredAccounts() {
+    try {
+      const list = await this.viewContract('get_registered_accounts', {});
+      if (Array.isArray(list) && list.length > 0) return list;
+    } catch (_) {}
+    return [];
+  }
 
-    const check = async () => {
-      for (const acc of monitoredAccounts) {
+  startHttpServer(port = process.env.PORT || 8080) {
+    if (this._httpServerRunning) return;
+    this._httpServerRunning = true;
+    const http = require('http');
+    const server = http.createServer((req, res) => {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+      if (req.method === 'OPTIONS') {
+        res.writeHead(204);
+        res.end();
+        return;
+      }
+
+      const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+
+      if (url.pathname === '/' || url.pathname === '/health') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            status: 'online',
+            service: 'Aegis Stateless Autonomous Keeper',
+            network: this.networkId,
+            contract: this.contractId,
+            relayer: this.relayerAccountId,
+            uptime_seconds: Math.floor(process.uptime()),
+            timestamp: new Date().toISOString()
+          })
+        );
+        return;
+      }
+
+      if (url.pathname === '/telemetry') {
         try {
-          const info = await this.getVaultInfo(acc);
-          if (!info) continue;
-          const state = typeof info.state === 'string' ? info.state : Object.keys(info.state)[0];
-          const sweepKey = `${acc}:${info.epoch}:${state}`;
-          if ((state === 'Evacuated' || state === 'Inheritance') && !this.processedSweeps.has(sweepKey)) {
-            console.log(`🚨 State change detected for ${acc}: ${state}! Triggering automated sweep...`);
-            await this.sweepVault(acc);
+          if (fs.existsSync(this.telemetryPath)) {
+            const data = fs.readFileSync(this.telemetryPath, 'utf8');
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(data);
+            return;
           }
-        } catch (e) {
-          console.warn(`[Relayer Poller] error for ${acc}:`, e.message);
-        }
+        } catch (_) {}
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ message: 'No local telemetry cached; query get_vault_info on-chain' }));
+        return;
+      }
+
+      if (url.pathname === '/ping' && req.method === 'POST') {
+        let body = '';
+        req.on('data', chunk => {
+          if (body.length < 8192) body += chunk;
+        });
+        req.on('end', async () => {
+          try {
+            const payload = JSON.parse(body || '{}');
+            const result = await this.sponsorPing(payload.vault_owner, {
+              timestampMs: payload.timestamp_ms,
+              signatureHex: payload.signature_hex,
+              nep413NonceHex: payload.nep413_nonce_hex || null,
+              nep413Recipient: payload.nep413_recipient || null
+            });
+            res.writeHead(result.success ? 200 : 400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(result));
+          } catch (err) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: false, error: err.message }));
+          }
+        });
+        return;
+      }
+
+      if ((url.pathname === '/trigger' || url.pathname === '/sweep') && req.method === 'POST') {
+        this.sweepAllActionable()
+          .then(summary => {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: true, ...summary }));
+          })
+          .catch(err => {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: false, error: err.message }));
+          });
+        return;
+      }
+
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Not found' }));
+    });
+
+    server.listen(port, '0.0.0.0', () => {
+      console.log(`🌐 [Aegis Relayer] HTTP Keeper Server listening on port ${port}`);
+    });
+  }
+
+  async startMonitoring(_initialAccounts = [], intervalMs = 15000) {
+    await this.init({ requireSigner: false });
+    if (process.env.PORT || process.env.ENABLE_HTTP === 'true') {
+      this.startHttpServer();
+    }
+    console.log(`🔍 [Aegis Relayer] Starting stateless get_actionable_vaults monitor on ${this.contractId}...`);
+    const check = async () => {
+      try {
+        await this.sweepAllActionable();
+      } catch (err) {
+        console.warn('[Aegis Keeper Cycle] Notice:', err.message);
       }
     };
-
     await check();
     setInterval(check, intervalMs);
   }
+
+  async runSinglePass() {
+    return await this.sweepAllActionable();
+  }
+
+  /**
+   * Production stateless sweep cycle using `get_actionable_vaults`:
+   * - Single RPC view call when healthy (0 gas burned, 0 private key needed if 0 actionable vaults)
+   * - Triggers push inheritance & executes verified multichain sweeps for expired/evacuated vaults
+   */
+  async sweepAllActionable() {
+    await this.init({ requireSigner: false });
+    console.log(`🔍 [Aegis Relayer] Querying get_actionable_vaults on ${this.contractId}...`);
+    const actionable = await this.getActionableVaults();
+
+    if (!actionable || actionable.length === 0) {
+      console.log('✅ 0 actionable vaults found. All bunkers healthy or already swept. 0 gas burned.');
+      return { actionable: 0, processed: [] };
+    }
+
+    await this.init({ requireSigner: true });
+    console.log(
+      `🚨 Found ${actionable.length} actionable vault(s): ${actionable.map(v => `${v.owner}[v${v.epoch}]`).join(', ')}`
+    );
+
+    const processed = [];
+    for (const v of actionable) {
+      const state = typeof v.state === 'string' ? v.state : Object.keys(v.state)[0];
+      const acc = v.owner;
+      if (state === 'Active' || state === 'Claiming') {
+        console.log(`⏱️  [Autonomous Inheritance] Triggering trigger_push_inheritance for ${acc}...`);
+        try {
+          await this.account.functionCall({
+            contractId: this.contractId,
+            methodName: 'trigger_push_inheritance',
+            args: { vault_owner: acc },
+            gas: '100000000000000',
+            attachedDeposit: '0'
+          });
+          console.log(`✅ Push inheritance triggered on-chain for ${acc}!`);
+        } catch (err) {
+          console.warn(`[trigger_push_inheritance] error for ${acc}:`, err.message);
+          continue;
+        }
+      }
+      const report = await this.sweepVault(acc);
+      processed.push({ owner: acc, epoch: v.epoch, complete: Boolean(report?.is_complete) });
+    }
+    console.log('✅ [Aegis Relayer] sweep-all execution cycle finished.');
+    return { actionable: actionable.length, processed };
+  }
 }
 
-// CLI Execution
 if (require.main === module) {
   const args = process.argv.slice(2);
   const service = new AegisRelayerService();
 
-  if (args.includes('--ping')) {
-    const idx = args.indexOf('--ping');
-    const target = args[idx + 1] || 'newapp9955.testnet';
-    service.sponsorPing(target).then(res => {
-      console.log('Result:', res);
-      process.exit(res.success ? 0 : 1);
-    });
+  if (args.includes('--sweep-all') || args.includes('--once')) {
+    service
+      .sweepAllActionable()
+      .then(() => process.exit(0))
+      .catch(err => {
+        console.error('Sweep-all failed:', err.message);
+        process.exit(1);
+      });
   } else if (args.includes('--sweep')) {
     const idx = args.indexOf('--sweep');
-    const target = args[idx + 1] || 'newapp9955.testnet';
-    service.sweepVault(target).then(res => {
-      console.log('Sweep finished.');
-      process.exit(0);
-    }).catch(err => {
-      console.error(err);
+    const target = args[idx + 1];
+    if (!target) {
+      console.error('Usage: node relayer/service.js --sweep <account.testnet>');
       process.exit(1);
-    });
-  } else if (args.includes('--watch')) {
+    }
+    service
+      .sweepVault(target)
+      .then(() => process.exit(0))
+      .catch(err => {
+        console.error(err.message);
+        process.exit(1);
+      });
+  } else if (args.includes('--watch') || args.includes('--server')) {
+    if (args.includes('--port')) {
+      const pIdx = args.indexOf('--port');
+      process.env.PORT = args[pIdx + 1];
+    }
     service.startMonitoring();
   } else {
     console.log('Usage:');
-    console.log('  node relayer/service.js --ping <account>');
+    console.log('  node relayer/service.js --sweep-all');
     console.log('  node relayer/service.js --sweep <account>');
-    console.log('  node relayer/service.js --watch');
+    console.log('  node relayer/service.js --server [--port 8080]');
   }
 }
 
@@ -2320,18 +4038,18 @@ if (typeof globalThis !== "undefined") {
 }
 
 import { setupWalletSelector } from "@near-wallet-selector/core";
-import { setupModal } from "@near-wallet-selector/modal-ui";
 import { setupMeteorWallet } from "@near-wallet-selector/meteor-wallet";
 import { setupHereWallet } from "@near-wallet-selector/here-wallet";
 import { setupNightly } from "@near-wallet-selector/nightly";
 import { setupSender } from "@near-wallet-selector/sender";
 import { setupBitteWallet } from "@near-wallet-selector/bitte-wallet";
-import { setupEthereumWallets } from "@near-wallet-selector/ethereum-wallets";
 import { contracts, chainAdapters } from "chainsig.js";
 import { Connection } from "@solana/web3.js";
+import bs58 from "bs58";
+import nacl from "tweetnacl";
+import { edwardsToMontgomeryPub, edwardsToMontgomeryPriv } from "@noble/curves/ed25519";
 
 let selector = null;
-let modal = null;
 
 export async function getSelector(contractId = "aegis.okgoogleok.testnet") {
   if (!selector) {
@@ -2342,23 +4060,82 @@ export async function getSelector(contractId = "aegis.okgoogleok.testnet") {
         setupHereWallet(),
         setupNightly(),
         setupSender(),
-        setupBitteWallet(),
-        setupEthereumWallets({ devMode: true })
+        setupBitteWallet()
       ],
-    });
-    modal = setupModal(selector, {
-      contractId: contractId,
-      description: "Connect your Web3 wallet to authorize Aegis multichain vault actions."
     });
   }
   return selector;
 }
 
-export async function connectWallet(contractId = "aegis.okgoogleok.testnet") {
-  await getSelector(contractId);
-  if (modal) {
-    modal.show();
+export async function signInWallet(walletId = "meteor-wallet", contractId = "aegis.okgoogleok.testnet") {
+  const sel = await getSelector(contractId);
+  const wallet = await sel.wallet(walletId);
+  if (!wallet) {
+    throw new Error(`Wallet module "${walletId}" not found in selector`);
   }
+  return await wallet.signIn({ contractId });
+}
+
+export async function connectNearWallet(walletId = "meteor-wallet", contractId = "aegis.okgoogleok.testnet") {
+  return await signInWallet(walletId, contractId);
+}
+
+export async function connectEvmWallet() {
+  if (typeof window === "undefined" || !window.ethereum) {
+    throw new Error("No EVM wallet detected. Please install MetaMask, Rabby, or Coinbase Wallet.");
+  }
+  const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
+  if (!accounts || accounts.length === 0) {
+    throw new Error("No Ethereum account authorized.");
+  }
+  const address = accounts[0];
+  const chainId = await window.ethereum.request({ method: "eth_chainId" });
+  return { address, chainId };
+}
+
+export async function connectSolanaWallet() {
+  if (typeof window === "undefined") throw new Error("Window not defined");
+  const provider = window.phantom?.solana || window.solana;
+  if (!provider) {
+    throw new Error("No Solana wallet detected. Please install Phantom or Solflare.");
+  }
+  const resp = await provider.connect();
+  const address = resp.publicKey ? resp.publicKey.toString() : provider.publicKey.toString();
+  return { address };
+}
+
+export async function connectBitcoinWallet() {
+  if (typeof window === "undefined") throw new Error("Window not defined");
+  if (window.unisat) {
+    const accounts = await window.unisat.requestAccounts();
+    if (!accounts || accounts.length === 0) throw new Error("No Bitcoin account authorized.");
+    return { address: accounts[0], type: "unisat" };
+  }
+  if (window.okxwallet?.bitcoin) {
+    const res = await window.okxwallet.bitcoin.connect();
+    return { address: res.address, type: "okx" };
+  }
+  if (window.XverseProviders?.BitcoinProvider) {
+    throw new Error("Please connect Xverse via Bitcoin provider");
+  }
+  throw new Error("No Bitcoin wallet detected. Please install UniSat or OKX Wallet.");
+}
+
+export function detectInstalledWallets() {
+  if (typeof window === "undefined") return {};
+  return {
+    meteor: typeof window.meteorWallet !== "undefined",
+    near: typeof window.near !== "undefined",
+    nightly: typeof window.nightly !== "undefined",
+    metaMask: typeof window.ethereum !== "undefined" && Boolean(window.ethereum.isMetaMask),
+    rabby: typeof window.ethereum !== "undefined" && Boolean(window.ethereum.isRabby),
+    coinbase: typeof window.ethereum !== "undefined" && Boolean(window.ethereum.isCoinbaseWallet),
+    evmGeneric: typeof window.ethereum !== "undefined",
+    phantom: Boolean(window.phantom?.solana || (window.solana && window.solana.isPhantom)),
+    solanaGeneric: typeof window.solana !== "undefined",
+    unisat: typeof window.unisat !== "undefined",
+    okx: typeof window.okxwallet !== "undefined"
+  };
 }
 
 export async function disconnectWallet() {
@@ -2401,7 +4178,6 @@ export async function signAndSendNearTx(contractId, methodName, args = {}, depos
     const signerId = state.accounts.find((acc) => acc.active)?.accountId || state.accounts[0]?.accountId;
 
     if (!wallet || !signerId) {
-      if (modal) modal.show();
       throw new Error("No wallet connected. Please connect wallet first.");
     }
 
@@ -2438,11 +4214,24 @@ export async function deriveVaultAddresses(accountId, path = "aegis/0", networkI
   });
   const sol = await solAdapter.deriveAddressAndPublicKey(accountId, path);
 
+  // 4. NEAR Implicit Account derived from the same Ed25519 MPC public key
+  let nearAddress = accountId;
+  try {
+    const decode = bs58.decode || bs58.default?.decode;
+    if (decode && sol.address) {
+      const decodedBytes = decode(sol.address);
+      nearAddress = (typeof Buffer !== "undefined" ? Buffer.from(decodedBytes) : new Uint8Array(decodedBytes))
+        .toString("hex");
+    }
+  } catch (e) {
+    console.warn("NEAR implicit address derivation notice:", e.message);
+  }
+
   return {
     btc: btc.address,
     evm: evm.address,
     sol: sol.address,
-    near: accountId
+    near: nearAddress
   };
 }
 
@@ -2478,19 +4267,208 @@ export async function signNep413Message(message, recipient = "aegis.okgoogleok.t
   throw new Error("signMessage not supported by wallet");
 }
 
+function bytesToBase64(bytes) {
+  if (typeof Buffer !== "undefined") {
+    return Buffer.from(bytes).toString("base64");
+  }
+  let bin = "";
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin);
+}
+
+function base64ToBytes(b64) {
+  if (typeof Buffer !== "undefined") {
+    return new Uint8Array(Buffer.from(b64, "base64"));
+  }
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+function parseEd25519PubKey(pubKeyStr) {
+  const clean = String(pubKeyStr || "").trim().replace(/^ed25519:/i, "");
+  if (/^[0-9a-fA-F]{64}$/.test(clean)) {
+    const out = new Uint8Array(32);
+    for (let i = 0; i < 32; i++) out[i] = parseInt(clean.slice(i * 2, i * 2 + 2), 16);
+    return out;
+  }
+  const decode = bs58.decode || bs58.default?.decode;
+  const decoded = decode(clean);
+  if (decoded.length !== 32) {
+    throw new Error("Recipient Ed25519 public key must decode to 32 bytes");
+  }
+  return new Uint8Array(decoded);
+}
+
+function parseEd25519SecretSeed(secretInput) {
+  const raw = String(secretInput || "").trim().replace(/^ed25519:/i, "").replace(/^0x/i, "");
+  // JSON array format from Solana CLI id.json: [12, 34, ...]
+  if (raw.startsWith("[") && raw.endsWith("]")) {
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr) || (arr.length !== 32 && arr.length !== 64)) {
+      throw new Error("Solana JSON keypair array must have 32 or 64 bytes");
+    }
+    return new Uint8Array(arr.slice(0, 32));
+  }
+  if (/^[0-9a-fA-F]{64}$/.test(raw) || /^[0-9a-fA-F]{128}$/.test(raw)) {
+    const out = new Uint8Array(32);
+    for (let i = 0; i < 32; i++) out[i] = parseInt(raw.slice(i * 2, i * 2 + 2), 16);
+    return out;
+  }
+  const decode = bs58.decode || bs58.default?.decode;
+  const decoded = decode(raw);
+  if (decoded.length === 64 || decoded.length === 32) {
+    return new Uint8Array(decoded.slice(0, 32));
+  }
+  throw new Error("Invalid Ed25519 secret key format (expected Base58, ed25519:..., 64-char hex, or Solana [64-byte] JSON)");
+}
+
+/**
+ * Zero-Backend Public-Key E2EE Sealed Box (`enc:x25519:<base64>`)
+ * Converts Heir's Solana Base58 or NEAR 64-hex Ed25519 public key to Curve25519 (X25519)
+ * and encrypts with an ephemeral X25519 keypair + XSalsa20-Poly1305.
+ */
+export function encryptTestamentX25519(plainText, recipientEd25519Pub) {
+  const edPub = parseEd25519PubKey(recipientEd25519Pub);
+  const x25519Pub = edwardsToMontgomeryPub(edPub);
+  const ephem = nacl.box.keyPair();
+  const nonce = nacl.randomBytes(nacl.box.nonceLength); // 24 bytes
+  const msgBytes = new TextEncoder().encode(String(plainText));
+  const cipher = nacl.box(msgBytes, nonce, x25519Pub, ephem.secretKey);
+
+  const packed = new Uint8Array(ephem.publicKey.length + nonce.length + cipher.length);
+  packed.set(ephem.publicKey, 0);
+  packed.set(nonce, 32);
+  packed.set(cipher, 56);
+  return "enc:x25519:" + bytesToBase64(packed);
+}
+
+export function decryptTestamentX25519(envelope, recipientSecretInput) {
+  const clean = String(envelope || "").trim();
+  if (!clean.startsWith("enc:x25519:")) {
+    throw new Error("Ciphertext does not start with enc:x25519:");
+  }
+  const packed = base64ToBytes(clean.slice("enc:x25519:".length));
+  if (packed.length <= 56) {
+    throw new Error("Truncated enc:x25519 payload");
+  }
+  const ephemPub = packed.slice(0, 32);
+  const nonce = packed.slice(32, 56);
+  const cipher = packed.slice(56);
+
+  const seed32 = parseEd25519SecretSeed(recipientSecretInput);
+  const x25519Sec = edwardsToMontgomeryPriv(seed32);
+  const opened = nacl.box.open(cipher, nonce, ephemPub, x25519Sec);
+  if (!opened) {
+    throw new Error("Decryption failed: wrong heir secret key or corrupted ciphertext");
+  }
+  return new TextDecoder().decode(opened);
+}
+
+/**
+ * Browser-Native Passphrase E2EE (`enc:aes256:<base64>`)
+ * PBKDF2-SHA256 (100,000 iterations) + AES-256-GCM (16B salt + 12B IV + auth tag)
+ */
+export async function encryptTestamentPassphrase(plainText, passphrase) {
+  if (!passphrase || String(passphrase).length < 4) {
+    throw new Error("Passphrase must be at least 4 characters");
+  }
+  const subtle = globalThis.crypto?.subtle;
+  if (!subtle) throw new Error("WebCrypto API unavailable");
+  const salt = new Uint8Array(16);
+  const iv = new Uint8Array(12);
+  globalThis.crypto.getRandomValues(salt);
+  globalThis.crypto.getRandomValues(iv);
+
+  const keyMaterial = await subtle.importKey(
+    "raw",
+    new TextEncoder().encode(String(passphrase)),
+    "PBKDF2",
+    false,
+    ["deriveKey"]
+  );
+  const aesKey = await subtle.deriveKey(
+    { name: "PBKDF2", salt, iterations: 100000, hash: "SHA-256" },
+    keyMaterial,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt"]
+  );
+  const cipherBuf = await subtle.encrypt(
+    { name: "AES-GCM", iv },
+    aesKey,
+    new TextEncoder().encode(String(plainText))
+  );
+  const cipherBytes = new Uint8Array(cipherBuf);
+  const packed = new Uint8Array(16 + 12 + cipherBytes.length);
+  packed.set(salt, 0);
+  packed.set(iv, 16);
+  packed.set(cipherBytes, 28);
+  return "enc:aes256:" + bytesToBase64(packed);
+}
+
+export async function decryptTestamentPassphrase(envelope, passphrase) {
+  const clean = String(envelope || "").trim();
+  if (!clean.startsWith("enc:aes256:")) {
+    throw new Error("Ciphertext does not start with enc:aes256:");
+  }
+  const packed = base64ToBytes(clean.slice("enc:aes256:".length));
+  if (packed.length <= 28) {
+    throw new Error("Truncated enc:aes256 payload");
+  }
+  const salt = packed.slice(0, 16);
+  const iv = packed.slice(16, 28);
+  const cipherBytes = packed.slice(28);
+
+  const subtle = globalThis.crypto?.subtle;
+  const keyMaterial = await subtle.importKey(
+    "raw",
+    new TextEncoder().encode(String(passphrase)),
+    "PBKDF2",
+    false,
+    ["deriveKey"]
+  );
+  const aesKey = await subtle.deriveKey(
+    { name: "PBKDF2", salt, iterations: 100000, hash: "SHA-256" },
+    keyMaterial,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["decrypt"]
+  );
+  let plainBuf;
+  try {
+    plainBuf = await subtle.decrypt({ name: "AES-GCM", iv }, aesKey, cipherBytes);
+  } catch (_) {
+    throw new Error("Decryption failed: incorrect passphrase or corrupted ciphertext");
+  }
+  return new TextDecoder().decode(plainBuf);
+}
+
+export const connectWallet = connectNearWallet;
+
 if (typeof window !== "undefined") {
   window.AegisWallet = {
     getSelector,
-    connectWallet,
+    signInWallet,
+    connectWallet: connectNearWallet,
+    connectNearWallet,
+    connectEvmWallet,
+    connectSolanaWallet,
+    connectBitcoinWallet,
+    detectInstalledWallets,
     disconnectWallet,
     signAndSendNearTx,
     deriveVaultAddresses,
     signNep413Message,
-    getModal: () => modal
+    encryptTestamentX25519,
+    decryptTestamentX25519,
+    encryptTestamentPassphrase,
+    decryptTestamentPassphrase
   };
   // Backward-compatibility aliases
   window.AegisMeteor = window.AegisWallet;
-  window.AegisMeteor.connectMeteor = connectWallet;
+  window.AegisMeteor.connectMeteor = connectNearWallet;
   window.AegisMeteor.disconnectMeteor = disconnectWallet;
 }
 
@@ -2504,6 +4482,9 @@ if (typeof window !== "undefined") {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Aegis — Multichain MPC Dead-Man's Switch · Built on NEAR Protocol</title>
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   
   <!-- NEAR Protocol Brand Typography: Manrope & JetBrains Mono -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -2523,8 +4504,6 @@ if (typeof window !== "undefined") {
     window.process = window.process || { env: { NODE_ENV: 'production' }, browser: true };
     window.global = window;
   </script>
-  <!-- NEAR Wallet Selector Modal UI Styles -->
-  <link rel="stylesheet" href="./modal-ui.css">
   <!-- NEAR Wallet Selector Standalone Bundle -->
   <script src="./wallet-bundle.js"></script>
   
@@ -2702,9 +4681,9 @@ if (typeof window !== "undefined") {
         </a>
 
         <!-- User Wallet Connection Area -->
-        <div id="walletArea" class="flex items-center shrink-0">
+        <div id="walletArea" class="flex items-center gap-2 shrink-0">
           <!-- Disconnected state (default) -->
-          <button id="connectWalletBtn" onclick="connectNearWallet()" class="flex items-center gap-2 h-9 px-4 rounded-full bg-purple-950/40 border border-purple-500/40 hover:bg-purple-900/40 text-xs font-mono font-bold text-purple-300 hover:text-white transition shadow-sm active:scale-95 whitespace-nowrap shrink-0">
+          <button id="connectWalletBtn" onclick="openMultichainWalletModal()" class="flex items-center gap-2 h-9 px-4 rounded-full bg-purple-950/40 border border-purple-500/40 hover:bg-purple-900/40 text-xs font-mono font-bold text-purple-300 hover:text-white transition shadow-sm active:scale-95 whitespace-nowrap shrink-0 cursor-pointer">
             <svg class="w-3.5 h-3.5 text-purple-400 shrink-0" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L14.4 7.2L20 8L16 12L17 17.6L12 15L7 17.6L8 12L4 8L9.6 7.2L12 2Z"/></svg>
             <span>Connect Wallet</span>
           </button>
@@ -2715,7 +4694,14 @@ if (typeof window !== "undefined") {
             <span id="headerAccountName" class="font-bold text-nearGreen hidden sm:inline whitespace-nowrap">account.testnet</span>
             <span id="headerAccountNameMobile" class="font-bold text-nearGreen sm:hidden whitespace-nowrap">acc...</span>
             <span id="headerAccountBalance" class="text-[#A6B0C3] border-l border-white/10 pl-2 font-normal hidden sm:inline whitespace-nowrap">0.00 NEAR</span>
-            <button onclick="disconnectWallet()" title="Disconnect" class="ml-1 text-textGray hover:text-red-400 transition p-0.5 shrink-0 flex items-center">
+            
+            <!-- Secondary linked chains (ETH / SOL / BTC) -->
+            <div id="headerMultichainBadges" class="hidden items-center gap-1.5 border-l border-white/10 pl-2"></div>
+
+            <button onclick="openMultichainWalletModal()" title="Link More Wallets" class="ml-1 text-[#00F5D4] hover:text-white transition p-0.5 shrink-0 flex items-center cursor-pointer">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" /></svg>
+            </button>
+            <button onclick="disconnectAllWallets()" title="Disconnect All" class="ml-1 text-textGray hover:text-red-400 transition p-0.5 shrink-0 flex items-center cursor-pointer">
               <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
             </button>
           </div>
@@ -2775,6 +4761,17 @@ if (typeof window !== "undefined") {
               <span id="timerPctDisplay">100.0% remaining</span>
             </div>
           </div>
+
+          <!-- Top Heartbeat 72h Timelock Notice -->
+          <div id="heartbeatTimelockNotice" class="hidden mt-2 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/25 text-amber-300 font-mono text-xs flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0"></span>
+              <span id="heartbeatTimelockText" class="font-bold">72h Policy Timelock Active</span>
+            </div>
+            <button onclick="document.getElementById('cooldownAlertBanner')?.scrollIntoView({ behavior: 'smooth' })" class="text-[11px] text-amber-400 hover:text-white underline font-semibold cursor-pointer">
+              Review / Revert ↓
+            </button>
+          </div>
         </div>
 
         <!-- Controls: Ping alive & Config -->
@@ -2785,24 +4782,60 @@ if (typeof window !== "undefined") {
           </button>
           <div id="onchainPingOption" class="hidden"></div>
           
-          <div class="grid grid-cols-2 gap-2.5">
-            <div class="relative">
-              <select id="inactivitySelect" onchange="changeInactivityPeriod(this.value)" class="w-full appearance-none bg-white/[0.04] hover:bg-white/[0.08] text-white font-semibold text-xs sm:text-sm rounded-full pl-4 pr-8 py-3 border border-white/[0.08] focus:border-nearGreen outline-none transition cursor-pointer">
-                <option value="30" class="bg-[#0B0D12]">Every 30 Days</option>
-                <option value="90" selected class="bg-[#0B0D12]">Every 90 Days</option>
-                <option value="180" class="bg-[#0B0D12]">Every 180 Days</option>
-                <option value="365" class="bg-[#0B0D12]">Every 1 Year</option>
-              </select>
-              <svg class="w-4 h-4 text-[#8C929D] absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" /></svg>
+          <!-- Heartbeat & Grace Policy Schedule Configuration Block -->
+          <div class="mt-3 p-3.5 rounded-2xl bg-white/[0.03] border border-white/[0.08] space-y-3">
+            <div class="flex items-center justify-between text-xs">
+              <div class="flex items-center gap-1.5 text-white font-bold">
+                <svg class="w-3.5 h-3.5 text-nearGreen" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                <span>Trigger Schedule & Safety Buffer</span>
+              </div>
+              <span class="text-[10px] font-mono text-[#8C929D] bg-white/[0.04] px-2 py-0.5 rounded-full border border-white/[0.06]">Autonomous Policy</span>
             </div>
-            <div class="relative">
-              <select id="graceSelect" onchange="changeGracePeriod(this.value)" class="w-full appearance-none bg-white/[0.04] hover:bg-white/[0.08] text-white font-semibold text-xs sm:text-sm rounded-full pl-4 pr-8 py-3 border border-white/[0.08] focus:border-nearGreen outline-none transition cursor-pointer">
-                <option value="3" class="bg-[#0B0D12]">Grace: 3 Days</option>
-                <option value="7" selected class="bg-[#0B0D12]">Grace: 7 Days</option>
-                <option value="14" class="bg-[#0B0D12]">Grace: 14 Days</option>
-                <option value="30" class="bg-[#0B0D12]">Grace: 30 Days</option>
-              </select>
-              <svg class="w-4 h-4 text-[#8C929D] absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" /></svg>
+
+            <!-- Two Selectors with Labels -->
+            <div class="grid grid-cols-2 gap-2.5">
+              <div class="space-y-1">
+                <label class="block text-[10px] font-semibold text-[#8C929D] uppercase tracking-wider pl-1">1. Check-in Timer</label>
+                <div class="relative">
+                  <select id="inactivitySelect" onchange="changeInactivityPeriod(this.value)" class="w-full appearance-none bg-[#0B0D12] hover:bg-white/[0.06] text-white font-semibold text-xs rounded-xl pl-3 pr-7 py-2.5 border border-white/[0.08] focus:border-nearGreen outline-none transition cursor-pointer">
+                    <option value="demo_120s" class="bg-[#0B0D12] text-amber-300 font-bold">⚡ 2m (Judge Demo)</option>
+                    <option value="30" class="bg-[#0B0D12]">Every 30 Days</option>
+                    <option value="90" selected class="bg-[#0B0D12]">Every 90 Days</option>
+                    <option value="180" class="bg-[#0B0D12]">Every 180 Days</option>
+                    <option value="365" class="bg-[#0B0D12]">Every 1 Year</option>
+                  </select>
+                  <svg class="w-3.5 h-3.5 text-[#8C929D] absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" /></svg>
+                </div>
+              </div>
+              <div class="space-y-1">
+                <label class="block text-[10px] font-semibold text-[#8C929D] uppercase tracking-wider pl-1">2. Grace Buffer</label>
+                <div class="relative">
+                  <select id="graceSelect" onchange="changeGracePeriod(this.value)" class="w-full appearance-none bg-[#0B0D12] hover:bg-white/[0.06] text-white font-semibold text-xs rounded-xl pl-3 pr-7 py-2.5 border border-white/[0.08] focus:border-nearGreen outline-none transition cursor-pointer">
+                    <option value="demo_30s" class="bg-[#0B0D12] text-amber-300 font-bold">⚡ 30s (Judge Demo)</option>
+                    <option value="3" class="bg-[#0B0D12]">Grace: 3 Days</option>
+                    <option value="7" selected class="bg-[#0B0D12]">Grace: 7 Days</option>
+                    <option value="14" class="bg-[#0B0D12]">Grace: 14 Days</option>
+                    <option value="30" class="bg-[#0B0D12]">Grace: 30 Days</option>
+                  </select>
+                  <svg class="w-3.5 h-3.5 text-[#8C929D] absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" /></svg>
+                </div>
+              </div>
+            </div>
+
+            <!-- Clear Explanations -->
+            <div class="p-2.5 rounded-xl bg-black/40 border border-white/[0.05] space-y-1.5 text-[11px] leading-relaxed text-[#8C929D]">
+              <div class="flex items-start gap-1.5">
+                <span class="text-nearGreen font-bold shrink-0">•</span>
+                <span><strong class="text-white">Check-in:</strong> Inactivity interval before heartbeat expires. Owner pings or sends any on-chain tx to renew.</span>
+              </div>
+              <div class="flex items-start gap-1.5">
+                <span class="text-amber-400 font-bold shrink-0">•</span>
+                <span><strong class="text-white">Grace Window:</strong> Emergency buffer after expiration. Fires urgent Telegram/Email alerts before assets are autonomously swept to heirs.</span>
+              </div>
+              <div class="flex items-start gap-1.5">
+                <span class="text-sky-400 font-bold shrink-0">•</span>
+                <span><strong class="text-white">72h Cooldown:</strong> Shortening intervals or changing destinations triggers an on-chain delay to block acceleration attacks.</span>
+              </div>
             </div>
           </div>
         </div>
@@ -2883,19 +4916,63 @@ if (typeof window !== "undefined") {
     <section id="panel-vault" class="tab-panel space-y-6 hidden">
       
       <!-- Emergency Burn/Rotation Banner (Hidden in pristine state, only appears when burned/evacuated) -->
-      <div id="bunkerBurnedBanner" class="p-5 rounded-2xl bg-red-950/25 border border-red-500/35 hidden flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div class="flex items-center gap-3.5">
-          <div class="w-10 h-10 rounded-xl bg-red-500/10 text-red-400 flex items-center justify-center font-bold">
+      <div id="bunkerBurnedBanner" class="p-5 rounded-2xl bg-red-950/25 border border-red-500/35 hidden space-y-3.5">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div class="flex items-start gap-3.5">
+            <div class="w-10 h-10 rounded-xl bg-red-500/10 text-red-400 flex items-center justify-center font-bold shrink-0 mt-0.5">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+            </div>
+            <div>
+              <h4 class="text-sm font-extrabold text-red-200">Epoch Exhausted — Path Rotation Required</h4>
+              <p class="text-xs text-textSilver mt-0.5">Active epoch keys were exposed on-chain during evacuation. Activate the next bunker to derive fresh uncompromised addresses.</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 shrink-0 self-start sm:self-center">
+            <button type="button" onclick="openEvacMonitor()" class="px-4 py-2.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.1] border border-white/[0.12] text-white font-mono font-bold text-xs transition flex items-center gap-1.5 whitespace-nowrap cursor-pointer">
+              <svg class="w-4 h-4 text-nearGreen" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+              <span>View Sweeps Monitor</span>
+            </button>
+            <button id="rotateBunkerBtn" onclick="rotateBunkerEpoch()" class="px-5 py-2.5 rounded-xl bg-nearGreen hover:bg-nearGreenHover text-nearBlack font-extrabold text-xs transition flex items-center gap-2 whitespace-nowrap shadow-near-glow active:scale-98 cursor-pointer">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+              <span>Activate Next Clean Bunker</span>
+            </button>
+          </div>
+        </div>
+        <div class="text-[11px] font-mono font-bold text-red-300 bg-red-900/40 border border-red-500/50 rounded-xl px-3 py-2 flex items-center gap-2">
+          <span class="shrink-0 text-base leading-none">🛑</span>
+          <span>DO NOT DEPOSIT TO THIS ADDRESS: Active epoch keys are burned. If this address is saved in your exchange whitelists (Binance/OKX/Bybit) or wallet contacts, delete it immediately!</span>
+        </div>
+      </div>
+
+      <!-- Unarmed Bunker Notice Banner (Appears when vault is connected but unconfigured) -->
+      <div id="bunkerUnarmedBanner" class="p-4 rounded-2xl bg-amber-950/25 border border-amber-500/35 hidden flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center font-bold shrink-0">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
           </div>
           <div>
-            <h4 class="text-sm font-extrabold text-red-200">Epoch Exhausted — Path Rotation Required</h4>
-            <p class="text-xs text-textSilver mt-0.5">Active epoch keys were exposed on-chain during evacuation. Activate the next bunker to derive fresh uncompromised addresses.</p>
+            <h4 class="text-xs sm:text-sm font-extrabold text-amber-200">Bunker Inactive — Arm Vault Before Depositing</h4>
+            <p class="text-xs text-[#C5CAD3] mt-0.5">Deposit addresses are disabled for security until you configure and save emergency backup or inheritance destinations in Tab 1.</p>
           </div>
         </div>
-        <button id="rotateBunkerBtn" onclick="rotateBunkerEpoch()" class="px-5 py-2.5 rounded-xl bg-nearGreen hover:bg-nearGreenHover text-nearBlack font-extrabold text-xs transition flex items-center gap-2 whitespace-nowrap shadow-near-glow active:scale-98">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-          <span>Activate Next Clean Bunker</span>
+        <button onclick="switchTab('rescue')" class="px-4 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-black font-extrabold text-xs transition whitespace-nowrap shrink-0">
+          Configure Policy in Tab 1 ↗
+        </button>
+      </div>
+
+      <!-- Unallocated Bunker Funds Warning Banner (Appears when deposit exists without backup egress) -->
+      <div id="unallocatedDepositAlert" class="p-4 rounded-2xl bg-amber-950/30 border border-amber-500/40 hidden flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center font-bold shrink-0">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+          </div>
+          <div>
+            <h4 class="text-xs sm:text-sm font-extrabold text-amber-200">Unallocated Funds Detected — No Egress Destination Configured</h4>
+            <p id="unallocatedDepositText" class="text-xs text-[#C5CAD3] mt-0.5 font-mono"></p>
+          </div>
+        </div>
+        <button onclick="switchTab('rescue')" class="px-4 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-black font-extrabold text-xs transition whitespace-nowrap shrink-0">
+          Set Egress Addresses ↗
         </button>
       </div>
 
@@ -2903,7 +4980,7 @@ if (typeof window !== "undefined") {
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2">
         <div>
           <h3 class="text-base font-extrabold text-white">Multichain Bunker Deposit Addresses</h3>
-          <p class="text-xs text-[#8C929D] mt-0.5">Full deterministic addresses derived via NEAR MPC. Deposit funds safely anytime.</p>
+          <p class="text-xs text-[#8C929D] mt-0.5">Full deterministic addresses derived via NEAR MPC. <span class="text-amber-400/90 font-medium">⚠️ One-Epoch Addresses: do not save permanently in exchange whitelists.</span></p>
         </div>
         <div class="flex items-center gap-2 self-start sm:self-auto">
           <button onclick="fetchLiveBalances(true)" class="px-3.5 py-1.5 rounded-full bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-xs font-mono text-textSilver hover:text-white transition flex items-center gap-2">
@@ -2954,7 +5031,7 @@ if (typeof window !== "undefined") {
           </div>
 
           <!-- Action Row -->
-          <div class="grid grid-cols-2 gap-2.5 pt-4 border-t border-white/[0.08]">
+          <div id="btcActions" class="grid grid-cols-2 gap-2.5 pt-4 border-t border-white/[0.08]">
             <button onclick="copyAddr('btcAddress')" class="py-2.5 px-3.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.08] hover:border-nearGreen/50 text-xs sm:text-sm font-bold text-white transition-all flex items-center justify-center gap-1.5 shadow-sm active:scale-98">
               <svg class="w-4 h-4 text-nearGreen" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
               <span>Copy</span>
@@ -3003,7 +5080,7 @@ if (typeof window !== "undefined") {
           </div>
 
           <!-- Action Row -->
-          <div class="grid grid-cols-2 gap-2.5 pt-4 border-t border-white/[0.08]">
+          <div id="evmActions" class="grid grid-cols-2 gap-2.5 pt-4 border-t border-white/[0.08]">
             <button onclick="copyAddr('evmAddress')" class="py-2.5 px-3.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.08] hover:border-nearGreen/50 text-xs sm:text-sm font-bold text-white transition-all flex items-center justify-center gap-1.5 shadow-sm active:scale-98">
               <svg class="w-4 h-4 text-nearGreen" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
               <span>Copy</span>
@@ -3052,7 +5129,7 @@ if (typeof window !== "undefined") {
           </div>
 
           <!-- Action Row -->
-          <div class="grid grid-cols-2 gap-2.5 pt-4 border-t border-white/[0.08]">
+          <div id="solActions" class="grid grid-cols-2 gap-2.5 pt-4 border-t border-white/[0.08]">
             <button onclick="copyAddr('solAddress')" class="py-2.5 px-3.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.08] hover:border-nearGreen/50 text-xs sm:text-sm font-bold text-white transition-all flex items-center justify-center gap-1.5 shadow-sm active:scale-98">
               <svg class="w-4 h-4 text-nearGreen" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
               <span>Copy</span>
@@ -3075,7 +5152,7 @@ if (typeof window !== "undefined") {
                   <h4 class="text-base sm:text-lg font-bold text-white truncate leading-tight">NEAR</h4>
                   <span class="text-xs font-mono px-2.5 py-0.5 rounded-full bg-white/[0.05] border border-white/[0.08] text-[#8C929D] shrink-0 font-medium">Testnet</span>
                 </div>
-                <span class="text-xs sm:text-sm text-[#8C929D] font-mono truncate block mt-0.5">Native Contract</span>
+                <span class="text-xs sm:text-sm text-[#8C929D] font-mono truncate block mt-0.5">Native Implicit (Ed25519)</span>
               </div>
             </div>
 
@@ -3089,8 +5166,8 @@ if (typeof window !== "undefined") {
             <!-- Full Vault Account -->
             <div class="space-y-1.5 pt-1">
               <div class="flex items-center justify-between">
-                <span class="text-xs font-sans font-semibold text-[#A6B0C3] uppercase tracking-wider">Vault Account</span>
-                <span class="text-xs text-nearGreen font-mono font-bold">Full · Testnet</span>
+                <span class="text-xs font-sans font-semibold text-[#A6B0C3] uppercase tracking-wider">Deposit Address</span>
+                <span class="text-xs text-nearGreen font-mono font-bold">Full · Ed25519</span>
               </div>
               <div class="p-3.5 rounded-xl bg-white/[0.03] border border-white/[0.08] hover:border-white/[0.2] transition min-h-[68px] flex items-center cursor-pointer group" onclick="copyAddr('nearAddress')">
                 <span id="nearAddress" data-full="" title="Connect wallet to reveal address" class="font-mono text-xs sm:text-[13px] leading-relaxed text-[#8C929D] break-all select-all font-medium group-hover:text-nearGreen transition-colors">
@@ -3101,7 +5178,7 @@ if (typeof window !== "undefined") {
           </div>
 
           <!-- Action Row -->
-          <div class="grid grid-cols-2 gap-2.5 pt-4 border-t border-white/[0.08]">
+          <div id="nearActions" class="grid grid-cols-2 gap-2.5 pt-4 border-t border-white/[0.08]">
             <button onclick="copyAddr('nearAddress')" class="py-2.5 px-3.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.08] hover:border-nearGreen/50 text-xs sm:text-sm font-bold text-white transition-all flex items-center justify-center gap-1.5 shadow-sm active:scale-98">
               <svg class="w-4 h-4 text-nearGreen" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
               <span>Copy</span>
@@ -3122,7 +5199,7 @@ if (typeof window !== "undefined") {
       <div class="space-y-6">
         
         <!-- Header row -->
-        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/[0.08] pb-5">
+        <div class="border-b border-white/[0.08] pb-5">
           <div>
             <div class="flex items-center gap-2.5">
               <span class="w-2.5 h-2.5 rounded-full bg-nearGreen radar-pulse"></span>
@@ -3132,24 +5209,21 @@ if (typeof window !== "undefined") {
               Cryptographically locked egress destinations for emergency evacuation and autonomous push inheritance.
             </p>
           </div>
-          <div class="flex items-center gap-2 sm:gap-3">
-            <button onclick="clearAllAddresses()" class="px-3.5 py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] text-[#A6B0C3] hover:text-white font-mono text-xs border border-white/[0.08] transition">
-              Clear All
-            </button>
-            <button onclick="cancelAddressCooldown()" class="cancel-policy-btn hidden px-3.5 py-2 rounded-xl bg-red-950/40 hover:bg-red-950/60 text-red-400 font-mono font-bold text-xs border border-red-500/30 transition">
-              Cancel Update
-            </button>
-            <button onclick="applyAddressPolicy()" class="apply-policy-btn hidden px-3.5 py-2 rounded-xl bg-nearGreen hover:bg-nearGreenHover text-nearBlack font-mono font-bold text-xs transition shadow-near-glow whitespace-nowrap cursor-pointer">
-              Apply Policy
-            </button>
-            <button onclick="saveAddresses()" class="save-policy-btn bg-nearGreen hover:bg-nearGreenHover text-nearBlack font-extrabold py-2 px-5 rounded-xl text-xs transition shadow-near-glow active:scale-98 whitespace-nowrap cursor-pointer">
-              Save Policy
-            </button>
+        </div>
+
+        <!-- Unallocated Funds Alert in Rescue Policy Tab -->
+        <div id="unallocatedPolicyAlert" class="p-4 rounded-xl bg-amber-950/30 border border-amber-500/40 hidden items-center gap-3 text-amber-200">
+          <div class="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center font-bold shrink-0">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+          </div>
+          <div>
+            <div class="font-bold text-amber-200 text-xs">Action Required: Unallocated Deposit Funds</div>
+            <div id="unallocatedPolicyText" class="text-xs text-[#C5CAD3] mt-0.5 font-mono"></div>
           </div>
         </div>
 
         <!-- Initial Unconfigured Banner (Hidden if addresses exist) -->
-        <div id="unconfiguredBanner" class="p-4 rounded-xl bg-amber-950/20 border border-amber-500/30 text-xs flex items-center gap-3 text-amber-200">
+        <div id="unconfiguredBanner" class="hidden p-4 rounded-xl bg-amber-950/20 border border-amber-500/30 text-xs items-center gap-3 text-amber-200">
           <svg class="w-4 h-4 text-amber-400 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
           <span>No destination addresses entered yet. Enter your backup and family wallets below, then click <strong>Save Policy</strong>. Initial setup activates immediately without timelock.</span>
         </div>
@@ -3173,6 +5247,28 @@ if (typeof window !== "undefined") {
           <div class="flex items-center gap-2 text-xs font-mono text-nearGreen self-start sm:self-auto">
             <span class="w-2 h-2 rounded-full bg-nearGreen radar-pulse"></span>
             <span class="font-bold">Live Synchronized</span>
+          </div>
+        </div>
+
+        <!-- Evacuated Policy Banner (Shown when vault is in Evacuated state) -->
+        <div id="evacuatedPolicyBanner" class="hidden p-4 rounded-xl bg-red-950/25 border border-red-500/35 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-white">
+          <div class="flex items-center gap-3">
+            <div class="w-8 h-8 rounded-lg bg-red-500/20 flex items-center justify-center text-red-400 shrink-0 font-bold">
+              <svg class="w-4 h-4 text-red-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+            </div>
+            <div>
+              <div class="font-bold text-red-400 flex items-center gap-2">
+                <span>Bunker Evacuated · Protection Inactive</span>
+                <span class="text-[10px] font-mono bg-red-500/20 text-red-300 border border-red-500/40 px-2 py-0.5 rounded-full font-bold">KEYS BURNED</span>
+              </div>
+              <div id="evacuatedPolicySummary" class="text-white/80 text-[11px] mt-0.5 font-mono">
+                <!-- Egress destinations used during evacuation -->
+              </div>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 text-xs font-mono text-red-400 self-start sm:self-auto">
+            <span class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
+            <span class="font-bold">Vault Burned</span>
           </div>
         </div>
 
@@ -3210,7 +5306,7 @@ if (typeof window !== "undefined") {
                     <span class="px-3 py-2.5 text-xs font-mono font-bold text-white bg-white/[0.03] border-r border-white/[0.06] shrink-0">
                       NEAR
                     </span>
-                    <input type="text" id="panicNearAddr" value="" placeholder="e.g. backup-wallet.testnet" class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none">
+                    <input type="text" id="panicNearAddr" value="" name="aegis_panicNearAddr_noautofill" autocomplete="new-password" data-form-type="other" readonly onfocus="if(!this.disabled)this.removeAttribute('readonly');" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="e.g. backup-wallet.testnet" class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none">
                   </div>
                 </div>
 
@@ -3224,7 +5320,7 @@ if (typeof window !== "undefined") {
                     <span class="px-3 py-2.5 text-xs font-mono font-bold text-[#F7931A] bg-white/[0.03] border-r border-white/[0.06] shrink-0">
                       BTC
                     </span>
-                    <input type="text" id="panicBtcAddr" value="" placeholder="e.g. tb1q..." class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none">
+                    <input type="text" id="panicBtcAddr" value="" name="aegis_panicBtcAddr_noautofill" autocomplete="new-password" data-form-type="other" readonly onfocus="if(!this.disabled)this.removeAttribute('readonly');" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="e.g. tb1q..." class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none">
                   </div>
                 </div>
 
@@ -3238,7 +5334,7 @@ if (typeof window !== "undefined") {
                     <span class="px-3 py-2.5 text-xs font-mono font-bold text-[#627EEA] bg-white/[0.03] border-r border-white/[0.06] shrink-0">
                       ETH
                     </span>
-                    <input type="text" id="panicEvmAddr" value="" placeholder="e.g. 0x..." class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none">
+                    <input type="text" id="panicEvmAddr" value="" name="aegis_panicEvmAddr_noautofill" autocomplete="new-password" data-form-type="other" readonly onfocus="if(!this.disabled)this.removeAttribute('readonly');" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="e.g. 0x..." class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none">
                   </div>
                 </div>
 
@@ -3252,7 +5348,7 @@ if (typeof window !== "undefined") {
                     <span class="px-3 py-2.5 text-xs font-mono font-bold text-[#9945FF] bg-white/[0.03] border-r border-white/[0.06] shrink-0">
                       SOL
                     </span>
-                    <input type="text" id="panicSolAddr" value="" placeholder="e.g. Solana Base58 Address..." class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none">
+                    <input type="text" id="panicSolAddr" value="" name="aegis_panicSolAddr_noautofill" autocomplete="new-password" data-form-type="other" readonly onfocus="if(!this.disabled)this.removeAttribute('readonly');" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="e.g. Solana Base58 Address..." class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none">
                   </div>
                 </div>
               </div>
@@ -3326,7 +5422,7 @@ if (typeof window !== "undefined") {
                     <span class="px-3 py-2.5 text-xs font-mono font-bold text-white bg-white/[0.03] border-r border-white/[0.06] shrink-0">
                       NEAR
                     </span>
-                    <input type="text" id="heirNearAddr" value="" placeholder="e.g. family.testnet" class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none">
+                    <input type="text" id="heirNearAddr" value="" name="aegis_heirNearAddr_noautofill" autocomplete="new-password" data-form-type="other" readonly onfocus="if(!this.disabled)this.removeAttribute('readonly');" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="e.g. family.testnet" class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none">
                   </div>
                 </div>
 
@@ -3340,7 +5436,7 @@ if (typeof window !== "undefined") {
                     <span class="px-3 py-2.5 text-xs font-mono font-bold text-[#F7931A] bg-white/[0.03] border-r border-white/[0.06] shrink-0">
                       BTC
                     </span>
-                    <input type="text" id="heirBtcAddr" value="" placeholder="e.g. tb1q..." class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none">
+                    <input type="text" id="heirBtcAddr" value="" name="aegis_heirBtcAddr_noautofill" autocomplete="new-password" data-form-type="other" readonly onfocus="if(!this.disabled)this.removeAttribute('readonly');" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="e.g. tb1q..." class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none">
                   </div>
                 </div>
 
@@ -3354,7 +5450,7 @@ if (typeof window !== "undefined") {
                     <span class="px-3 py-2.5 text-xs font-mono font-bold text-[#627EEA] bg-white/[0.03] border-r border-white/[0.06] shrink-0">
                       ETH
                     </span>
-                    <input type="text" id="heirEvmAddr" value="" placeholder="e.g. 0x..." class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none">
+                    <input type="text" id="heirEvmAddr" value="" name="aegis_heirEvmAddr_noautofill" autocomplete="new-password" data-form-type="other" readonly onfocus="if(!this.disabled)this.removeAttribute('readonly');" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="e.g. 0x..." class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none">
                   </div>
                 </div>
 
@@ -3368,48 +5464,54 @@ if (typeof window !== "undefined") {
                     <span class="px-3 py-2.5 text-xs font-mono font-bold text-[#9945FF] bg-white/[0.03] border-r border-white/[0.06] shrink-0">
                       SOL
                     </span>
-                    <input type="text" id="heirSolAddr" value="" placeholder="e.g. Solana Base58 Address..." class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none">
+                    <input type="text" id="heirSolAddr" value="" name="aegis_heirSolAddr_noautofill" autocomplete="new-password" data-form-type="other" readonly onfocus="if(!this.disabled)this.removeAttribute('readonly');" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="e.g. Solana Base58 Address..." class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none">
                   </div>
                 </div>
               </div>
             </div>
 
-            <!-- On-Chain Digital Testament & Encoded Memo Card -->
+            <!-- On-Chain E2EE Digital Testament & Sealed Box Card -->
             <div class="mt-5 p-4 rounded-xl bg-white/[0.03] border border-white/[0.08] flex-1 flex flex-col justify-between">
-              <div class="flex items-center justify-between gap-3 h-7 shrink-0">
+              <div class="flex items-center justify-between gap-2 h-7 shrink-0">
                 <div class="flex items-center gap-2">
                   <span class="w-2.5 h-2.5 rounded-full bg-nearGreen"></span>
-                  <span class="text-xs sm:text-sm font-bold text-white font-mono uppercase tracking-wider">Digital Testament & Memo</span>
+                  <span class="text-xs sm:text-sm font-bold text-white font-mono uppercase tracking-wider">E2EE Digital Testament</span>
                 </div>
-                <span class="text-[10px] font-mono font-bold text-nearGreen bg-nearGreenMuted border border-nearGreen/30 px-2.5 py-0.5 rounded-full whitespace-nowrap">
-                  OP_RETURN · Optional
-                </span>
+                <div class="flex items-center gap-1.5">
+                  <button type="button" onclick="openDecryptModal()" class="text-[10px] font-mono font-bold text-white bg-white/[0.06] hover:bg-white/[0.12] border border-white/15 px-2.5 py-0.5 rounded-full transition cursor-pointer">
+                    🔓 Decrypt
+                  </button>
+                  <span class="text-[10px] font-mono font-bold text-nearGreen bg-nearGreenMuted border border-nearGreen/30 px-2.5 py-0.5 rounded-full whitespace-nowrap">
+                    🔒 X25519 / AES-256
+                  </span>
+                </div>
               </div>
 
               <div class="flex-1 flex flex-col justify-between gap-2.5 mt-3 text-xs leading-relaxed">
-                <!-- Subcard 1: Input area with header -->
-                <div class="flex-1 p-2.5 rounded-lg bg-white/[0.02] border border-nearGreen/30 text-white transition flex flex-col justify-center">
+                <!-- Subcard 1: Plaintext Input + Optional Passphrase (Encrypted Client-Side Before RPC) -->
+                <div class="flex-1 p-2.5 rounded-lg bg-white/[0.02] border border-nearGreen/30 text-white transition flex flex-col justify-center space-y-1.5">
                   <div class="flex items-center justify-between font-bold text-nearGreen">
                     <div class="flex items-center gap-1.5">
-                      <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" /></svg>
-                      <span>Last Words to Heirs</span>
+                      <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" /></svg>
+                      <span>Private Note to Heirs (Zero Plaintext On-Chain)</span>
                     </div>
-                    <span id="memoByteCount" class="font-mono text-nearGreen text-xs font-bold">0 / 80 B</span>
+                    <span id="memoByteCount" class="font-mono text-nearGreen text-xs font-bold">0 / 512 B</span>
                   </div>
-                  <input type="text" id="heirFinalMemo" oninput="updateMemoByteCounter(this.value)" placeholder="e.g. For my family. Be happy and take care of each other." class="w-full bg-transparent pt-1 text-xs sm:text-[13px] font-mono text-white placeholder:text-[#585E6A] outline-none">
-                  <p class="text-[#8C929D] text-[11px] mt-0.5 leading-snug truncate">
-                    Optional note broadcast to heirs upon vault execution.
-                  </p>
+                  <input type="text" id="heirFinalMemo" name="aegis_heirFinalMemo_noautofill" autocomplete="new-password" data-form-type="other" readonly onfocus="if(!this.disabled)this.removeAttribute('readonly');" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" oninput="updateMemoByteCounter(this.value)" placeholder="e.g. Hardware wallet PIN & family vault instructions..." class="w-full bg-transparent pt-0.5 text-xs sm:text-[13px] font-mono text-white placeholder:text-[#585E6A] outline-none">
+                  <div class="flex items-center gap-2 pt-1 border-t border-white/[0.06]">
+                    <input type="password" id="heirMemoPassphrase" name="aegis_memo_pass_noautofill" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" placeholder="Optional AES-256 passphrase (blank = auto-seal to Heir SOL key)" class="w-full bg-transparent text-[11px] font-mono text-white placeholder:text-[#585E6A] outline-none">
+                    <span id="e2eeArmedStatus" class="hidden text-[10px] font-mono text-nearGreen whitespace-nowrap font-bold">🔒 Sealed</span>
+                  </div>
                 </div>
 
-                <!-- Subcard 2: Technical Explanation -->
+                <!-- Subcard 2: Cryptographic Guarantee -->
                 <div class="flex-1 p-2.5 rounded-lg bg-white/[0.02] border border-white/[0.06] text-[#8C929D] transition flex flex-col justify-center">
                   <div class="font-bold text-nearGreen flex items-center gap-1.5">
-                    <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" /></svg>
-                    <span>Immutable On-Chain Delivery</span>
+                    <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" /></svg>
+                    <span>Client-Side X25519 / AES-256-GCM Sealed Box</span>
                   </div>
                   <p class="text-[#8C929D] text-[11px] mt-1 leading-snug">
-                    Encoded directly into Bitcoin OP_RETURN, EVM calldata & Solana memo upon execution. Cannot be altered or censored.
+                    Encrypted locally in your browser before touching NEAR RPC. Stored as <code>enc:x25519:...</code> or <code>enc:aes256:...</code> — unreadable on NearBlocks/Solscan; decryptable offline only by your heir.
                   </p>
                 </div>
               </div>
@@ -3431,6 +5533,13 @@ if (typeof window !== "undefined") {
               <p class="text-xs text-[#8C929D]">
                 Fund redirection to arbitrary addresses is rejected by smart contract logic.
               </p>
+              <div class="flex flex-wrap items-center gap-2 pt-1 text-[11px] font-mono">
+                <span class="text-[#8C929D]">Keeper Gas Escrow:</span>
+                <span id="gasEscrowBalanceText" class="text-nearGreen font-bold">Sponsor Pool Ready</span>
+                <button type="button" onclick="topUpGasEscrow()" class="px-2 py-0.5 rounded-md bg-white/[0.05] hover:bg-white/[0.1] border border-white/10 text-nearGreen text-[10px] font-bold transition cursor-pointer">
+                  +0.25 NEAR Escrow
+                </button>
+              </div>
             </div>
 
             <div class="flex items-center gap-3">
@@ -3480,12 +5589,13 @@ if (typeof window !== "undefined") {
         <!-- Header row -->
         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/[0.08] pb-5">
           <div>
-            <div class="flex items-center gap-2.5">
+            <div class="flex items-center gap-2.5 flex-wrap">
               <span class="w-2.5 h-2.5 rounded-full bg-nearGreen radar-pulse"></span>
               <h3 class="text-base sm:text-lg font-bold text-white tracking-tight">Automated Relayer Alerts</h3>
+              <span class="text-[10px] font-mono font-bold text-amber-300 bg-amber-950/40 border border-amber-500/30 px-2.5 py-0.5 rounded-full">Optional Off-Chain Webhook Preview</span>
             </div>
             <p class="text-xs sm:text-sm text-[#8C929D] mt-1">
-              Multi-channel push notifications dispatched by the decentralized relayer network prior to heartbeat expiry.
+              Optional off-chain notification targets prior to heartbeat expiry. Core Dead-Man's Switch & MPC sweeps execute 100% autonomously on-chain without relying on Telegram or email delivery.
             </p>
           </div>
           <div id="tgStatusBadge" class="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/[0.04] border border-white/[0.08] text-xs font-mono text-[#DFE3E8]">
@@ -3581,7 +5691,7 @@ if (typeof window !== "undefined") {
                   <span class="px-3.5 py-2.5 text-xs font-mono font-bold text-[#A6B0C3] bg-white/[0.03] border-r border-white/[0.06]">
                     @
                   </span>
-                  <input id="tgUsernameInput" type="text" value="" class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#6E788C] outline-none" placeholder="username or Chat ID">
+                  <input id="tgUsernameInput" type="text" value="" name="aegis_tgUsernameInput_noautofill" autocomplete="new-password" data-form-type="other" readonly onfocus="if(!this.disabled)this.removeAttribute('readonly');" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#6E788C] outline-none" placeholder="username or Chat ID">
                 </div>
               </div>
             </div>
@@ -3618,7 +5728,7 @@ if (typeof window !== "undefined") {
                   <span class="px-3.5 py-2.5 text-xs text-[#8C929D] bg-white/[0.03] border-r border-white/[0.06]">
                     ✉
                   </span>
-                  <input id="emailAlertInput" type="email" value="" class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none" placeholder="your-email@domain.com">
+                  <input id="emailAlertInput" type="email" value="" name="aegis_emailAlertInput_noautofill" autocomplete="new-password" data-form-type="other" readonly onfocus="if(!this.disabled)this.removeAttribute('readonly');" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none" placeholder="your-email@domain.com">
                 </div>
               </div>
             </div>
@@ -3646,6 +5756,73 @@ if (typeof window !== "undefined") {
 
   </main>
 
+  <!-- Multichain Web3 Wallet Selector Modal -->
+  <div id="multichainWalletModal" class="fixed inset-0 bg-black/90 backdrop-blur-md z-50 flex items-center justify-center p-4 hidden">
+    <div class="near-card border border-white/10 rounded-3xl max-w-2xl w-full p-6 sm:p-8 space-y-6 shadow-2xl relative bg-[#0B0E15]">
+      
+      <!-- Modal Header -->
+      <div class="flex items-start justify-between border-b border-white/[0.08] pb-5">
+        <div class="space-y-1">
+          <div class="flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-[#00F5D4] animate-pulse"></span>
+            <h3 class="text-lg sm:text-xl font-extrabold text-white tracking-tight">Connect Web3 Wallet</h3>
+            <span class="text-[11px] font-mono text-[#00F5D4] bg-[#00F5D4]/10 border border-[#00F5D4]/30 px-2 py-0.5 rounded-full">Multichain</span>
+          </div>
+          <p class="text-xs text-[#8E99AD] leading-relaxed">
+            Select a network and connect browser extensions to arm your bunker or link destination addresses.
+          </p>
+        </div>
+        <button onclick="closeMultichainWalletModal()" class="w-8 h-8 rounded-full bg-white/[0.06] hover:bg-white/[0.12] text-[#8E99AD] hover:text-white flex items-center justify-center transition shrink-0 cursor-pointer">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+        </button>
+      </div>
+
+      <!-- Network Selection Tabs -->
+      <div class="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+        <button onclick="filterWalletNetwork('all')" id="tabNetAll" class="network-tab-btn px-3.5 py-1.5 rounded-full text-xs font-mono font-bold transition flex items-center gap-1.5 bg-[#00F5D4]/20 text-[#00F5D4] border border-[#00F5D4]/40 cursor-pointer">
+          <span>🌐 All</span>
+        </button>
+        <button onclick="filterWalletNetwork('near')" id="tabNetNear" class="network-tab-btn px-3.5 py-1.5 rounded-full text-xs font-mono font-bold transition flex items-center gap-1.5 bg-white/[0.04] text-[#8E99AD] hover:text-white border border-white/[0.08] cursor-pointer">
+          <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+          <span>NEAR</span>
+        </button>
+        <button onclick="filterWalletNetwork('evm')" id="tabNetEvm" class="network-tab-btn px-3.5 py-1.5 rounded-full text-xs font-mono font-bold transition flex items-center gap-1.5 bg-white/[0.04] text-[#8E99AD] hover:text-white border border-white/[0.08] cursor-pointer">
+          <span class="w-2 h-2 rounded-full bg-blue-400"></span>
+          <span>Ethereum & EVM</span>
+        </button>
+        <button onclick="filterWalletNetwork('sol')" id="tabNetSol" class="network-tab-btn px-3.5 py-1.5 rounded-full text-xs font-mono font-bold transition flex items-center gap-1.5 bg-white/[0.04] text-[#8E99AD] hover:text-white border border-white/[0.08] cursor-pointer">
+          <span class="w-2 h-2 rounded-full bg-purple-400"></span>
+          <span>Solana</span>
+        </button>
+        <button onclick="filterWalletNetwork('btc')" id="tabNetBtc" class="network-tab-btn px-3.5 py-1.5 rounded-full text-xs font-mono font-bold transition flex items-center gap-1.5 bg-white/[0.04] text-[#8E99AD] hover:text-white border border-white/[0.08] cursor-pointer">
+          <span class="w-2 h-2 rounded-full bg-amber-400"></span>
+          <span>Bitcoin</span>
+        </button>
+      </div>
+
+      <!-- Wallets Grid -->
+      <div id="walletsGrid" class="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[360px] overflow-y-auto pr-1">
+        <!-- Rendered dynamically -->
+      </div>
+
+      <!-- Currently Connected Wallets Summary inside Modal -->
+      <div id="modalConnectedSummary" class="hidden p-3.5 rounded-2xl bg-white/[0.02] border border-white/[0.08] space-y-2">
+        <div class="flex items-center justify-between">
+          <span class="text-[11px] font-mono font-bold text-[#8E99AD] uppercase tracking-wider">Connected in this Session</span>
+          <button onclick="disconnectAllWallets()" class="text-[11px] font-mono text-red-400 hover:text-red-300 transition cursor-pointer">Disconnect All</button>
+        </div>
+        <div id="modalConnectedList" class="space-y-1.5 text-xs font-mono"></div>
+      </div>
+
+      <!-- Footer Info -->
+      <div class="text-[11px] font-mono text-[#6E788C] flex items-center justify-between border-t border-white/[0.06] pt-3.5">
+        <span>Smart contract on NEAR Testnet (`aegis.okgoogleok.testnet`)</span>
+        <span class="text-[#00F5D4] font-semibold">100% Non-Custodial</span>
+      </div>
+
+    </div>
+  </div>
+
   <!-- Panic Hold-to-Confirm Modal -->
   <div id="abortModal" class="fixed inset-0 bg-black/90 backdrop-blur-md z-50 flex items-center justify-center p-4 hidden">
     <div class="near-card border-red-500/50 rounded-3xl max-w-lg w-full p-8 space-y-6 text-center shadow-danger-glow">
@@ -3655,7 +5832,19 @@ if (typeof window !== "undefined") {
       <div class="space-y-2">
         <h3 class="text-xl font-extrabold text-textWhite tracking-tight">CONFIRM EMERGENCY EVACUATION</h3>
         <p class="text-xs sm:text-sm text-textSilver leading-relaxed">
-          All Bitcoin, Ethereum, Solana, and NEAR assets will be immediately swept to your designated backup addresses. The contract transitions to Evacuated state and burns Epoch v0.
+          All Bitcoin, Ethereum, Solana, and NEAR assets will be immediately swept to your designated backup addresses. The contract transitions to Evacuated state and burns the current epoch.
+        </p>
+      </div>
+
+      <!-- Unallocated Funds Warning inside Panic Modal -->
+      <div id="panicUnallocatedAlert" class="hidden p-4 rounded-2xl bg-amber-950/70 border border-amber-500/60 text-left space-y-2">
+        <div class="flex items-center gap-2 text-amber-300 font-bold text-xs font-mono uppercase">
+          <svg class="w-4 h-4 text-amber-400 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+          <span>⚠️ Unprotected Bunker Funds Detected!</span>
+        </div>
+        <p id="panicUnallocatedText" class="text-xs text-amber-200/90 leading-relaxed font-mono"></p>
+        <p class="text-[11px] text-amber-300/70 font-mono">
+          Funds in networks without designated backup addresses CANNOT be evacuated and will remain stuck. Add destination addresses first!
         </p>
       </div>
 
@@ -3696,6 +5885,13 @@ if (typeof window !== "undefined") {
         <span id="qrAddressText">...</span>
       </div>
 
+      <div class="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-left flex items-start gap-2.5">
+        <svg class="w-4 h-4 text-amber-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+        <div class="text-[11px] text-amber-200/90 leading-tight">
+          <strong class="text-amber-300 font-bold">One-Epoch Address:</strong> Do not save permanently in exchange whitelists. Once Panic or Inheritance triggers, this epoch is burned and repeated deposits to it cannot be recovered.
+        </div>
+      </div>
+
       <button onclick="copyCurrentQr()" class="w-full bg-nearGreen hover:bg-nearGreenHover text-nearBlack font-extrabold py-3.5 near-pill-btn text-xs sm:text-sm transition shadow-near-glow">
         Copy Address & Close
       </button>
@@ -3709,16 +5905,16 @@ if (typeof window !== "undefined") {
         <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" /></svg>
       </div>
       <div class="space-y-1.5">
-        <h3 class="text-base font-extrabold text-textWhite">Test Alert Sent</h3>
+        <h3 class="text-base font-extrabold text-textWhite">Webhook Target Preview</h3>
         <p class="text-xs sm:text-sm text-textSilver">
-          A test alert has been dispatched to your configured Telegram handle:
+          Local off-chain alert target saved for optional relayer webhook integration:
         </p>
       </div>
       <div class="p-3.5 rounded-2xl bg-nearElevated border border-nearBorder font-mono text-xs text-nearGreen font-bold">
         <span id="modalTgTarget">@telegram_handle</span>
       </div>
       <div class="text-[11px] text-textGray">
-        Also simulated to: <span id="modalEmailTarget" class="text-textSilver font-mono">backup@example.com</span>
+        Failover target: <span id="modalEmailTarget" class="text-textSilver font-mono">backup@example.com</span> · On-chain sweeps run independently of off-chain alerts.
       </div>
       <button onclick="closeTestAlertModal()" class="w-full bg-nearElevated hover:bg-nearHover text-textWhite font-bold py-3 near-pill-btn text-xs sm:text-sm transition border border-nearBorder">
         Close
@@ -3739,6 +5935,7 @@ if (typeof window !== "undefined") {
       <div>
         <label class="block text-xs font-semibold text-textSilver mb-1.5">Grace Buffer Duration:</label>
         <select id="modalGraceSelect" onchange="changeGracePeriod(this.value)" class="w-full bg-nearElevated text-textWhite font-mono text-xs rounded-2xl p-3.5 border border-nearBorder focus:outline-none focus:border-nearGreen transition">
+          <option value="demo_30s" class="text-amber-300 font-bold">⚡ 30s (Judge Demo)</option>
           <option value="3">3 Extra Days</option>
           <option value="7" selected>7 Extra Days (Default)</option>
           <option value="14">14 Extra Days (High Safety)</option>
@@ -3786,15 +5983,14 @@ if (typeof window !== "undefined") {
               <div id="monitorEvmLink" class="text-[11px] pt-0.5"></div>
             </div>
             <span id="evmTxStatusBadge" class="text-nearGreen font-bold bg-nearGreenMuted border border-nearGreen/30 px-2.5 py-1 rounded-full text-xs">
-              Queued for relayer sweep (<span id="evmGasGwei">25</span> Gwei)
+              Queued for relayer sweep (Dynamic EIP-1559)
             </span>
           </div>
 
           <div class="pt-2 border-t border-nearBorder flex items-center justify-between text-xs font-sans">
-            <span class="text-textGray">Transaction taking too long?</span>
-            <button id="speedUpEvmBtn" onclick="speedUpEvmGas()" class="px-4 py-1.5 near-pill-btn bg-nearGreen/20 hover:bg-nearGreen/30 text-nearGreen font-bold border border-nearGreen/40 transition active:scale-98 flex items-center gap-1.5">
-              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-              <span>Speed Up (+25% Gas / RBF)</span>
+            <span class="text-textGray">24/7 Stateless Cloud Keeper (`keeper.aegis.okgoogleok.testnet`):</span>
+            <button id="syncKeeperBtn" onclick="triggerCloudKeeperSweep(true)" class="px-4 py-1.5 near-pill-btn bg-nearGreen/20 hover:bg-nearGreen/30 text-nearGreen font-bold border border-nearGreen/40 transition active:scale-98 flex items-center gap-1.5 cursor-pointer">
+              <span>⚡ Sync Cloud Keeper</span>
             </button>
           </div>
         </div>
@@ -3828,11 +6024,58 @@ if (typeof window !== "undefined") {
           <svg class="w-4 h-4 text-nearGreen shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
           <span><strong>Fault Isolation active:</strong> Honeypots and reverting scam tokens are simulated via free <code>eth_call</code> and safely skipped without halting valid asset delivery.</span>
         </div>
+
+        <!-- 6. Burned Address Whitelist Warning -->
+        <div class="p-3.5 rounded-2xl bg-red-950/40 border border-red-500/40 text-xs font-sans text-red-200 flex items-start gap-2.5">
+          <svg class="w-4 h-4 text-red-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+          <div>
+            <strong class="text-red-300 font-bold block mb-0.5">⚠️ CRITICAL: Remove Old Bunker Addresses from Exchanges!</strong>
+            Keys for this epoch are permanently deactivated. If you saved these addresses in exchange whitelists (Binance, Bybit, OKX) or wallet address books, delete them immediately. New deposits to burned addresses cannot be recovered.
+          </div>
+        </div>
       </div>
 
       <button onclick="closeEvacMonitor()" class="w-full bg-nearElevated hover:bg-nearHover text-textWhite font-bold py-3.5 near-pill-btn text-xs sm:text-sm transition border border-nearBorder">
         Close Monitor
       </button>
+    </div>
+  </div>
+
+  <!-- Offline E2EE Heir Testament Decryption Modal -->
+  <div id="decryptTestamentModal" class="fixed inset-0 bg-black/90 backdrop-blur-md z-50 flex items-center justify-center p-4 hidden">
+    <div class="near-card border-nearGreen/40 rounded-3xl max-w-lg w-full p-7 space-y-5 shadow-near-glow">
+      <div class="flex items-center justify-between border-b border-nearBorder pb-3">
+        <div class="flex items-center gap-2">
+          <span class="w-2.5 h-2.5 rounded-full bg-nearGreen"></span>
+          <h3 class="text-base font-mono font-extrabold text-textWhite">Decrypt E2EE Heir Testament</h3>
+        </div>
+        <button onclick="closeDecryptModal()" class="text-textGray hover:text-textWhite cursor-pointer">✕</button>
+      </div>
+      <div class="space-y-3 text-xs font-mono">
+        <p class="text-[#B0B9C9] font-sans leading-relaxed">
+          Decryption executes <strong>100% locally in browser memory</strong> (TweetNaCl X25519 / WebCrypto AES-256-GCM). Zero keys or plaintexts ever leave your device.
+        </p>
+        <div class="space-y-1">
+          <label class="text-[#8C929D] uppercase text-[10px] font-bold">Ciphertext Envelope (enc:x25519:... or enc:aes256:...)</label>
+          <textarea id="decryptCipherInput" rows="3" spellcheck="false" placeholder="enc:x25519:..." class="w-full rounded-xl bg-white/[0.03] border border-white/10 p-2.5 text-xs text-white font-mono outline-none focus:border-nearGreen"></textarea>
+        </div>
+        <div class="space-y-1">
+          <label class="text-[#8C929D] uppercase text-[10px] font-bold">Heir Secret Key (for enc:x25519) OR Passphrase (for enc:aes256)</label>
+          <input type="password" id="decryptSecretInput" autocomplete="new-password" data-lpignore="true" placeholder="Enter passphrase or Heir Ed25519 secret key (Base58 / JSON)" class="w-full rounded-xl bg-white/[0.03] border border-white/10 px-3 py-2.5 text-xs text-white font-mono outline-none focus:border-nearGreen">
+        </div>
+        <div id="decryptOutputBox" class="hidden p-3.5 rounded-xl bg-nearGreenMuted border border-nearGreen/40 text-white space-y-1">
+          <div class="text-[10px] uppercase text-nearGreen font-bold">Decrypted Testament Plaintext:</div>
+          <div id="decryptOutputText" class="text-sm font-mono break-words text-white"></div>
+        </div>
+      </div>
+      <div class="flex items-center gap-3">
+        <button type="button" onclick="runLocalTestamentDecrypt()" class="flex-1 bg-nearGreen hover:bg-nearGreenHover text-nearBlack font-extrabold py-3 rounded-xl text-xs transition cursor-pointer">
+          🔓 Decrypt Locally
+        </button>
+        <button type="button" onclick="closeDecryptModal()" class="px-5 py-3 rounded-xl bg-nearElevated hover:bg-nearHover text-textWhite font-bold text-xs border border-nearBorder transition cursor-pointer">
+          Close
+        </button>
+      </div>
     </div>
   </div>
 
@@ -3877,19 +6120,19 @@ if (typeof window !== "undefined") {
           btc: 'tb1qgqgtsqnxqzexmq99tlqs76cff244ut0eupukmc',
           evm: '0x6491bB83A2285301925a3c2c827dbcA89E7545F8',
           sol: '9HJHEBcNJPrvK2CwCuNrp24SQfEZGTjmESL9y5E4cuHy',
-          near: 'aegis.okgoogleok.testnet'
+          near: '7b0a53a06b87f699ec3c93836607ba063278cc1b0d8be4d64006deb8695ba9f0'
         },
         1: {
           btc: 'tb1q20nt4cs2ytqcdafss3gn7enhtv83f6ml48p7dc',
           evm: '0xA899e106f808eC97eb1fD34e696F229A73a80959',
           sol: 'HRXtQKBgmd7yYATKMLSvGHtLdYYenFyT8DGvfaoNcwQn',
-          near: 'aegis.okgoogleok.testnet'
+          near: 'f403da79ef30f2d6a59238f15991a3a296c2bb42b6ee9e5030a0b9bb1cf2f3c3'
         },
         2: {
           btc: 'tb1qcca93zwj8faec7pgf2kytuz47pygj3pg2zj2v9',
           evm: '0xe9Fa7D983328f7c8981972bdc782D30B300bDC5c',
           sol: 'BEyM5qxMA4KaMGJkVJdWjk2gfdZSYi6q6kiMvGa6SYKK',
-          near: 'aegis.okgoogleok.testnet'
+          near: '982921762ab2d2f40fb8017fd3129b05ba6afdf1acba20c682d0c0932d27309a'
         }
       },
       'okgoogleok.testnet': {
@@ -3897,7 +6140,7 @@ if (typeof window !== "undefined") {
           btc: 'tb1q3fwk3jw7qyayhun46r8gyw2ypy320s0rx9dw85',
           evm: '0x3DFF025d6A5C68D6Cf11a6a54e3d52e60E5c92bC',
           sol: 'DMHNvnt58VxCQJmUUUte5dySkCKKPFsSqL6BWa9uPwqB',
-          near: 'aegis.okgoogleok.testnet'
+          near: 'b77e60c675f139b93e0d7f9e4dacc5b82dcb3e05579c9d247983d5977f7b0af2'
         }
       }
     };
@@ -3908,8 +6151,14 @@ if (typeof window !== "undefined") {
       { epoch: '2' }
     ];
 
-    let currentEpochIndex = parseInt(localStorage.getItem('aegis_bunker_epoch') || '0');
+        let currentEpochIndex = parseInt(localStorage.getItem('aegis_bunker_epoch') || '0');
     let lastFetchedVaultInfo = null;
+    let isEditing = false;
+    let userHasInteractedWithInputs = false;
+    const inputIds = [
+      'panicNearAddr', 'panicBtcAddr', 'panicEvmAddr', 'panicSolAddr',
+      'heirNearAddr', 'heirBtcAddr', 'heirEvmAddr', 'heirSolAddr', 'heirFinalMemo'
+    ];
     const NEAR_RPC_URLS = [
       'https://test.rpc.fastnear.com',
       'https://rpc.testnet.near.org'
@@ -3927,13 +6176,24 @@ if (typeof window !== "undefined") {
     }
 
     function isVaultEvacuatedOrBurned() {
-      if (lastFetchedVaultInfo && (lastFetchedVaultInfo.state === 'Evacuated' || lastFetchedVaultInfo.state === 'Inheritance')) {
-        return true;
-      }
-      if (localStorage.getItem('aegis_vault_burned_' + currentEpochIndex) === 'true') {
-        return true;
-      }
-      return false;
+      const currentSigner = localStorage.getItem('aegis_signer_account');
+      if (!currentSigner || !lastFetchedVaultInfo) return false;
+      return lastFetchedVaultInfo.state === 'Evacuated' || lastFetchedVaultInfo.state === 'Inheritance';
+    }
+
+    function shouldShowUnconfiguredBanner(info = lastFetchedVaultInfo) {
+      const currentSigner = localStorage.getItem('aegis_signer_account');
+      if (!currentSigner) return false;
+      if (isVaultEvacuatedOrBurned()) return false;
+      if (hasConfiguredDestinations(info)) return false;
+      if (info && info.pending_policy) return false;
+      if (userHasInteractedWithInputs || isEditing) return false;
+      const hasAnyInput = inputIds.some(id => {
+        const el = document.getElementById(id);
+        return el && el.value && el.value.trim().length > 0;
+      });
+      if (hasAnyInput) return false;
+      return true;
     }
 
     // Live On-Chain State Fetcher via NEAR JSON-RPC (FastNEAR with Failover)
@@ -3988,17 +6248,129 @@ if (typeof window !== "undefined") {
     }
 
     function syncUIWithOnChainState(info, signerAccount) {
-      if (!info) {
-        lastFetchedVaultInfo = {
+      if (!signerAccount) {
+        lastFetchedVaultInfo = null;
+        currentEpochIndex = 0;
+        remainingSeconds = 0;
+        userHasInteractedWithInputs = false;
+        inputIds.forEach(id => {
+          const el = document.getElementById(id);
+          if (el) {
+            el.value = '';
+            el.disabled = false;
+          }
+        });
+        const activeBanner = document.getElementById('activePolicyBanner');
+        if (activeBanner) activeBanner.classList.add('hidden');
+        const evacuatedBanner = document.getElementById('evacuatedPolicyBanner');
+        if (evacuatedBanner) evacuatedBanner.classList.add('hidden');
+        const unconfigBanner = document.getElementById('unconfiguredBanner');
+        if (unconfigBanner) { unconfigBanner.classList.add('hidden'); unconfigBanner.classList.remove('flex'); }
+        const burnedBanner = document.getElementById('bunkerBurnedBanner');
+        if (burnedBanner) burnedBanner.classList.add('hidden');
+        const unarmedBanner = document.getElementById('bunkerUnarmedBanner');
+        if (unarmedBanner) unarmedBanner.classList.add('hidden');
+        const unallocDep = document.getElementById('unallocatedDepositAlert');
+        if (unallocDep) { unallocDep.classList.add('hidden'); unallocDep.classList.remove('flex'); }
+        const unallocPol = document.getElementById('unallocatedPolicyAlert');
+        if (unallocPol) { unallocPol.classList.add('hidden'); unallocPol.classList.remove('flex'); }
+        const tabRescue = document.getElementById('tab-rescue');
+        if (tabRescue) tabRescue.innerText = '1. Rescue & Inheritance (Destinations)';
+
+        // Reset balances to zero
+        const btcBalEl = document.getElementById('btcBalanceText');
+        const btcUsdEl = document.getElementById('btcUsdText');
+        const evmBalEl = document.getElementById('evmBalanceText');
+        const evmUsdEl = document.getElementById('evmUsdText');
+        const solBalEl = document.getElementById('solBalanceText');
+        const solUsdEl = document.getElementById('solUsdText');
+        const nearBalEl = document.getElementById('nearBalanceText');
+        const nearUsdEl = document.getElementById('nearUsdText');
+        const syncBadge = document.getElementById('liveSyncBadge');
+        const syncDot = document.getElementById('liveSyncDot');
+
+        if (btcBalEl) btcBalEl.innerHTML = '0.0000 <span class="text-base font-normal text-[#B0B9C9]">BTC</span>';
+        if (btcUsdEl) btcUsdEl.innerText = '≈ 0.00 USD';
+        if (evmBalEl) evmBalEl.innerHTML = '0.0000 <span class="text-base font-normal text-[#B0B9C9]">ETH</span>';
+        if (evmUsdEl) evmUsdEl.innerText = '≈ 0.00 USD';
+        if (solBalEl) solBalEl.innerHTML = '0.0000 <span class="text-base font-normal text-[#B0B9C9]">SOL</span>';
+        if (solUsdEl) solUsdEl.innerText = '≈ 0.00 USD';
+        if (nearBalEl) nearBalEl.innerHTML = '0.0000 <span class="text-base font-normal text-[#B0B9C9]">NEAR</span>';
+        if (nearUsdEl) nearUsdEl.innerText = '≈ 0.00 USD';
+        if (syncBadge) syncBadge.innerText = 'Connect Wallet to Sync';
+        if (syncDot) syncDot.className = 'w-2 h-2 rounded-full bg-white/20';
+
+        updateSaveButtonState(null);
+        renderBunkerAddresses();
+        updateCountdownDisplay();
+        return;
+      }
+
+      if (!info || info.state === 'Unconfigured') {
+        const epoch = (info && typeof info.epoch === 'number') ? info.epoch : 0;
+        lastFetchedVaultInfo = info || {
           state: 'Unconfigured',
-          epoch: 0,
+          epoch: epoch,
           backup: { btc: '', evm: '', sol: '', near: null },
           heirs: { btc: '', evm: '', sol: '', near: null },
           pending_policy: null,
           last_ping_ns: 0,
           heartbeat_interval_ns: 7776000000000000
         };
+        currentEpochIndex = epoch;
         remainingSeconds = 0;
+
+        // Ensure all destination inputs are enabled and ready for user input
+        inputIds.forEach(id => {
+          const el = document.getElementById(id);
+          if (el) {
+            el.disabled = false;
+            if (!userHasInteractedWithInputs && !el.value) el.value = '';
+          }
+        });
+
+        const activeBanner = document.getElementById('activePolicyBanner');
+        if (activeBanner) activeBanner.classList.add('hidden');
+        const unconfigBanner = document.getElementById('unconfiguredBanner');
+        if (unconfigBanner) { unconfigBanner.classList.add('hidden'); unconfigBanner.classList.remove('flex'); }
+        const burnedBanner = document.getElementById('bunkerBurnedBanner');
+        if (burnedBanner) burnedBanner.classList.add('hidden');
+        const evacuatedBanner = document.getElementById('evacuatedPolicyBanner');
+        if (evacuatedBanner) evacuatedBanner.classList.add('hidden');
+        const unarmedBanner = document.getElementById('bunkerUnarmedBanner');
+        if (unarmedBanner) unarmedBanner.classList.remove('hidden');
+        const unallocDep = document.getElementById('unallocatedDepositAlert');
+        if (unallocDep) { unallocDep.classList.add('hidden'); unallocDep.classList.remove('flex'); }
+        const unallocPol = document.getElementById('unallocatedPolicyAlert');
+        if (unallocPol) { unallocPol.classList.add('hidden'); unallocPol.classList.remove('flex'); }
+
+        const tabRescue = document.getElementById('tab-rescue');
+        if (tabRescue) tabRescue.innerText = '1. Rescue & Inheritance (Destinations)';
+
+        // Ensure balances are clean 0.0000 for unconfigured vaults
+        const btcBalEl = document.getElementById('btcBalanceText');
+        const btcUsdEl = document.getElementById('btcUsdText');
+        const evmBalEl = document.getElementById('evmBalanceText');
+        const evmUsdEl = document.getElementById('evmUsdText');
+        const solBalEl = document.getElementById('solBalanceText');
+        const solUsdEl = document.getElementById('solUsdText');
+        const nearBalEl = document.getElementById('nearBalanceText');
+        const nearUsdEl = document.getElementById('nearUsdText');
+        const syncBadge = document.getElementById('liveSyncBadge');
+        const syncDot = document.getElementById('liveSyncDot');
+
+        if (btcBalEl) btcBalEl.innerHTML = '0.0000 <span class="text-base font-normal text-[#B0B9C9]">BTC</span>';
+        if (btcUsdEl) btcUsdEl.innerText = '≈ 0.00 USD';
+        if (evmBalEl) evmBalEl.innerHTML = '0.0000 <span class="text-base font-normal text-[#B0B9C9]">ETH</span>';
+        if (evmUsdEl) evmUsdEl.innerText = '≈ 0.00 USD';
+        if (solBalEl) solBalEl.innerHTML = '0.0000 <span class="text-base font-normal text-[#B0B9C9]">SOL</span>';
+        if (solUsdEl) solUsdEl.innerText = '≈ 0.00 USD';
+        if (nearBalEl) nearBalEl.innerHTML = '0.0000 <span class="text-base font-normal text-[#B0B9C9]">NEAR</span>';
+        if (nearUsdEl) nearUsdEl.innerText = '≈ 0.00 USD';
+        if (syncBadge) syncBadge.innerText = 'Vault Unarmed';
+        if (syncDot) syncDot.className = 'w-2 h-2 rounded-full bg-white/20';
+
+        updateSaveButtonState(lastFetchedVaultInfo);
         renderBunkerAddresses();
         updateCountdownDisplay();
         return;
@@ -4009,19 +6381,13 @@ if (typeof window !== "undefined") {
       // 1. Sync epoch & bunker addresses
       if (typeof info.epoch === 'number') {
         currentEpochIndex = info.epoch;
-        localStorage.setItem('aegis_bunker_epoch', currentEpochIndex.toString());
       }
 
       // Check if Vault is in Evacuated or Inheritance state
       if (info.state === 'Evacuated' || info.state === 'Inheritance') {
         remainingSeconds = 0;
-        localStorage.setItem('aegis_vault_burned_' + info.epoch, 'true');
-        localStorage.setItem('aegis_vault_burned_' + currentEpochIndex, 'true');
       } else if (info.state === 'Unconfigured' || !hasConfiguredDestinations(info)) {
         remainingSeconds = 0;
-      } else if (info.state === 'Active') {
-        localStorage.removeItem('aegis_vault_burned_' + currentEpochIndex);
-        localStorage.removeItem('aegis_vault_burned_' + info.epoch);
       }
 
       renderBunkerAddresses();
@@ -4041,16 +6407,29 @@ if (typeof window !== "undefined") {
         updateCountdownDisplay();
 
         // Sync dropdowns with real on-chain values
-        const inactDays = Math.round(Number(BigInt(info.heartbeat_interval_ns) / 86400000000000n));
+        const totalHbNs = BigInt(info.heartbeat_interval_ns);
         const inactSelect = document.getElementById('inactivitySelect');
-        if (inactSelect && [30, 90, 180, 365].includes(inactDays)) {
-          inactSelect.value = inactDays.toString();
+        if (inactSelect) {
+          if (totalHbNs <= 120000000000n) {
+            inactSelect.value = 'demo_120s';
+          } else {
+            const inactDays = Math.round(Number(totalHbNs / 86400000000000n));
+            if ([30, 90, 180, 365].includes(inactDays)) inactSelect.value = inactDays.toString();
+          }
         }
 
-        const graceDays = Math.round(Number(BigInt(info.challenge_period_ns) / 86400000000000n));
+        const totalCpNs = BigInt(info.challenge_period_ns || 604800000000000n);
         const graceSelect = document.getElementById('graceSelect');
-        if (graceSelect && [3, 7, 14, 30].includes(graceDays)) {
-          graceSelect.value = graceDays.toString();
+        const modalGrace = document.getElementById('modalGraceSelect');
+        if (totalCpNs <= 30000000000n) {
+          if (graceSelect) graceSelect.value = 'demo_30s';
+          if (modalGrace) modalGrace.value = 'demo_30s';
+        } else {
+          const graceDays = Math.round(Number(totalCpNs / 86400000000000n));
+          if ([3, 7, 14, 30].includes(graceDays)) {
+            if (graceSelect) graceSelect.value = graceDays.toString();
+            if (modalGrace) modalGrace.value = graceDays.toString();
+          }
         }
       } else {
         remainingSeconds = 0;
@@ -4060,40 +6439,126 @@ if (typeof window !== "undefined") {
       const unconfiguredBanner = document.getElementById('unconfiguredBanner');
       // 3. Sync destinations directly from on-chain storage
       let hasActiveAddresses = false;
-      if (info.backup) {
-        const pNear = document.getElementById('panicNearAddr');
-        const pBtc = document.getElementById('panicBtcAddr');
-        const pEvm = document.getElementById('panicEvmAddr');
-        const pSol = document.getElementById('panicSolAddr');
-        if (!userHasInteractedWithInputs) {
-          if (pNear) pNear.value = info.backup.near || '';
-          if (pBtc) pBtc.value = info.backup.btc || '';
-          if (pEvm) pEvm.value = info.backup.evm || '';
-          if (pSol) pSol.value = info.backup.sol || '';
+      const isEvacuated = info && (info.state === 'Evacuated' || info.state === 'Inheritance');
+
+      if (isEvacuated) {
+        // Vault is evacuated/burned: NEVER populate or display old addresses in inputs
+        inputIds.forEach(id => {
+          const el = document.getElementById(id);
+          if (el) {
+            el.value = '';
+            el.disabled = true;
+          }
+        });
+      } else if (info.state === 'Unconfigured') {
+        inputIds.forEach(id => {
+          const el = document.getElementById(id);
+          if (el) {
+            el.disabled = false;
+            if (!userHasInteractedWithInputs && !el.value) el.value = '';
+          }
+        });
+      } else {
+        inputIds.forEach(id => {
+          const el = document.getElementById(id);
+          if (el) el.disabled = false;
+        });
+        if (info.backup) {
+          const pNear = document.getElementById('panicNearAddr');
+          const pBtc = document.getElementById('panicBtcAddr');
+          const pEvm = document.getElementById('panicEvmAddr');
+          const pSol = document.getElementById('panicSolAddr');
+          if (!userHasInteractedWithInputs) {
+            if (pNear && !pNear.value) pNear.value = info.backup.near || '';
+            if (pBtc && !pBtc.value) pBtc.value = info.backup.btc || '';
+            if (pEvm && !pEvm.value) pEvm.value = info.backup.evm || '';
+            if (pSol && !pSol.value) pSol.value = info.backup.sol || '';
+          }
+          if (info.backup.btc || info.backup.evm || info.backup.sol || info.backup.near) hasActiveAddresses = true;
         }
-        if (info.backup.btc || info.backup.evm || info.backup.sol || info.backup.near) hasActiveAddresses = true;
-      }
-      if (info.heirs) {
-        const hNear = document.getElementById('heirNearAddr');
-        const hBtc = document.getElementById('heirBtcAddr');
-        const hEvm = document.getElementById('heirEvmAddr');
-        const hSol = document.getElementById('heirSolAddr');
-        if (!userHasInteractedWithInputs) {
-          if (hNear) hNear.value = info.heirs.near || '';
-          if (hBtc) hBtc.value = info.heirs.btc || '';
-          if (hEvm) hEvm.value = info.heirs.evm || '';
-          if (hSol) hSol.value = info.heirs.sol || '';
+        if (info.heirs) {
+          const hNear = document.getElementById('heirNearAddr');
+          const hBtc = document.getElementById('heirBtcAddr');
+          const hEvm = document.getElementById('heirEvmAddr');
+          const hSol = document.getElementById('heirSolAddr');
+          if (!userHasInteractedWithInputs) {
+            if (hNear && !hNear.value) hNear.value = info.heirs.near || '';
+            if (hBtc && !hBtc.value) hBtc.value = info.heirs.btc || '';
+            if (hEvm && !hEvm.value) hEvm.value = info.heirs.evm || '';
+            if (hSol && !hSol.value) hSol.value = info.heirs.sol || '';
+          }
+          if (info.heirs.btc || info.heirs.evm || info.heirs.sol || info.heirs.near) hasActiveAddresses = true;
+          const hMemo = document.getElementById('heirFinalMemo');
+          const e2eeBadge = document.getElementById('e2eeArmedStatus');
+          window.currentEncryptedOnChainMemo = info.heir_memo || null;
+          if (info.heir_memo && info.heir_memo.startsWith('enc:')) {
+            if (e2eeBadge) {
+              e2eeBadge.classList.remove('hidden');
+              e2eeBadge.innerText = info.heir_memo.startsWith('enc:x25519:') ? '🔒 X25519 Armed' : '🔒 AES-256 Armed';
+            }
+            if (!userHasInteractedWithInputs && hMemo && !hMemo.value) {
+              hMemo.placeholder = '🔒 E2EE Testament armed on-chain (click Decrypt to verify, or type to replace)';
+            }
+          } else {
+            if (e2eeBadge) e2eeBadge.classList.add('hidden');
+            if (!userHasInteractedWithInputs && hMemo && !hMemo.value && info.heir_memo) {
+              hMemo.value = info.heir_memo;
+              updateMemoByteCounter(hMemo.value);
+            }
+          }
         }
-        if (info.heirs.btc || info.heirs.evm || info.heirs.sol || info.heirs.near) hasActiveAddresses = true;
       }
 
       // Save latest state & update visual indication
       lastFetchedVaultInfo = info;
+      const escrowEl = document.getElementById('gasEscrowBalanceText');
+      if (escrowEl && info) {
+        const rawEscrow = BigInt(info.gas_escrow_yocto || '0');
+        const nearFloat = Number(rawEscrow / 100000000000000000000n) / 10000;
+        escrowEl.innerText = rawEscrow > 0n
+          ? `${nearFloat.toFixed(3)} NEAR (Personal Escrow)`
+          : '0.000 NEAR (Sponsor Pool Active)';
+      }
       const activeBanner = document.getElementById('activePolicyBanner');
       const activeSummary = document.getElementById('activePolicySummary');
+      const evacuatedBanner = document.getElementById('evacuatedPolicyBanner');
+      const evacuatedSummary = document.getElementById('evacuatedPolicySummary');
       const tabRescue = document.getElementById('tab-rescue');
+      const badge = document.getElementById('addressStatusBadge');
+      const dot = document.getElementById('addressStatusDot');
 
-      if (hasActiveAddresses) {
+      if (isEvacuated) {
+        const isInheritance = info && info.state === 'Inheritance';
+        if (activeBanner) activeBanner.classList.add('hidden');
+        if (unconfiguredBanner) unconfiguredBanner.classList.add('hidden');
+        if (evacuatedBanner) {
+          evacuatedBanner.classList.remove('hidden');
+          if (evacuatedSummary) {
+            evacuatedSummary.innerHTML = isInheritance
+              ? 'All bunker assets autonomously transferred to designated family heirs. Active epoch keys permanently closed. Click <strong>Activate Clean Bunker</strong> to advance to next epoch.'
+              : 'All bunker assets swept. Active epoch keys permanently burned. Click <strong>Activate Clean Bunker</strong> to advance to next epoch.';
+          }
+        }
+        if (tabRescue) {
+          tabRescue.innerHTML = isInheritance
+            ? `1. Rescue & Inheritance <span class="ml-1.5 px-2 py-0.5 text-[10px] bg-purple-950/60 text-purple-300 border border-purple-500/40 rounded-full font-bold">INHERITED</span>`
+            : `1. Rescue & Inheritance <span class="ml-1.5 px-2 py-0.5 text-[10px] bg-red-950/60 text-red-400 border border-red-500/40 rounded-full font-bold">EVACUATED</span>`;
+        }
+        if (badge) {
+          badge.innerText = isInheritance ? 'Inherited (Transferred to Heirs)' : 'Evacuated (Keys Burned)';
+          badge.className = isInheritance ? 'text-purple-400 font-mono font-bold' : 'text-red-400 font-mono font-bold';
+        }
+        if (dot) dot.className = isInheritance ? 'w-2.5 h-2.5 rounded-full bg-purple-500 animate-pulse' : 'w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse';
+
+        // Auto-open monitor modal on first detection
+        const sweepNotifKey = `aegis_notified_sweep_${signerAccount}_${info.epoch}_${info.state}`;
+        if (!sessionStorage.getItem(sweepNotifKey)) {
+          sessionStorage.setItem(sweepNotifKey, '1');
+          showToast(isInheritance ? '⚖️ INHERITANCE EXECUTED: Assets transferred to heirs!' : '🚨 VAULT EVACUATED: Emergency sweep confirmed.', !isInheritance);
+          openEvacMonitor();
+        }
+      } else if (hasActiveAddresses) {
+        if (evacuatedBanner) evacuatedBanner.classList.add('hidden');
         if (unconfiguredBanner) unconfiguredBanner.classList.add('hidden');
         if (activeBanner) {
           activeBanner.classList.remove('hidden');
@@ -4111,15 +6576,30 @@ if (typeof window !== "undefined") {
         if (tabRescue) {
           tabRescue.innerHTML = `1. Rescue & Inheritance <span class="ml-1.5 px-2 py-0.5 text-[10px] bg-nearGreen text-nearBlack rounded-full font-bold">ARMED</span>`;
         }
+        if (badge && !info.pending_policy) {
+          badge.innerText = 'Active & Enforced';
+          badge.className = 'text-nearGreen font-mono font-bold';
+        }
+        if (dot && !info.pending_policy) dot.className = 'w-2.5 h-2.5 rounded-full bg-nearGreen shadow-near-glow';
       } else {
         if (activeBanner) activeBanner.classList.add('hidden');
-        if (unconfiguredBanner) unconfiguredBanner.classList.remove('hidden');
+        if (evacuatedBanner) evacuatedBanner.classList.add('hidden');
+        if (unconfiguredBanner) {
+          if (shouldShowUnconfiguredBanner(info)) { unconfiguredBanner.classList.remove('hidden'); unconfiguredBanner.classList.add('flex'); }
+          else { unconfiguredBanner.classList.add('hidden'); unconfiguredBanner.classList.remove('flex'); }
+        }
         if (tabRescue) {
           tabRescue.innerText = `1. Rescue & Inheritance (Destinations)`;
         }
+        if (badge && !info.pending_policy) {
+          badge.innerText = 'Unconfigured';
+          badge.className = 'text-amber-300 font-mono font-bold';
+        }
+        if (dot && !info.pending_policy) dot.className = 'w-2.5 h-2.5 rounded-full bg-amber-400';
       }
 
       updateSaveButtonState(info);
+      checkUnallocatedFunds();
 
       // Check current input values if user has typed
       const anyInputFilled = inputIds.some(id => {
@@ -4129,8 +6609,6 @@ if (typeof window !== "undefined") {
       const isConfigured = hasActiveAddresses || anyInputFilled;
 
       // 4. Real on-chain Timelock & Pending Policy status
-      const badge = document.getElementById('addressStatusBadge');
-      const dot = document.getElementById('addressStatusDot');
       const cooldownAlert = document.getElementById('cooldownAlertBanner');
       const saveBtns = document.querySelectorAll('.save-policy-btn');
       const cancelBtns = document.querySelectorAll('.cancel-policy-btn');
@@ -4158,6 +6636,17 @@ if (typeof window !== "undefined") {
               : 'Security Timelock Elapsed — Ready to Apply On-Chain!';
           }
         }
+
+        // Top Heartbeat Timelock Notice
+        const hbNotice = document.getElementById('heartbeatTimelockNotice');
+        const hbText = document.getElementById('heartbeatTimelockText');
+        if (hbNotice && hbText) {
+          hbNotice.classList.remove('hidden');
+          hbText.innerText = secLeft > 0
+            ? `72h Timelock Active (${hoursLeft}h ${minsLeft}m left)`
+            : '72h Timelock Elapsed (Ready to Apply)';
+        }
+
         cancelBtns.forEach(b => b.classList.remove('hidden'));
         saveBtns.forEach(b => b.classList.add('hidden'));
 
@@ -4168,6 +6657,8 @@ if (typeof window !== "undefined") {
         }
       } else {
         if (cooldownAlert) cooldownAlert.classList.add('hidden');
+        const hbNotice = document.getElementById('heartbeatTimelockNotice');
+        if (hbNotice) hbNotice.classList.add('hidden');
         cancelBtns.forEach(b => b.classList.add('hidden'));
         applyBtns.forEach(b => b.classList.add('hidden'));
         saveBtns.forEach(b => {
@@ -4176,8 +6667,8 @@ if (typeof window !== "undefined") {
         });
 
         if (unconfiguredBanner) {
-          if (isConfigured) unconfiguredBanner.classList.add('hidden');
-          else unconfiguredBanner.classList.remove('hidden');
+          if (shouldShowUnconfiguredBanner(lastFetchedVaultInfo)) { unconfiguredBanner.classList.remove('hidden'); unconfiguredBanner.classList.add('flex'); }
+          else { unconfiguredBanner.classList.add('hidden'); unconfiguredBanner.classList.remove('flex'); }
         }
         if (badge) {
           badge.innerText = isConfigured ? 'Active & Enforced' : 'Unconfigured';
@@ -4211,31 +6702,530 @@ if (typeof window !== "undefined") {
       }
     }
 
-    // Official NEAR Multi-Wallet Selector Modal Handler
-    async function connectNearWallet() {
-      showToast('Opening Web3 Wallet Selector...');
+    // Multichain Web3 Wallet Definitions & Integrations
+    const WALLET_DEFINITIONS = [
+      {
+        id: 'meteor',
+        network: 'near',
+        name: 'Meteor Wallet',
+        desc: 'Browser Extension & Web Wallet',
+        chainTag: 'NEAR',
+        tagColor: 'text-emerald-400 bg-emerald-950/40 border-emerald-500/30',
+        icon: '<svg class="w-6 h-6 text-emerald-400" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L14.4 7.2L20 8L16 12L17 17.6L12 15L7 17.6L8 12L4 8L9.6 7.2L12 2Z"/></svg>',
+        isInstalled: () => typeof window !== 'undefined' && Boolean(window.meteorWallet),
+        connect: () => connectNearDirect('meteor')
+      },
+      {
+        id: 'here',
+        network: 'near',
+        name: 'HERE Wallet',
+        desc: 'Mobile App & Telegram Web3',
+        chainTag: 'NEAR',
+        tagColor: 'text-emerald-400 bg-emerald-950/40 border-emerald-500/30',
+        icon: '<svg class="w-6 h-6 text-amber-400" viewBox="0 0 24 24" fill="currentColor"><path d="M4 6h16v12H4z"/></svg>',
+        isInstalled: () => false,
+        connect: () => connectNearDirect('here')
+      },
+      {
+        id: 'nightly',
+        network: 'near',
+        name: 'Nightly',
+        desc: 'Multichain Browser Extension',
+        chainTag: 'NEAR / Multi',
+        tagColor: 'text-emerald-400 bg-emerald-950/40 border-emerald-500/30',
+        icon: '<svg class="w-6 h-6 text-purple-400" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10"/></svg>',
+        isInstalled: () => typeof window !== 'undefined' && Boolean(window.nightly?.near),
+        connect: () => connectNearDirect('nightly')
+      },
+      {
+        id: 'sender',
+        network: 'near',
+        name: 'Sender Wallet',
+        desc: 'NEAR Browser Extension',
+        chainTag: 'NEAR',
+        tagColor: 'text-emerald-400 bg-emerald-950/40 border-emerald-500/30',
+        icon: '<svg class="w-6 h-6 text-cyan-400" viewBox="0 0 24 24" fill="currentColor"><path d="M2 12l20-9-9 20-3-8-8-3z"/></svg>',
+        isInstalled: () => typeof window !== 'undefined' && Boolean(window.near),
+        connect: () => connectNearDirect('sender')
+      },
+      {
+        id: 'bitte',
+        network: 'near',
+        name: 'Bitte Wallet',
+        desc: 'Web3 AI Agent Wallet',
+        chainTag: 'NEAR',
+        tagColor: 'text-emerald-400 bg-emerald-950/40 border-emerald-500/30',
+        icon: '<svg class="w-6 h-6 text-textSilver" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3 7h7l-5.5 4.5 2 7L12 16l-6.5 4.5 2-7L2 9h7z"/></svg>',
+        isInstalled: () => false,
+        connect: () => connectNearDirect('bitte')
+      },
+      {
+        id: 'metamask',
+        network: 'evm',
+        name: 'MetaMask',
+        desc: 'Ethereum & EVM Browser Extension',
+        chainTag: 'Ethereum / EVM',
+        tagColor: 'text-blue-400 bg-blue-950/40 border-blue-500/30',
+        icon: '<svg class="w-6 h-6 text-orange-400" viewBox="0 0 32 32" fill="currentColor"><path d="M29.5 2L17.5 10.8 19.8 5.4zM2.5 2l11.9 8.9L12.2 5.4zM25.7 22.8l-3.3 5 7.1 2zM2.5 29.8l7.1-2-3.3-5.1z"/></svg>',
+        isInstalled: () => typeof window !== 'undefined' && Boolean(window.ethereum?.isMetaMask && !window.ethereum?.isRabby),
+        connect: () => connectEvmDirect('metamask')
+      },
+      {
+        id: 'rabby',
+        network: 'evm',
+        name: 'Rabby Wallet',
+        desc: 'DeFi EVM Browser Extension',
+        chainTag: 'Ethereum / EVM',
+        tagColor: 'text-blue-400 bg-blue-950/40 border-blue-500/30',
+        icon: '<svg class="w-6 h-6 text-blue-400" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10"/></svg>',
+        isInstalled: () => typeof window !== 'undefined' && Boolean(window.ethereum?.isRabby),
+        connect: () => connectEvmDirect('rabby')
+      },
+      {
+        id: 'coinbase',
+        network: 'evm',
+        name: 'Coinbase Wallet',
+        desc: 'EVM Extension & Smart Wallet',
+        chainTag: 'Ethereum / Base',
+        tagColor: 'text-blue-400 bg-blue-950/40 border-blue-500/30',
+        icon: '<svg class="w-6 h-6 text-blue-500" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="3" width="18" height="18" rx="4"/></svg>',
+        isInstalled: () => typeof window !== 'undefined' && Boolean(window.ethereum?.isCoinbaseWallet),
+        connect: () => connectEvmDirect('coinbase')
+      },
+      {
+        id: 'evm_generic',
+        network: 'evm',
+        name: 'Injected EVM Wallet',
+        desc: 'Standard Web3 Extension (window.ethereum)',
+        chainTag: 'EVM Compatible',
+        tagColor: 'text-blue-400 bg-blue-950/40 border-blue-500/30',
+        icon: '<svg class="w-6 h-6 text-indigo-400" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L4 12l8 10 8-10z"/></svg>',
+        isInstalled: () => typeof window !== 'undefined' && Boolean(window.ethereum),
+        connect: () => connectEvmDirect('generic')
+      },
+      {
+        id: 'phantom',
+        network: 'sol',
+        name: 'Phantom',
+        desc: 'Solana & Multichain Browser Extension',
+        chainTag: 'Solana',
+        tagColor: 'text-purple-400 bg-purple-950/40 border-purple-500/30',
+        icon: '<svg class="w-6 h-6 text-purple-400" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.5 2 2 6.5 2 12c0 3.9 2.2 7.2 5.5 8.9V19c0-1.1.9-2 2-2h5c1.1 0 2 .9 2 2v1.9c3.3-1.7 5.5-5 5.5-8.9 0-5.5-4.5-10-10-10z"/></svg>',
+        isInstalled: () => typeof window !== 'undefined' && Boolean(window.phantom?.solana || (window.solana && window.solana.isPhantom)),
+        connect: () => connectSolanaDirect('phantom')
+      },
+      {
+        id: 'solflare',
+        network: 'sol',
+        name: 'Solflare',
+        desc: 'Non-custodial Solana Extension',
+        chainTag: 'Solana',
+        tagColor: 'text-purple-400 bg-purple-950/40 border-purple-500/30',
+        icon: '<svg class="w-6 h-6 text-amber-500" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l4 8-4 4-4-4z"/></svg>',
+        isInstalled: () => typeof window !== 'undefined' && Boolean(window.solflare),
+        connect: () => connectSolanaDirect('solflare')
+      },
+      {
+        id: 'unisat',
+        network: 'btc',
+        name: 'UniSat Wallet',
+        desc: 'Native SegWit & Taproot Extension',
+        chainTag: 'Bitcoin',
+        tagColor: 'text-amber-400 bg-amber-950/40 border-amber-500/30',
+        icon: '<svg class="w-6 h-6 text-amber-400" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10"/></svg>',
+        isInstalled: () => typeof window !== 'undefined' && Boolean(window.unisat),
+        connect: () => connectBitcoinDirect('unisat')
+      },
+      {
+        id: 'okx_btc',
+        network: 'btc',
+        name: 'OKX Wallet',
+        desc: 'Bitcoin & Multichain Browser Extension',
+        chainTag: 'Bitcoin / Multi',
+        tagColor: 'text-amber-400 bg-amber-950/40 border-amber-500/30',
+        icon: '<svg class="w-6 h-6 text-white" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>',
+        isInstalled: () => typeof window !== 'undefined' && Boolean(window.okxwallet?.bitcoin),
+        connect: () => connectBitcoinDirect('okx')
+      }
+    ];
+
+    let currentNetworkFilter = 'all';
+
+    function openMultichainWalletModal() {
+      localStorage.removeItem('aegis_manual_logout');
+      const modal = document.getElementById('multichainWalletModal');
+      if (modal) {
+        modal.classList.remove('hidden');
+        filterWalletNetwork(currentNetworkFilter || 'all');
+        renderModalConnectedSummary();
+      }
+    }
+
+    function closeMultichainWalletModal() {
+      const modal = document.getElementById('multichainWalletModal');
+      if (modal) modal.classList.add('hidden');
+    }
+
+    function filterWalletNetwork(net) {
+      currentNetworkFilter = net;
+      ['all', 'near', 'evm', 'sol', 'btc'].forEach(n => {
+        const btn = document.getElementById('tabNet' + n.charAt(0).toUpperCase() + n.slice(1));
+        if (btn) {
+          if (n === net) {
+            btn.className = 'network-tab-btn active px-3.5 py-1.5 rounded-full text-xs font-mono font-bold transition flex items-center gap-1.5 bg-[#00F5D4]/20 text-[#00F5D4] border border-[#00F5D4]/40 cursor-pointer';
+          } else {
+            btn.className = 'network-tab-btn px-3.5 py-1.5 rounded-full text-xs font-mono font-bold transition flex items-center gap-1.5 bg-white/[0.04] text-[#8E99AD] hover:text-white border border-white/[0.08] cursor-pointer';
+          }
+        }
+      });
+      renderWalletsGrid(net);
+    }
+
+    function renderWalletsGrid(filter = 'all') {
+      const grid = document.getElementById('walletsGrid');
+      if (!grid) return;
+
+      const filtered = WALLET_DEFINITIONS.filter(w => filter === 'all' || w.network === filter);
+      grid.innerHTML = filtered.map(w => {
+        const installed = w.isInstalled();
+        return `
+          <div onclick="selectWalletToConnect('${w.id}')" class="flex items-center justify-between p-3.5 rounded-2xl bg-white/[0.03] hover:bg-white/[0.07] border border-white/[0.08] hover:border-[#00F5D4]/40 transition cursor-pointer group shadow-sm active:scale-98">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-xl bg-white/[0.04] border border-white/[0.08] flex items-center justify-center shrink-0 group-hover:scale-105 transition">
+                ${w.icon}
+              </div>
+              <div>
+                <div class="flex items-center gap-2">
+                  <span class="font-bold text-white text-sm tracking-tight group-hover:text-[#00F5D4] transition">${w.name}</span>
+                  ${installed ? '<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>Installed</span>' : ''}
+                </div>
+                <div class="text-[11px] text-[#8E99AD]">${w.desc}</div>
+              </div>
+            </div>
+            <span class="text-[10px] font-mono px-2 py-0.5 rounded-full border ${w.tagColor} shrink-0">${w.chainTag}</span>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function selectWalletToConnect(id) {
+      const w = WALLET_DEFINITIONS.find(item => item.id === id);
+      if (w && typeof w.connect === 'function') {
+        w.connect();
+      }
+    }
+
+    async function connectNearDirect(type) {
+      localStorage.removeItem('aegis_manual_logout');
+      closeMultichainWalletModal();
+      const moduleMap = {
+        meteor: 'meteor-wallet',
+        here: 'here-wallet',
+        nightly: 'nightly',
+        sender: 'sender',
+        bitte: 'bitte-wallet'
+      };
+      const moduleId = moduleMap[type] || 'meteor-wallet';
+      showToast(`Connecting ${type.toUpperCase()}...`);
+
+      // 1. Direct extension fast path for Meteor
+      if (type === 'meteor' && window.meteorWallet && typeof window.meteorWallet.signIn === 'function') {
+        try {
+          await window.meteorWallet.signIn({ contractId: CONTRACT_ID });
+          const acc = window.meteorWallet.accountId || (typeof window.meteorWallet.getAccountId === 'function' ? await window.meteorWallet.getAccountId() : null);
+          if (acc) {
+            localStorage.setItem('aegis_signer_account', acc);
+            updateWalletConnectedUI(acc);
+            fetchAccountNearBalance(acc);
+            fetchLiveContractState();
+            renderBunkerAddresses();
+            showToast(`Meteor connected: ${acc}`);
+            return;
+          }
+        } catch (e) {
+          console.warn('[Aegis] Direct meteor error, trying selector:', e);
+        }
+      }
+
+      // 2. Direct wallet module sign-in via selector (NO SECOND MODAL!)
       try {
         let provider = window.AegisWallet || window.AegisMeteor || window.AegisWalletBundle;
-        if (!provider || typeof provider.connectWallet !== 'function') {
+        if (!provider || typeof provider.signInWallet !== 'function') {
           for (let i = 0; i < 25; i++) {
             await new Promise(r => setTimeout(r, 100));
             provider = window.AegisWallet || window.AegisMeteor || window.AegisWalletBundle;
-            if (provider && typeof provider.connectWallet === 'function') break;
+            if (provider && typeof provider.signInWallet === 'function') break;
           }
         }
-        if (provider && typeof provider.connectWallet === 'function') {
-          await provider.connectWallet(CONTRACT_ID);
-        } else if (window.meteorWallet && typeof window.meteorWallet.signIn === 'function') {
-          await window.meteorWallet.signIn({ contractId: CONTRACT_ID });
-        } else {
-          showToast('Wallet selector initializing, please try again in a moment...');
+
+        if (provider && typeof provider.signInWallet === 'function') {
+          const res = await provider.signInWallet(moduleId, CONTRACT_ID);
+          const sel = await provider.getSelector(CONTRACT_ID);
+          const state = sel.store.getState();
+          const activeAcc = (Array.isArray(res) && res[0]?.accountId) ||
+                            state.accounts.find((acc) => acc.active)?.accountId ||
+                            state.accounts[0]?.accountId;
+          if (activeAcc) {
+            localStorage.setItem('aegis_signer_account', activeAcc);
+            localStorage.removeItem('aegis_manual_logout');
+            updateWalletConnectedUI(activeAcc);
+            fetchAccountNearBalance(activeAcc);
+            fetchLiveContractState();
+            renderBunkerAddresses();
+            showToast(`Connected: ${activeAcc}`);
+          }
+          return;
         }
+
+        showToast('Wallet provider initializing, please try again in a moment...');
       } catch (err) {
-        console.error('[Aegis] Wallet connection error:', err);
-        showToast(`Wallet error: ${err.message}`, true);
+        console.error(`[Aegis] ${type} connection error:`, err);
+        showToast(`Connection error: ${err.message}`, true);
       }
     }
-    const connectMeteorWallet = connectNearWallet; // Backward-compatibility
+
+    async function connectEvmDirect(type) {
+      try {
+        showToast('Connecting Ethereum / EVM extension...');
+        if (typeof window === 'undefined' || !window.ethereum) {
+          showToast('No EVM extension found. Please install MetaMask, Rabby, or Coinbase Wallet.', true);
+          return;
+        }
+        const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+        if (!accounts || accounts.length === 0) {
+          showToast('EVM connection rejected or no accounts selected.', true);
+          return;
+        }
+        const ethAddress = accounts[0];
+        localStorage.setItem('aegis_connected_evm', ethAddress);
+
+        // If no NEAR account connected yet, use EVM address as active preview for bunker derivation
+        if (!localStorage.getItem('aegis_signer_account')) {
+          localStorage.setItem('aegis_signer_account', ethAddress);
+        }
+
+        closeMultichainWalletModal();
+        updateMultichainConnectedUI();
+        renderBunkerAddresses();
+        showToast(`EVM connected: ${ethAddress.slice(0, 6)}...${ethAddress.slice(-4)}`);
+      } catch (err) {
+        console.error('[Aegis] EVM connection error:', err);
+        showToast(`EVM Error: ${err.message}`, true);
+      }
+    }
+
+    async function connectSolanaDirect(type) {
+      try {
+        showToast('Connecting Solana extension...');
+        const provider = window.phantom?.solana || window.solana;
+        if (!provider) {
+          showToast('No Solana extension found. Please install Phantom or Solflare.', true);
+          return;
+        }
+        const resp = await provider.connect();
+        const solAddress = resp.publicKey ? resp.publicKey.toString() : provider.publicKey.toString();
+        localStorage.setItem('aegis_connected_sol', solAddress);
+
+        // Auto-fill Solana destination fields in Tab 1 if empty
+        const pSol = document.getElementById('panicSolAddr');
+        if (pSol && !pSol.value.trim()) pSol.value = solAddress;
+
+        closeMultichainWalletModal();
+        updateMultichainConnectedUI();
+        await fetchAccountSolanaBalance(solAddress);
+        renderBunkerAddresses();
+        showToast(`Solana connected: ${solAddress.slice(0, 5)}...${solAddress.slice(-4)}`);
+      } catch (err) {
+        console.error('[Aegis] Solana connection error:', err);
+        showToast(`Solana Error: ${err.message}`, true);
+      }
+    }
+
+    async function connectBitcoinDirect(type) {
+      try {
+        showToast('Connecting Bitcoin extension...');
+        let btcAddress = null;
+        if (window.unisat) {
+          const accounts = await window.unisat.requestAccounts();
+          if (accounts && accounts.length > 0) btcAddress = accounts[0];
+        } else if (window.okxwallet?.bitcoin) {
+          const res = await window.okxwallet.bitcoin.connect();
+          if (res && res.address) btcAddress = res.address;
+        }
+        if (!btcAddress) {
+          showToast('No Bitcoin extension found. Please install UniSat or OKX Wallet.', true);
+          return;
+        }
+        localStorage.setItem('aegis_connected_btc', btcAddress);
+
+        closeMultichainWalletModal();
+        updateMultichainConnectedUI();
+        showToast(`Bitcoin connected: ${btcAddress.slice(0, 5)}...${btcAddress.slice(-4)}`);
+      } catch (err) {
+        console.error('[Aegis] Bitcoin connection error:', err);
+        showToast(`Bitcoin Error: ${err.message}`, true);
+      }
+    }
+
+    async function disconnectChain(chain) {
+      if (chain === 'near') {
+        localStorage.setItem('aegis_manual_logout', 'true');
+        localStorage.removeItem('aegis_signer_account');
+        localStorage.removeItem('aegis_wallet_type');
+        localStorage.removeItem('aegis_testnet_signer_key');
+        lastFetchedVaultInfo = null;
+        updateWalletDisconnectedUI();
+      } else if (chain === 'evm') {
+        localStorage.removeItem('aegis_connected_evm');
+        if (localStorage.getItem('aegis_signer_account')?.startsWith('0x')) {
+          localStorage.removeItem('aegis_signer_account');
+          lastFetchedVaultInfo = null;
+          updateWalletDisconnectedUI();
+        }
+      } else if (chain === 'sol') {
+        localStorage.removeItem('aegis_connected_sol');
+      } else if (chain === 'btc') {
+        localStorage.removeItem('aegis_connected_btc');
+      }
+      updateMultichainConnectedUI();
+      renderBunkerAddresses();
+      showToast(`Disconnected ${chain.toUpperCase()}`);
+    }
+
+    async function disconnectAllWallets() {
+      localStorage.setItem('aegis_manual_logout', 'true');
+      localStorage.removeItem('aegis_signer_account');
+      localStorage.removeItem('aegis_wallet_type');
+      localStorage.removeItem('aegis_testnet_signer_key');
+      localStorage.removeItem('aegis_connected_evm');
+      localStorage.removeItem('aegis_connected_sol');
+      localStorage.removeItem('aegis_connected_btc');
+      lastFetchedVaultInfo = null;
+      updateMultichainConnectedUI();
+      updateWalletDisconnectedUI();
+      renderBunkerAddresses();
+      closeMultichainWalletModal();
+      showToast('All wallets disconnected');
+    }
+
+    function renderModalConnectedSummary() {
+      const sumEl = document.getElementById('modalConnectedSummary');
+      const listEl = document.getElementById('modalConnectedList');
+      if (!sumEl || !listEl) return;
+
+      const nearAcc = localStorage.getItem('aegis_signer_account');
+      const evmAcc = localStorage.getItem('aegis_connected_evm');
+      const solAcc = localStorage.getItem('aegis_connected_sol');
+      const btcAcc = localStorage.getItem('aegis_connected_btc');
+
+      const items = [];
+      if (nearAcc && !nearAcc.startsWith('0x')) {
+        items.push({ chain: 'near', name: 'NEAR Protocol', addr: nearAcc, color: 'text-emerald-400' });
+      }
+      if (evmAcc) {
+        items.push({ chain: 'evm', name: 'Ethereum / EVM', addr: evmAcc, color: 'text-blue-400' });
+      }
+      if (solAcc) {
+        items.push({ chain: 'sol', name: 'Solana', addr: solAcc, color: 'text-purple-400' });
+      }
+      if (btcAcc) {
+        items.push({ chain: 'btc', name: 'Bitcoin', addr: btcAcc, color: 'text-amber-400' });
+      }
+
+      if (items.length === 0) {
+        sumEl.classList.add('hidden');
+        return;
+      }
+
+      sumEl.classList.remove('hidden');
+      listEl.innerHTML = items.map(item => `
+        <div class="flex items-center justify-between p-2 rounded-xl bg-white/[0.03] border border-white/[0.06]">
+          <div class="flex items-center gap-2 overflow-hidden">
+            <span class="w-2 h-2 rounded-full ${item.color.replace('text-', 'bg-')} shrink-0"></span>
+            <span class="text-[#8E99AD] font-semibold">${item.name}:</span>
+            <span class="text-white truncate max-w-[200px] sm:max-w-[280px]" title="${item.addr}">${item.addr}</span>
+          </div>
+          <button onclick="disconnectChain('${item.chain}')" class="text-[11px] text-[#8E99AD] hover:text-red-400 transition ml-2 shrink-0 cursor-pointer">Disconnect</button>
+        </div>
+      `).join('');
+    }
+
+    function updateMultichainConnectedUI() {
+      const nearAcc = localStorage.getItem('aegis_signer_account');
+      const evmAcc = localStorage.getItem('aegis_connected_evm');
+      const solAcc = localStorage.getItem('aegis_connected_sol');
+      const btcAcc = localStorage.getItem('aegis_connected_btc');
+
+      const hasAnyWallet = Boolean(nearAcc || evmAcc || solAcc || btcAcc);
+      const connectBtn = document.getElementById('connectWalletBtn');
+      const connectedPill = document.getElementById('connectedWalletPill');
+      const nameEl = document.getElementById('headerAccountName');
+      const nameMobEl = document.getElementById('headerAccountNameMobile');
+      const badgesEl = document.getElementById('headerMultichainBadges');
+
+      if (hasAnyWallet) {
+        if (connectBtn) connectBtn.classList.add('hidden');
+        if (connectedPill) connectedPill.classList.remove('hidden');
+
+        // Primary display
+        const primaryAcc = nearAcc || evmAcc || solAcc || btcAcc;
+        const isNear = Boolean(nearAcc && !nearAcc.startsWith('0x'));
+        const isSol = Boolean(!nearAcc && solAcc);
+        const isEvm = Boolean(!nearAcc && !solAcc && evmAcc);
+
+        if (nameEl) {
+          nameEl.innerText = primaryAcc.length > 20 ? primaryAcc.slice(0, 8) + '...' + primaryAcc.slice(-6) : primaryAcc;
+          nameEl.title = primaryAcc;
+          nameEl.className = isNear
+            ? 'font-bold text-nearGreen hidden sm:inline whitespace-nowrap'
+            : (isSol ? 'font-bold text-purple-400 hidden sm:inline whitespace-nowrap' : 'font-bold text-blue-400 hidden sm:inline whitespace-nowrap');
+        }
+        if (nameMobEl) {
+          nameMobEl.innerText = primaryAcc.slice(0, 6) + '...';
+          nameMobEl.className = isNear
+            ? 'font-bold text-nearGreen sm:hidden whitespace-nowrap'
+            : (isSol ? 'font-bold text-purple-400 sm:hidden whitespace-nowrap' : 'font-bold text-blue-400 sm:hidden whitespace-nowrap');
+        }
+
+        // Live balance update for header
+        if (isNear) {
+          fetchAccountNearBalance(nearAcc);
+        } else if (isSol) {
+          fetchAccountSolanaBalance(solAcc);
+        } else if (isEvm) {
+          fetchAccountEvmBalance(evmAcc);
+        } else if (isBtc) {
+          fetchAccountBtcBalance(btcAcc);
+        }
+
+        // Secondary badges
+        if (badgesEl) {
+          badgesEl.innerHTML = '';
+          if (evmAcc && primaryAcc !== evmAcc) {
+            badgesEl.innerHTML += `<span class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-blue-500/15 text-blue-300 border border-blue-500/30" title="${evmAcc}">ETH: ${evmAcc.slice(0, 6)}...</span>`;
+          }
+          if (solAcc && primaryAcc !== solAcc) {
+            badgesEl.innerHTML += `<span class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-purple-500/15 text-purple-300 border border-purple-500/30" title="${solAcc}">SOL: ${solAcc.slice(0, 5)}...</span>`;
+          }
+          if (btcAcc && primaryAcc !== btcAcc) {
+            badgesEl.innerHTML += `<span class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-amber-500/15 text-amber-300 border border-amber-500/30" title="${btcAcc}">BTC: ${btcAcc.slice(0, 5)}...</span>`;
+          }
+          badgesEl.className = badgesEl.innerHTML ? 'flex items-center gap-1.5 border-l border-white/10 pl-2' : 'hidden';
+        }
+
+        updateCountdownDisplay();
+      } else {
+        updateWalletDisconnectedUI();
+      }
+
+      renderModalConnectedSummary();
+    }
+
+    // Direct NEAR Wallet Selector Handler (no duplicate modal)
+    async function connectNearWallet(walletId = 'meteor') {
+      return await connectNearDirect(walletId);
+    }
+    const connectMeteorWallet = openMultichainWalletModal; // Backward-compatibility
 
     async function initNearWallet() {
       let provider = window.AegisWallet || window.AegisMeteor || window.AegisWalletBundle;
@@ -4251,22 +7241,38 @@ if (typeof window !== "undefined") {
           const sel = await provider.getSelector(CONTRACT_ID);
           const state = sel.store.getState();
           const activeAcc = state.accounts.find((acc) => acc.active)?.accountId || state.accounts[0]?.accountId;
-          if (activeAcc) {
+          const isManualLogout = localStorage.getItem('aegis_manual_logout') === 'true';
+          if (activeAcc && !isManualLogout) {
             localStorage.setItem('aegis_signer_account', activeAcc);
             updateWalletConnectedUI(activeAcc);
             fetchAccountNearBalance(activeAcc);
             fetchLiveContractState();
             renderBunkerAddresses();
           } else {
-            localStorage.removeItem('aegis_signer_account');
+            if (!activeAcc) localStorage.removeItem('aegis_signer_account');
             updateWalletDisconnectedUI();
             renderBunkerAddresses();
           }
 
           sel.store.observable.subscribe((nextState) => {
+            if (localStorage.getItem('aegis_manual_logout') === 'true') return;
             const acc = nextState.accounts.find((a) => a.active)?.accountId || nextState.accounts[0]?.accountId;
             if (acc) {
               const prev = localStorage.getItem('aegis_signer_account');
+              if (prev && prev !== acc) {
+                // Switching account: reset all user inputs, caches and DOM balances immediately!
+                userHasInteractedWithInputs = false;
+                lastFetchedVaultInfo = null;
+                inputIds.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+                const btcBalEl = document.getElementById('btcBalanceText');
+                const evmBalEl = document.getElementById('evmBalanceText');
+                const solBalEl = document.getElementById('solBalanceText');
+                const nearBalEl = document.getElementById('nearBalanceText');
+                if (btcBalEl) btcBalEl.innerHTML = '0.0000 <span class="text-base font-normal text-[#B0B9C9]">BTC</span>';
+                if (evmBalEl) evmBalEl.innerHTML = '0.0000 <span class="text-base font-normal text-[#B0B9C9]">ETH</span>';
+                if (solBalEl) solBalEl.innerHTML = '0.0000 <span class="text-base font-normal text-[#B0B9C9]">SOL</span>';
+                if (nearBalEl) nearBalEl.innerHTML = '0.0000 <span class="text-base font-normal text-[#B0B9C9]">NEAR</span>';
+              }
               localStorage.setItem('aegis_signer_account', acc);
               updateWalletConnectedUI(acc);
               fetchAccountNearBalance(acc);
@@ -4324,6 +7330,37 @@ if (typeof window !== "undefined") {
       if (connectBtn) connectBtn.classList.remove('hidden');
       if (connectedPill) connectedPill.classList.add('hidden');
 
+      // 1. Reset client state
+      lastFetchedVaultInfo = null;
+      currentEpochIndex = 0;
+      remainingSeconds = 0;
+      userHasInteractedWithInputs = false;
+
+      // 2. Clear all address input boxes
+      inputIds.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+      });
+
+      // 3. Hide all active banners and alert dialogs
+      const activeBanner = document.getElementById('activePolicyBanner');
+      if (activeBanner) activeBanner.classList.add('hidden');
+      const unconfigBanner = document.getElementById('unconfiguredBanner');
+      if (unconfigBanner) unconfigBanner.classList.remove('hidden');
+      const burnedBanner = document.getElementById('bunkerBurnedBanner');
+      if (burnedBanner) burnedBanner.classList.add('hidden');
+      const unarmedBanner = document.getElementById('bunkerUnarmedBanner');
+      if (unarmedBanner) unarmedBanner.classList.add('hidden');
+      const unallocDep = document.getElementById('unallocatedDepositAlert');
+      if (unallocDep) { unallocDep.classList.add('hidden'); unallocDep.classList.remove('flex'); }
+      const unallocPol = document.getElementById('unallocatedPolicyAlert');
+      if (unallocPol) { unallocPol.classList.add('hidden'); unallocPol.classList.remove('flex'); }
+
+      const tabRescue = document.getElementById('tab-rescue');
+      if (tabRescue) tabRescue.innerText = '1. Rescue & Inheritance (Destinations)';
+
+      updateSaveButtonState(null);
+
       // Hero HUD state: Disconnected / Awaiting Arming
       const pulseDot = document.getElementById('heartbeatPulseDot');
       const cardTitle = document.getElementById('heartbeatCardTitle');
@@ -4351,11 +7388,47 @@ if (typeof window !== "undefined") {
         pingBtn.className = 'w-full bg-purple-600 hover:bg-purple-500 text-white font-extrabold py-3.5 px-6 near-pill-btn text-sm sm:text-base tracking-wide transition shadow-sm active:scale-98 flex items-center justify-center gap-2';
       }
       if (pingBtnText) pingBtnText.innerText = 'Connect Wallet to Arm Vault';
+      const hbNoticeReset = document.getElementById('heartbeatTimelockNotice');
+      if (hbNoticeReset) hbNoticeReset.classList.add('hidden');
+
+      // Reset Header Account and Balance
+      const headName = document.getElementById('headerAccountName');
+      if (headName) headName.innerText = 'account.testnet';
+      const headBal = document.getElementById('headerAccountBalance');
+      if (headBal) headBal.innerText = '0.00 NEAR';
+
+      // Reset Bunker Balances to 0.0000
+      const btcBalEl = document.getElementById('btcBalanceText');
+      const btcUsdEl = document.getElementById('btcUsdText');
+      const evmBalEl = document.getElementById('evmBalanceText');
+      const evmUsdEl = document.getElementById('evmUsdText');
+      const solBalEl = document.getElementById('solBalanceText');
+      const solUsdEl = document.getElementById('solUsdText');
+      const nearBalEl = document.getElementById('nearBalanceText');
+      const nearUsdEl = document.getElementById('nearUsdText');
+      const syncBadge = document.getElementById('liveSyncBadge');
+      const syncDot = document.getElementById('liveSyncDot');
+
+      if (btcBalEl) btcBalEl.innerHTML = '0.0000 <span class="text-base font-normal text-[#B0B9C9]">BTC</span>';
+      if (btcUsdEl) btcUsdEl.innerText = '≈ 0.00 USD';
+      if (evmBalEl) evmBalEl.innerHTML = '0.0000 <span class="text-base font-normal text-[#B0B9C9]">ETH</span>';
+      if (evmUsdEl) evmUsdEl.innerText = '≈ 0.00 USD';
+      if (solBalEl) solBalEl.innerHTML = '0.0000 <span class="text-base font-normal text-[#B0B9C9]">SOL</span>';
+      if (solUsdEl) solUsdEl.innerText = '≈ 0.00 USD';
+      if (nearBalEl) nearBalEl.innerHTML = '0.0000 <span class="text-base font-normal text-[#B0B9C9]">NEAR</span>';
+      if (nearUsdEl) nearUsdEl.innerText = '≈ 0.00 USD';
+      if (syncBadge) syncBadge.innerText = 'Connect Wallet to Sync';
+      if (syncDot) syncDot.className = 'w-2 h-2 rounded-full bg-white/20';
+
+      renderBunkerAddresses();
+      checkUnallocatedFunds();
     }
 
     async function fetchAccountNearBalance(accountId) {
+      if (!accountId) return;
       try {
-        const response = await fetch(NEAR_RPC_URLS[0], {
+        const rpc = NEAR_RPC_URLS[currentRpcIndex] || NEAR_RPC_URLS[0];
+        const response = await fetch(rpc, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -4364,7 +7437,7 @@ if (typeof window !== "undefined") {
             method: 'query',
             params: {
               request_type: 'view_account',
-              finality: 'final',
+              finality: 'optimistic',
               account_id: accountId
             }
           })
@@ -4376,36 +7449,107 @@ if (typeof window !== "undefined") {
           const frac = (yocto % 1000000000000000000000000n) / 10000000000000000000000n;
           const formatted = `${whole}.${frac.toString().padStart(2, '0').slice(0, 2)}`;
           const balEl = document.getElementById('headerAccountBalance');
-          if (balEl) balEl.innerText = `${formatted} NEAR`;
+          if (balEl) {
+            balEl.innerText = `${formatted} NEAR`;
+            balEl.className = 'text-[#A6B0C3] border-l border-white/10 pl-2 font-normal hidden sm:inline whitespace-nowrap';
+          }
         }
       } catch (e) {
         console.warn('Balance check error:', e);
       }
     }
 
+    async function fetchAccountSolanaBalance(address) {
+      if (!address) return;
+      try {
+        const solRes = await fetch('https://api.devnet.solana.com', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            id: 1,
+            method: 'getBalance',
+            params: [address]
+          })
+        }).then(r => r.json());
+        if (solRes?.result?.value !== undefined) {
+          const solVal = solRes.result.value / 1e9;
+          const balEl = document.getElementById('headerAccountBalance');
+          if (balEl) {
+            balEl.innerText = `${solVal.toFixed(2)} SOL`;
+            balEl.className = 'text-purple-300 border-l border-white/10 pl-2 font-normal hidden sm:inline whitespace-nowrap';
+          }
+        }
+      } catch (e) {
+        console.warn('Solana balance query error:', e);
+      }
+    }
+
+    async function fetchAccountEvmBalance(address) {
+      if (!address) return;
+      try {
+        const evmRes = await fetch('https://ethereum-sepolia-rpc.publicnode.com', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            id: 1,
+            method: 'eth_getBalance',
+            params: [address, 'latest']
+          })
+        }).then(r => r.json());
+        if (evmRes?.result) {
+          const wei = BigInt(evmRes.result);
+          const ethVal = Number(wei) / 1e18;
+          const balEl = document.getElementById('headerAccountBalance');
+          if (balEl) {
+            balEl.innerText = `${ethVal.toFixed(4)} ETH`;
+            balEl.className = 'text-blue-300 border-l border-white/10 pl-2 font-normal hidden sm:inline whitespace-nowrap';
+          }
+        }
+      } catch (e) {
+        console.warn('EVM balance query error:', e);
+      }
+    }
+
+    async function fetchAccountBtcBalance(address) {
+      if (!address) return;
+      try {
+        const btcRes = await fetch(`https://mempool.space/testnet/api/address/${address}`).then(r => r.json());
+        if (btcRes?.chain_stats) {
+          const funded = (btcRes.chain_stats.funded_txo_sum || 0) - (btcRes.chain_stats.spent_txo_sum || 0);
+          const btcVal = funded / 1e8;
+          const balEl = document.getElementById('headerAccountBalance');
+          if (balEl) {
+            balEl.innerText = `${btcVal.toFixed(4)} BTC`;
+            balEl.className = 'text-amber-300 border-l border-white/10 pl-2 font-normal hidden sm:inline whitespace-nowrap';
+          }
+        }
+      } catch (e) {
+        console.warn('BTC balance query error:', e);
+      }
+    }
+
     async function disconnectWallet() {
-      const provider = window.AegisWallet || window.AegisMeteor;
-      if (provider && typeof provider.disconnectWallet === 'function') {
-        try { await provider.disconnectWallet(); } catch (e) {}
-      }
-      if (window.meteorWallet && typeof window.meteorWallet.signOut === 'function') {
-        try { window.meteorWallet.signOut(); } catch (e) {}
-      }
       localStorage.removeItem('aegis_signer_account');
       localStorage.removeItem('aegis_wallet_type');
       localStorage.removeItem('aegis_testnet_signer_key');
+      localStorage.removeItem('aegis_connected_evm');
+      localStorage.removeItem('aegis_connected_sol');
+      localStorage.removeItem('aegis_connected_btc');
       updateWalletDisconnectedUI();
+      updateMultichainConnectedUI();
       renderBunkerAddresses();
       showToast('Wallet disconnected');
     }
 
     // Direct On-Chain Contract Caller via NEAR Testnet RPC
-    async function dispatchNearTransaction(methodName, args = {}) {
+    async function dispatchNearTransaction(methodName, args = {}, depositOverride = '0') {
       showToast(`Broadcasting on-chain ${methodName}() to NEAR Testnet...`);
       try {
         console.log(`[Aegis On-Chain] Dispatching ${methodName} on ${CONTRACT_ID} with args:`, args);
 
-        const attachedDeposit = '0';
+        const attachedDeposit = String(depositOverride || '0');
 
         // 1. Signed in via Meteor Wallet (Wallet Selector or Direct Injection)
         if (window.AegisMeteor) {
@@ -4421,7 +7565,12 @@ if (typeof window !== "undefined") {
           showToast(`✅ ${methodName}() confirmed on-chain! Tx: ${txHash.slice(0, 8)}...`);
           userHasInteractedWithInputs = false;
           isEditing = false;
-          setTimeout(() => fetchLiveContractState(), 2000);
+          const currentSigner = localStorage.getItem('aegis_signer_account');
+          setTimeout(() => {
+            fetchLiveContractState();
+            if (currentSigner) fetchAccountNearBalance(currentSigner);
+            fetchLiveBalances(true);
+          }, 2000);
           return outcome;
         }
 
@@ -4456,13 +7605,17 @@ if (typeof window !== "undefined") {
           showToast(`✅ ${methodName}() confirmed on-chain! Tx: ${txHash.slice(0, 8)}...`);
           userHasInteractedWithInputs = false;
           isEditing = false;
-          setTimeout(() => fetchLiveContractState(), 2000);
+          setTimeout(() => {
+            fetchLiveContractState();
+            fetchAccountNearBalance(signerAccountId);
+            fetchLiveBalances(true);
+          }, 2000);
           return outcome;
         }
 
         // 3. Not signed in: Trigger Wallet Connect
         showToast('Please connect your Web3 wallet first!', true);
-        connectNearWallet();
+        openMultichainWalletModal();
       } catch (err) {
         console.error(`❌ [Aegis] Failed to dispatch ${methodName}:`, err);
         showToast(`Error dispatching ${methodName}: ${err.message}`, true);
@@ -4477,18 +7630,165 @@ if (typeof window !== "undefined") {
       const nearEl = document.getElementById('nearAddress');
       const pill = document.getElementById('bunkerEpochPill');
       const banner = document.getElementById('bunkerBurnedBanner');
+      const unarmedBanner = document.getElementById('bunkerUnarmedBanner');
 
+      const chains = [
+        {
+          id: 'btc',
+          name: 'Bitcoin',
+          addrEl: btcEl,
+          actionsEl: document.getElementById('btcActions'),
+          hasEgress: Boolean(lastFetchedVaultInfo?.backup?.btc?.trim() && lastFetchedVaultInfo?.heirs?.btc?.trim())
+        },
+        {
+          id: 'evm',
+          name: 'Ethereum',
+          addrEl: evmEl,
+          actionsEl: document.getElementById('evmActions'),
+          hasEgress: Boolean(lastFetchedVaultInfo?.backup?.evm?.trim() && lastFetchedVaultInfo?.heirs?.evm?.trim())
+        },
+        {
+          id: 'sol',
+          name: 'Solana',
+          addrEl: solEl,
+          actionsEl: document.getElementById('solActions'),
+          hasEgress: Boolean(lastFetchedVaultInfo?.backup?.sol?.trim() && lastFetchedVaultInfo?.heirs?.sol?.trim())
+        },
+        {
+          id: 'near',
+          name: 'NEAR Protocol',
+          addrEl: nearEl,
+          actionsEl: document.getElementById('nearActions'),
+          hasEgress: Boolean(lastFetchedVaultInfo?.backup?.near?.trim() && lastFetchedVaultInfo?.heirs?.near?.trim())
+        }
+      ];
+
+      const renderActiveButtons = (c) => `
+        <button onclick="copyAddr('${c.id}Address')" class="py-2.5 px-3.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.08] hover:border-nearGreen/50 text-xs sm:text-sm font-bold text-white transition-all flex items-center justify-center gap-1.5 shadow-sm active:scale-98">
+          <svg class="w-4 h-4 text-nearGreen" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+          <span>Copy</span>
+        </button>
+        <button onclick="openQr('${c.name}', document.getElementById('${c.id}Address').dataset.full)" class="py-2.5 px-3.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.08] hover:border-white/[0.25] text-xs sm:text-sm font-bold text-[#C5CAD3] hover:text-white transition-all flex items-center justify-center gap-1.5 shadow-sm active:scale-98">
+          <svg class="w-4 h-4 text-[#8C929D]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" /></svg>
+          <span>QR Code</span>
+        </button>
+      `;
+
+      // 1. Disconnected State
       if (!currentSigner) {
-        if (btcEl) { btcEl.innerText = 'Connect wallet to reveal address'; btcEl.dataset.full = ''; }
-        if (evmEl) { evmEl.innerText = 'Connect wallet to reveal address'; evmEl.dataset.full = ''; }
-        if (solEl) { solEl.innerText = 'Connect wallet to reveal address'; solEl.dataset.full = ''; }
-        if (nearEl) { nearEl.innerText = 'Connect wallet to reveal address'; nearEl.dataset.full = ''; }
+        chains.forEach(c => {
+          if (c.addrEl) {
+            c.addrEl.innerText = 'Connect wallet to reveal address';
+            c.addrEl.className = 'font-mono text-xs sm:text-[13px] leading-relaxed text-[#8C929D] break-all select-none font-medium';
+            c.addrEl.dataset.full = '';
+          }
+          if (c.actionsEl) {
+            c.actionsEl.innerHTML = `<div class="col-span-2 py-2 px-3 rounded-xl bg-white/[0.03] border border-white/[0.08] text-center text-xs font-mono text-[#8C929D] flex items-center justify-center gap-1.5 select-none">Connect Wallet to Unlock</div>`;
+          }
+        });
         if (pill) {
           pill.innerText = 'Derivation Path: Connect Wallet to View';
           pill.className = 'text-[11px] font-mono font-bold text-[#8E99AD] bg-white/[0.04] border border-white/[0.08] px-2.5 py-0.5 rounded-full whitespace-nowrap';
-          if (banner) banner.classList.add('hidden');
         }
+        if (banner) banner.classList.add('hidden');
+        if (unarmedBanner) unarmedBanner.classList.add('hidden');
+        checkUnallocatedFunds();
         return;
+      }
+
+      const isBurned = isVaultEvacuatedOrBurned();
+
+      // 2. Guard 1: Evacuated or Burned bunker (Keys exposed/evacuated - NEVER show deposit addresses!)
+      if (isBurned) {
+        const isInheritance = lastFetchedVaultInfo && lastFetchedVaultInfo.state === 'Inheritance';
+        const burnedMsg = isInheritance
+          ? `Epoch ${currentEpochIndex} Inherited · Deposits Disabled`
+          : `Epoch ${currentEpochIndex} Burned · Deposits Disabled`;
+        chains.forEach(c => {
+          if (c.addrEl) {
+            c.addrEl.innerText = burnedMsg;
+            c.addrEl.className = isInheritance
+              ? 'font-mono text-xs leading-relaxed text-purple-400 break-all select-none font-bold'
+              : 'font-mono text-xs leading-relaxed text-red-400 break-all select-none font-bold';
+            c.addrEl.dataset.full = '';
+          }
+          if (c.actionsEl) {
+            c.actionsEl.innerHTML = `
+              <div class="col-span-2 py-2.5 px-3 rounded-xl ${isInheritance ? 'bg-purple-950/30 border border-purple-500/20 text-purple-300' : 'bg-red-950/30 border border-red-500/20 text-red-400'} text-center text-xs font-mono flex items-center justify-center gap-1.5 select-none">
+                <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
+                <span>${isInheritance ? 'Epoch Closed · Assets Transferred' : 'Epoch Burned · Deposits Disabled'}</span>
+              </div>
+            `;
+          }
+        });
+        if (pill) {
+          pill.innerText = isInheritance
+            ? `Epoch ${currentEpochIndex} · Inherited (Transferred)`
+            : `Epoch ${currentEpochIndex} · Burned (Inactive)`;
+          pill.className = isInheritance
+            ? 'text-[11px] font-mono font-bold text-purple-300 bg-purple-950/40 border border-purple-500/30 px-2.5 py-0.5 rounded-full whitespace-nowrap'
+            : 'text-[11px] font-mono font-bold text-red-400 bg-red-950/40 border border-red-500/30 px-2.5 py-0.5 rounded-full whitespace-nowrap';
+        }
+        if (banner) {
+          banner.classList.remove('hidden');
+          const bannerTitle = banner.querySelector('h4');
+          const bannerText = banner.querySelector('p');
+          if (bannerTitle) {
+            bannerTitle.innerText = isInheritance
+              ? 'Inheritance Finalized — Path Rotation Required'
+              : 'Epoch Exhausted — Path Rotation Required';
+            bannerTitle.className = isInheritance
+              ? 'text-sm font-extrabold text-purple-200'
+              : 'text-sm font-extrabold text-red-200';
+          }
+          if (bannerText) {
+            bannerText.innerText = isInheritance
+              ? 'Active vault assets were autonomously transferred to designated heirs. Deposits are permanently disabled for this epoch. Activate the next clean bunker to derive fresh uncompromised addresses.'
+              : 'Active epoch keys were exposed on-chain during evacuation. Activate the next bunker to derive fresh uncompromised addresses.';
+          }
+        }
+        if (unarmedBanner) unarmedBanner.classList.add('hidden');
+        checkUnallocatedFunds();
+        return;
+      }
+
+      // 3. Vault is Active / Configurable
+      if (banner) banner.classList.add('hidden');
+
+      const isArmed = lastFetchedVaultInfo && lastFetchedVaultInfo.state === 'Active' && hasConfiguredDestinations(lastFetchedVaultInfo);
+
+      // If Bunker is NOT armed (Unconfigured or no egress addresses configured at all):
+      if (!isArmed) {
+        if (pill) {
+          pill.innerText = `Derivation Path: aegis/${currentSigner}/${currentEpochIndex} (Unarmed)`;
+          pill.className = 'text-[11px] font-mono font-bold text-amber-400 bg-amber-950/40 border border-amber-500/30 px-2.5 py-0.5 rounded-full whitespace-nowrap';
+        }
+        if (unarmedBanner) unarmedBanner.classList.remove('hidden');
+
+        chains.forEach(c => {
+          if (c.addrEl) {
+            c.addrEl.innerText = 'Bunker Unarmed · Configure Egress First';
+            c.addrEl.className = 'font-mono text-xs leading-relaxed text-amber-400/80 break-all select-none font-semibold';
+            c.addrEl.dataset.full = '';
+          }
+          if (c.actionsEl) {
+            c.actionsEl.innerHTML = `
+              <button type="button" onclick="switchTab('rescue')" class="col-span-2 py-2 px-3 rounded-xl bg-amber-950/25 hover:bg-amber-950/40 border border-amber-500/25 hover:border-amber-500/40 text-center text-xs font-mono text-amber-400 flex items-center justify-center gap-1.5 transition active:scale-98 cursor-pointer">
+                <svg class="w-3.5 h-3.5 text-amber-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+                <span>Locked · Arm Vault in Tab 1 ↗</span>
+              </button>
+            `;
+          }
+        });
+        checkUnallocatedFunds();
+        return;
+      }
+
+      if (unarmedBanner) unarmedBanner.classList.add('hidden');
+
+      if (pill) {
+        pill.innerText = `Derivation Path: aegis/${currentSigner}/${currentEpochIndex} (Active)`;
+        pill.className = 'text-[11px] font-mono font-bold text-nearGreen bg-nearGreenMuted border border-nearGreen/30 px-2.5 py-0.5 rounded-full whitespace-nowrap';
       }
 
       // 1. Check local dynamic cache
@@ -4510,7 +7810,7 @@ if (typeof window !== "undefined") {
           btc: 'Deriving via NEAR MPC...',
           evm: 'Deriving via NEAR MPC...',
           sol: 'Deriving via NEAR MPC...',
-          near: CONTRACT_ID
+          near: 'Deriving via NEAR MPC...'
         };
         if (window.AegisMeteor && typeof window.AegisMeteor.deriveVaultAddresses === 'function') {
           window.AegisMeteor.deriveVaultAddresses(CONTRACT_ID, `aegis/${currentSigner}/${currentEpochIndex}`, 'testnet')
@@ -4523,42 +7823,68 @@ if (typeof window !== "undefined") {
         }
       }
 
-      if (btcEl) {
-        btcEl.innerText = addresses.btc;
-        btcEl.dataset.full = addresses.btc;
-      }
-      if (evmEl) {
-        evmEl.innerText = addresses.evm;
-        evmEl.dataset.full = addresses.evm;
-      }
-      if (solEl) {
-        solEl.innerText = addresses.sol;
-        solEl.dataset.full = addresses.sol;
-      }
-      if (nearEl) {
-        nearEl.innerText = addresses.near || CONTRACT_ID;
-        nearEl.dataset.full = addresses.near || CONTRACT_ID;
-      }
-
-      const isBurned = isVaultEvacuatedOrBurned();
-      if (pill) {
-        if (isBurned) {
-          pill.innerText = `Epoch ${currentEpochIndex} · Burned`;
-          pill.className = 'text-[11px] font-mono font-bold text-red-400 bg-red-950/40 border border-red-500/30 px-2.5 py-0.5 rounded-full whitespace-nowrap';
-          if (banner) banner.classList.remove('hidden');
-        } else if (!hasConfiguredDestinations()) {
-          pill.innerText = `Derivation Path: aegis/${currentSigner}/${currentEpochIndex} (Unarmed)`;
-          pill.className = 'text-[11px] font-mono font-bold text-amber-400 bg-amber-950/40 border border-amber-500/30 px-2.5 py-0.5 rounded-full whitespace-nowrap';
-          if (banner) banner.classList.add('hidden');
+      // 4. Per-Chain Gating Display: Only show deposit address if BOTH panic & heir are set for this chain!
+      chains.forEach(c => {
+        if (!c.hasEgress) {
+          if (c.addrEl) {
+            c.addrEl.innerText = 'Egress Incomplete · Set in Tab 1';
+            c.addrEl.className = 'font-mono text-xs leading-relaxed text-amber-400/80 break-all select-none font-semibold';
+            c.addrEl.dataset.full = '';
+          }
+          if (c.actionsEl) {
+            c.actionsEl.innerHTML = `
+              <button type="button" onclick="switchTab('rescue')" class="col-span-2 py-2 px-3 rounded-xl bg-amber-950/25 hover:bg-amber-950/40 border border-amber-500/25 hover:border-amber-500/40 text-center text-xs font-mono text-amber-400 flex items-center justify-center gap-1.5 transition active:scale-98 cursor-pointer">
+                <svg class="w-3.5 h-3.5 text-amber-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+                <span>Locked · Set Egress in Tab 1 ↗</span>
+              </button>
+            `;
+          }
         } else {
-          pill.innerText = `Derivation Path: aegis/${currentSigner}/${currentEpochIndex} (Active)`;
-          pill.className = 'text-[11px] font-mono font-bold text-nearGreen bg-nearGreenMuted border border-nearGreen/30 px-2.5 py-0.5 rounded-full whitespace-nowrap';
-          if (banner) banner.classList.add('hidden');
+          const addr = addresses[c.id] || '';
+          if (c.addrEl) {
+            c.addrEl.innerText = addr;
+            c.addrEl.className = 'font-mono text-xs sm:text-[13px] leading-relaxed text-[#8C929D] break-all select-all font-medium group-hover:text-nearGreen transition-colors';
+            c.addrEl.dataset.full = addr;
+          }
+          if (c.actionsEl) {
+            c.actionsEl.innerHTML = renderActiveButtons(c);
+          }
         }
-      }
+      });
+
+      checkUnallocatedFunds();
     }
 
-    const CACHE_TTL_MS = 60 * 60 * 1000; // 1-hour cache interval to minimize RPC overhead
+    const CACHE_TTL_MS = 30 * 1000; // 30-second cache interval for responsive sync
+    let lastBalancesSyncedTimestamp = 0;
+
+    function updateLiveSyncTimer() {
+      const syncBadge = document.getElementById('liveSyncBadge');
+      if (!syncBadge) return;
+      const isConnected = !!localStorage.getItem('aegis_signer_account');
+      if (!isConnected) {
+        syncBadge.innerText = 'Connect Wallet to Sync';
+        return;
+      }
+      if (isVaultEvacuatedOrBurned()) {
+        syncBadge.innerText = 'Evacuated · Live Synced';
+        return;
+      }
+      if (!lastBalancesSyncedTimestamp) {
+        syncBadge.innerText = 'Live On-Chain Synced';
+        return;
+      }
+      const elapsedSec = Math.max(0, Math.floor((Date.now() - lastBalancesSyncedTimestamp) / 1000));
+      if (elapsedSec < 5) {
+        syncBadge.innerText = 'Synced: Just now';
+      } else if (elapsedSec < 60) {
+        syncBadge.innerText = `Synced: ${elapsedSec}s ago`;
+      } else {
+        const m = Math.floor(elapsedSec / 60);
+        const s = elapsedSec % 60;
+        syncBadge.innerText = `Synced: ${m}m ${s}s ago`;
+      }
+    }
 
     async function fetchLiveBalances(force = false) {
       const btcBalEl = document.getElementById('btcBalanceText');
@@ -4572,11 +7898,50 @@ if (typeof window !== "undefined") {
       const syncBadge = document.getElementById('liveSyncBadge');
       const syncDot = document.getElementById('liveSyncDot');
 
-      // Check 1-hour cache (invalidated if contract changed)
-      const cached = JSON.parse(localStorage.getItem('aegis_balance_cache') || 'null');
-      const now = Date.now();
+      const currentSigner = localStorage.getItem('aegis_signer_account');
+      if (!currentSigner) {
+        if (btcBalEl) btcBalEl.innerHTML = '0.0000 <span class="text-sm font-normal text-[#8C929D]">BTC</span>';
+        if (btcUsdEl) btcUsdEl.innerText = '≈ 0.00 USD';
+        if (evmBalEl) evmBalEl.innerHTML = '0.0000 <span class="text-sm font-normal text-[#8C929D]">ETH</span>';
+        if (evmUsdEl) evmUsdEl.innerText = '≈ 0.00 USD';
+        if (solBalEl) solBalEl.innerHTML = '0.0000 <span class="text-sm font-normal text-[#8C929D]">SOL</span>';
+        if (solUsdEl) solUsdEl.innerText = '≈ 0.00 USD';
+        if (nearBalEl) nearBalEl.innerHTML = '0.0000 <span class="text-sm font-normal text-[#8C929D]">NEAR</span>';
+        if (nearUsdEl) nearUsdEl.innerText = '≈ 0.00 USD';
+        if (syncBadge) syncBadge.innerText = 'Connect Wallet to Sync';
+        if (syncDot) syncDot.className = 'w-2 h-2 rounded-full bg-white/20';
+        checkUnallocatedFunds();
+        return;
+      }
 
-      if (!force && cached && cached.contractId === CONTRACT_ID && (now - cached.timestamp < CACHE_TTL_MS)) {
+      // Automatically refresh the connected wallet balance in header
+      fetchAccountNearBalance(currentSigner);
+
+      // If vault is unconfigured / unarmed, zero out balances immediately
+      if (!lastFetchedVaultInfo || lastFetchedVaultInfo.state === 'Unconfigured' || !hasConfiguredDestinations()) {
+        if (btcBalEl) btcBalEl.innerHTML = '0.0000 <span class="text-sm font-normal text-[#8C929D]">BTC</span>';
+        if (btcUsdEl) btcUsdEl.innerText = '≈ 0.00 USD';
+        if (evmBalEl) evmBalEl.innerHTML = '0.0000 <span class="text-sm font-normal text-[#8C929D]">ETH</span>';
+        if (evmUsdEl) evmUsdEl.innerText = '≈ 0.00 USD';
+        if (solBalEl) solBalEl.innerHTML = '0.0000 <span class="text-sm font-normal text-[#8C929D]">SOL</span>';
+        if (solUsdEl) solUsdEl.innerText = '≈ 0.00 USD';
+        if (nearBalEl) nearBalEl.innerHTML = '0.0000 <span class="text-sm font-normal text-[#8C929D]">NEAR</span>';
+        if (nearUsdEl) nearUsdEl.innerText = '≈ 0.00 USD';
+        if (syncBadge) syncBadge.innerText = 'Vault Unarmed';
+        if (syncDot) syncDot.className = 'w-2 h-2 rounded-full bg-white/20';
+        checkUnallocatedFunds();
+        return;
+      }
+
+      // Check 30-second cache scoped to current account
+      const cacheKey = `aegis_balance_cache_${currentSigner}`;
+      const cached = JSON.parse(localStorage.getItem(cacheKey) || 'null');
+      const now = Date.now();
+      const currentVaultState = lastFetchedVaultInfo?.state || 'Active';
+      const isEvac = isVaultEvacuatedOrBurned();
+
+      // Bypass cache if: forced, vault is evacuated/burned, or state changed since cache was saved
+      if (!force && !isEvac && cached && cached.contractId === CONTRACT_ID && cached.state === currentVaultState && (now - cached.timestamp < CACHE_TTL_MS)) {
         if (btcBalEl && cached.btcBal) btcBalEl.innerHTML = cached.btcBal;
         if (btcUsdEl && cached.btcUsd) btcUsdEl.innerText = cached.btcUsd;
         if (evmBalEl && cached.evmBal) evmBalEl.innerHTML = cached.evmBal;
@@ -4586,9 +7951,10 @@ if (typeof window !== "undefined") {
         if (nearBalEl && cached.nearBal) nearBalEl.innerHTML = cached.nearBal;
         if (nearUsdEl && cached.nearUsd) nearUsdEl.innerText = cached.nearUsd;
 
-        const minutesAgo = Math.floor((now - cached.timestamp) / 60000);
-        if (syncBadge) syncBadge.innerText = minutesAgo < 1 ? 'Synced: Just now' : `Synced: ${minutesAgo}m ago`;
+        lastBalancesSyncedTimestamp = cached.timestamp || now;
+        updateLiveSyncTimer();
         if (syncDot) syncDot.className = 'w-2 h-2 rounded-full bg-nearGreen';
+        checkUnallocatedFunds();
         return;
       }
 
@@ -4611,103 +7977,144 @@ if (typeof window !== "undefined") {
         console.warn('Fallback to baseline prices', e);
       }
 
-      const curr = {
+      let curr = {
         btc: document.getElementById('btcAddress')?.dataset?.full || '',
         evm: document.getElementById('evmAddress')?.dataset?.full || '',
         sol: document.getElementById('solAddress')?.dataset?.full || '',
-        near: document.getElementById('nearAddress')?.dataset?.full || CONTRACT_ID
+        near: document.getElementById('nearAddress')?.dataset?.full || ''
       };
-      if (!curr.btc || curr.btc.includes('Deriving') || curr.btc.includes('Connect')) return;
 
-      // 1. NEAR Testnet RPC View Account
-      try {
-        const nearRes = await fetch('https://rpc.testnet.near.org', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            jsonrpc: '2.0',
-            id: 'aegis',
-            method: 'query',
-            params: {
-              request_type: 'view_account',
-              finality: 'final',
-              account_id: curr.near
-            }
-          })
-        }).then(r => r.json());
-
-        if (nearRes?.result?.amount) {
-          const yoctoStr = nearRes.result.amount;
-          const nearVal = Number(BigInt(yoctoStr) / 100000000000000000000n) / 10000;
-          if (nearBalEl) nearBalEl.innerHTML = `${nearVal.toFixed(4)} <span class="text-sm font-normal text-[#8C929D]">NEAR</span>`;
-          if (nearUsdEl) nearUsdEl.innerText = `≈ ${(nearVal * prices.NEAR).toFixed(2)} USD`;
+      // In Evacuated state, addresses are masked in UI, but we check burned addresses for leftover funds
+      if (isVaultEvacuatedOrBurned() && (!curr.btc || !curr.evm)) {
+        const derivedKey = `aegis_derived_${currentSigner}_${currentEpochIndex}`;
+        let cachedAddr = null;
+        try { cachedAddr = JSON.parse(localStorage.getItem(derivedKey)); } catch(e) {}
+        if (!cachedAddr && PRECOMPUTED_DERIVED_VAULTS[currentSigner]?.[currentEpochIndex]) {
+          cachedAddr = PRECOMPUTED_DERIVED_VAULTS[currentSigner][currentEpochIndex];
         }
-      } catch (e) {
-        console.warn('NEAR RPC failed', e);
+        if (cachedAddr) {
+          curr = {
+            btc: cachedAddr.btc || '',
+            evm: cachedAddr.evm || '',
+            sol: cachedAddr.sol || '',
+            near: (cachedAddr.near && cachedAddr.near !== CONTRACT_ID) ? cachedAddr.near : ''
+          };
+        }
+      }
+
+      // 1. NEAR Implicit Bunker Balance via FastNEAR
+      if (curr.near && curr.near !== CONTRACT_ID && curr.near.length === 64 && !curr.near.includes(' ')) {
+        try {
+          const nearRes = await fetch('https://test.rpc.fastnear.com', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              jsonrpc: '2.0',
+              id: 'aegis',
+              method: 'query',
+              params: {
+                request_type: 'view_account',
+                finality: 'final',
+                account_id: curr.near
+              }
+            })
+          }).then(r => r.json());
+
+          if (nearRes?.result?.amount) {
+            const yoctoStr = nearRes.result.amount;
+            const nearVal = Number(BigInt(yoctoStr) / 100000000000000000000n) / 10000;
+            if (nearBalEl) nearBalEl.innerHTML = `${nearVal.toFixed(4)} <span class="text-sm font-normal text-[#8C929D]">NEAR</span>`;
+            if (nearUsdEl) nearUsdEl.innerText = `≈ ${(nearVal * prices.NEAR).toFixed(2)} USD`;
+          } else {
+            if (nearBalEl) nearBalEl.innerHTML = `0.0000 <span class="text-sm font-normal text-[#8C929D]">NEAR</span>`;
+            if (nearUsdEl) nearUsdEl.innerText = `≈ 0.00 USD`;
+          }
+        } catch (e) {
+          console.warn('NEAR RPC failed', e);
+        }
+      } else {
+        if (nearBalEl) nearBalEl.innerHTML = `0.0000 <span class="text-sm font-normal text-[#8C929D]">NEAR</span>`;
+        if (nearUsdEl) nearUsdEl.innerText = `≈ 0.00 USD`;
       }
 
       // 2. Sepolia EVM RPC
-      try {
-        const evmRes = await fetch('https://ethereum-sepolia-rpc.publicnode.com', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            jsonrpc: '2.0',
-            id: 1,
-            method: 'eth_getBalance',
-            params: [curr.evm, 'latest']
-          })
-        }).then(r => r.json());
+      if (curr.evm && curr.evm.startsWith('0x') && curr.evm.length === 42) {
+        try {
+          const evmRes = await fetch('https://ethereum-sepolia-rpc.publicnode.com', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              jsonrpc: '2.0',
+              id: 1,
+              method: 'eth_getBalance',
+              params: [curr.evm, 'latest']
+            })
+          }).then(r => r.json());
 
-        if (evmRes?.result !== undefined) {
-          const wei = BigInt(evmRes.result);
-          const ethVal = Number(wei / 100000000000000n) / 10000;
-          if (evmBalEl) evmBalEl.innerHTML = `${ethVal.toFixed(4)} <span class="text-sm font-normal text-[#8C929D]">ETH</span>`;
-          if (evmUsdEl) evmUsdEl.innerText = `≈ ${(ethVal * prices.ETH).toFixed(2)} USD`;
+          if (evmRes?.result !== undefined) {
+            const wei = BigInt(evmRes.result);
+            const ethVal = Number(wei / 100000000000000n) / 10000;
+            if (evmBalEl) evmBalEl.innerHTML = `${ethVal.toFixed(4)} <span class="text-sm font-normal text-[#8C929D]">ETH</span>`;
+            if (evmUsdEl) evmUsdEl.innerText = `≈ ${(ethVal * prices.ETH).toFixed(2)} USD`;
+          }
+        } catch (e) {
+          console.warn('EVM RPC failed', e);
         }
-      } catch (e) {
-        console.warn('EVM RPC failed', e);
+      } else {
+        if (evmBalEl) evmBalEl.innerHTML = `0.0000 <span class="text-sm font-normal text-[#8C929D]">ETH</span>`;
+        if (evmUsdEl) evmUsdEl.innerText = `≈ 0.00 USD`;
       }
 
       // 3. Solana Devnet RPC
-      try {
-        const solRes = await fetch('https://api.devnet.solana.com', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            jsonrpc: '2.0',
-            id: 1,
-            method: 'getBalance',
-            params: [curr.sol]
-          })
-        }).then(r => r.json());
+      if (curr.sol && curr.sol.length >= 32 && !curr.sol.includes(' ') && !curr.sol.includes('Locked') && !curr.sol.includes('Deriving')) {
+        try {
+          const solRes = await fetch('https://api.devnet.solana.com', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              jsonrpc: '2.0',
+              id: 1,
+              method: 'getBalance',
+              params: [curr.sol]
+            })
+          }).then(r => r.json());
 
-        if (solRes?.result?.value !== undefined) {
-          const lamports = solRes.result.value;
-          const solVal = lamports / 1e9;
-          if (solBalEl) solBalEl.innerHTML = `${solVal.toFixed(4)} <span class="text-sm font-normal text-[#8C929D]">SOL</span>`;
-          if (solUsdEl) solUsdEl.innerText = `≈ ${(solVal * prices.SOL).toFixed(2)} USD`;
+          if (solRes?.result?.value !== undefined) {
+            const lamports = solRes.result.value;
+            const solVal = lamports / 1e9;
+            if (solBalEl) solBalEl.innerHTML = `${solVal.toFixed(4)} <span class="text-sm font-normal text-[#8C929D]">SOL</span>`;
+            if (solUsdEl) solUsdEl.innerText = `≈ ${(solVal * prices.SOL).toFixed(2)} USD`;
+          }
+        } catch (e) {
+          console.warn('Solana RPC failed', e);
         }
-      } catch (e) {
-        console.warn('Solana RPC failed', e);
+      } else {
+        if (solBalEl) solBalEl.innerHTML = `0.0000 <span class="text-sm font-normal text-[#8C929D]">SOL</span>`;
+        if (solUsdEl) solUsdEl.innerText = `≈ 0.00 USD`;
       }
 
       // 4. Bitcoin Testnet Mempool.space
-      try {
-        const btcRes = await fetch(`https://mempool.space/testnet/api/address/${curr.btc}`).then(r => r.json());
-        if (btcRes?.chain_stats) {
-          const funded = (btcRes.chain_stats.funded_txo_sum || 0) - (btcRes.chain_stats.spent_txo_sum || 0);
-          const btcVal = funded / 1e8;
-          if (btcBalEl) btcBalEl.innerHTML = `${btcVal.toFixed(4)} <span class="text-sm font-normal text-[#8C929D]">BTC</span>`;
-          if (btcUsdEl) btcUsdEl.innerText = `≈ ${(btcVal * prices.BTC).toFixed(2)} USD`;
+      if (curr.btc && (curr.btc.startsWith('tb1') || curr.btc.startsWith('bc1') || curr.btc.startsWith('m') || curr.btc.startsWith('n')) && !curr.btc.includes(' ')) {
+        try {
+          const btcRes = await fetch(`https://mempool.space/testnet/api/address/${curr.btc}`).then(r => r.json());
+          if (btcRes?.chain_stats) {
+            const funded = (btcRes.chain_stats.funded_txo_sum || 0) - (btcRes.chain_stats.spent_txo_sum || 0);
+            const btcVal = funded / 1e8;
+            if (btcBalEl) btcBalEl.innerHTML = `${btcVal.toFixed(4)} <span class="text-sm font-normal text-[#8C929D]">BTC</span>`;
+            if (btcUsdEl) btcUsdEl.innerText = `≈ ${(btcVal * prices.BTC).toFixed(2)} USD`;
+          }
+        } catch (e) {
+          console.warn('BTC testnet failed', e);
         }
-      } catch (e) {
-        console.warn('BTC testnet failed', e);
+      } else {
+        if (btcBalEl) btcBalEl.innerHTML = `0.0000 <span class="text-sm font-normal text-[#8C929D]">BTC</span>`;
+        if (btcUsdEl) btcUsdEl.innerText = `≈ 0.00 USD`;
       }
 
-      // Save to 1-hour cache
-      localStorage.setItem('aegis_balance_cache', JSON.stringify({
+      // Save to cache scoped to account & vault state
+      localStorage.setItem(`aegis_balance_cache_${currentSigner}`, JSON.stringify({
         contractId: CONTRACT_ID,
+        state: lastFetchedVaultInfo?.state || 'Active',
         timestamp: Date.now(),
         btcBal: btcBalEl ? btcBalEl.innerHTML : '0.0000 <span class="text-sm font-normal text-[#8C929D]">BTC</span>',
         btcUsd: btcUsdEl ? btcUsdEl.innerText : '≈ 0.00 USD',
@@ -4715,12 +8122,20 @@ if (typeof window !== "undefined") {
         evmUsd: evmUsdEl ? evmUsdEl.innerText : '≈ 0.00 USD',
         solBal: solBalEl ? solBalEl.innerHTML : '0.0000 <span class="text-sm font-normal text-[#8C929D]">SOL</span>',
         solUsd: solUsdEl ? solUsdEl.innerText : '≈ 0.00 USD',
-        nearBal: nearBalEl ? nearBalEl.innerHTML : '3.5000 <span class="text-sm font-normal text-[#8C929D]">NEAR</span>',
-        nearUsd: nearUsdEl ? nearUsdEl.innerText : '≈ 13.40 USD'
+        nearBal: nearBalEl ? nearBalEl.innerHTML : '0.0000 <span class="text-sm font-normal text-[#8C929D]">NEAR</span>',
+        nearUsd: nearUsdEl ? nearUsdEl.innerText : '≈ 0.00 USD'
       }));
 
-      if (syncBadge) syncBadge.innerText = 'Synced: Just now';
+      // Update monitor elements if active
+      if (document.getElementById('monitorBtcBal') && btcBalEl) document.getElementById('monitorBtcBal').innerText = btcBalEl.innerText;
+      if (document.getElementById('monitorEvmBal') && evmBalEl) document.getElementById('monitorEvmBal').innerText = evmBalEl.innerText;
+      if (document.getElementById('monitorSolBal') && solBalEl) document.getElementById('monitorSolBal').innerText = solBalEl.innerText;
+      if (document.getElementById('monitorNearBal') && nearBalEl) document.getElementById('monitorNearBal').innerText = nearBalEl.innerText;
+
+      lastBalancesSyncedTimestamp = Date.now();
+      updateLiveSyncTimer();
       if (syncDot) syncDot.className = 'w-2 h-2 rounded-full bg-nearGreen';
+      checkUnallocatedFunds();
       if (force) showToast('Balances and rates updated from RPC');
     }
 
@@ -4736,33 +8151,33 @@ if (typeof window !== "undefined") {
       try {
         const outcome = await dispatchNearTransaction('rotate_bunker');
         if (outcome) {
-          // Clear all burned flags
-          VAULT_EPOCHS.forEach(e => {
-            localStorage.removeItem('aegis_vault_burned_' + e.epoch);
-          });
-          localStorage.removeItem('aegis_vault_burned_0');
-          localStorage.removeItem('aegis_vault_burned_1');
-          localStorage.removeItem('aegis_vault_burned_2');
-
-          currentEpochIndex = currentEpochIndex + 1;
-          localStorage.setItem('aegis_bunker_epoch', currentEpochIndex.toString());
-
           const banner = document.getElementById('bunkerBurnedBanner');
           if (banner) banner.classList.add('hidden');
+          const evacBanner = document.getElementById('evacuatedPolicyBanner');
+          if (evacBanner) evacBanner.classList.add('hidden');
+          const unconfigBanner = document.getElementById('unconfiguredBanner');
+          if (unconfigBanner) unconfigBanner.classList.remove('hidden');
 
           remainingSeconds = 0;
           clearAllAddresses();
 
+          inputIds.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) {
+              el.disabled = false;
+              el.value = '';
+            }
+          });
+
           const updatedInfo = await fetchLiveContractState();
           if (updatedInfo && typeof updatedInfo.epoch === 'number') {
             currentEpochIndex = updatedInfo.epoch;
-            localStorage.setItem('aegis_bunker_epoch', currentEpochIndex.toString());
           }
 
           renderBunkerAddresses();
           fetchLiveBalances(true);
           updateCountdownDisplay();
-          showToast(`✅ Clean Bunker Activated! Active Epoch ${VAULT_EPOCHS[currentEpochIndex].epoch} (Unarmed - Enter destinations to arm)`);
+          showToast(`✅ Clean Bunker Activated! Active Epoch ${currentEpochIndex} (Unarmed - Enter destinations to arm)`);
         }
       } catch (err) {
         console.error('Rotate bunker failed:', err);
@@ -4771,9 +8186,16 @@ if (typeof window !== "undefined") {
     }
 
     // Configurable Inactivity & Grace Periods
-    let inactivityDays = parseInt(localStorage.getItem('aegis_inactivity_days') || '90');
-    let graceDays = parseInt(localStorage.getItem('aegis_grace_days') || '7');
-    let MAX_SECONDS = inactivityDays * 24 * 3600;
+    if (localStorage.getItem('aegis_inactivity_days') === 'demo_60s') {
+      localStorage.setItem('aegis_inactivity_days', 'demo_120s');
+    }
+    if (localStorage.getItem('aegis_grace_days') === 'demo_15s') {
+      localStorage.setItem('aegis_grace_days', 'demo_30s');
+    }
+    const initialInactPref = localStorage.getItem('aegis_inactivity_days') || '90';
+    let inactivityDays = initialInactPref === 'demo_120s' ? 0 : parseInt(initialInactPref);
+    let graceDays = localStorage.getItem('aegis_grace_days') === 'demo_30s' ? 0 : parseInt(localStorage.getItem('aegis_grace_days') || '7');
+    let MAX_SECONDS = initialInactPref === 'demo_120s' ? 120 : (inactivityDays * 24 * 3600);
 
     function calculateInitialRemainingSeconds() {
       const currentEpoch = localStorage.getItem('aegis_bunker_epoch') || '0';
@@ -4834,6 +8256,27 @@ if (typeof window !== "undefined") {
                          (hSol === onChainHeirSol);
 
       saveBtns.forEach(btn => {
+        if (!localStorage.getItem('aegis_signer_account')) {
+          btn.disabled = true;
+          btn.innerHTML = `<span>Save Policy</span>`;
+          btn.className = 'save-policy-btn bg-white/[0.04] text-white/30 border border-white/[0.08] font-bold py-2 px-5 rounded-xl text-xs cursor-not-allowed opacity-50 whitespace-nowrap';
+          return;
+        }
+
+        if (info && (info.state === 'Evacuated' || info.state === 'Inheritance')) {
+          const isInheritance = info.state === 'Inheritance';
+          btn.disabled = true;
+          btn.innerHTML = `
+            <span class="flex items-center gap-1.5 ${isInheritance ? 'text-purple-400' : 'text-red-400'}">
+              <svg class="w-3.5 h-3.5 ${isInheritance ? 'text-purple-400' : 'text-red-400'} shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+              <span>${isInheritance ? 'Inheritance Finalized (Inactive)' : 'Bunker Evacuated (Inactive)'}</span>
+            </span>
+          `;
+          btn.className = `save-policy-btn ${isInheritance ? 'bg-purple-950/30 border border-purple-500/30 text-purple-400' : 'bg-red-950/30 border border-red-500/30 text-red-400'} font-bold py-2 px-5 rounded-xl text-xs cursor-not-allowed opacity-80 whitespace-nowrap`;
+          return;
+        }
+
+        btn.disabled = false;
         if (isMatching) {
           btn.innerHTML = `
             <span class="flex items-center gap-1.5 text-nearGreen">
@@ -4843,16 +8286,34 @@ if (typeof window !== "undefined") {
           `;
           btn.className = 'save-policy-btn bg-nearGreen/15 hover:bg-nearGreen/25 text-nearGreen border border-nearGreen/40 font-bold py-2 px-5 rounded-xl text-xs transition active:scale-98 whitespace-nowrap cursor-pointer';
         } else {
-          btn.innerHTML = `Save Policy`;
-          btn.className = 'save-policy-btn bg-nearGreen hover:bg-nearGreenHover text-nearBlack font-extrabold py-2 px-5 rounded-xl text-xs transition shadow-near-glow active:scale-98 whitespace-nowrap cursor-pointer';
+          const isReplacingExisting = (onChainBackupNear && pNear && onChainBackupNear !== pNear) ||
+                                      (onChainBackupBtc && pBtc && onChainBackupBtc !== pBtc) ||
+                                      (onChainBackupEvm && pEvm && onChainBackupEvm.toLowerCase() !== pEvm.toLowerCase()) ||
+                                      (onChainBackupSol && pSol && onChainBackupSol !== pSol) ||
+                                      (onChainHeirNear && hNear && onChainHeirNear !== hNear) ||
+                                      (onChainHeirBtc && hBtc && onChainHeirBtc !== hBtc) ||
+                                      (onChainHeirEvm && hEvm && onChainHeirEvm.toLowerCase() !== hEvm.toLowerCase()) ||
+                                      (onChainHeirSol && hSol && onChainHeirSol !== hSol);
+          if (isReplacingExisting) {
+            btn.innerHTML = `Save Policy (72h Cooldown)`;
+            btn.className = 'save-policy-btn bg-amber-400 hover:bg-amber-300 text-black font-extrabold py-2 px-5 rounded-xl text-xs transition shadow-sm active:scale-98 whitespace-nowrap cursor-pointer';
+          } else {
+            btn.innerHTML = `Save Policy (⚡ Instant)`;
+            btn.className = 'save-policy-btn bg-nearGreen hover:bg-nearGreenHover text-nearBlack font-extrabold py-2 px-5 rounded-xl text-xs transition shadow-near-glow active:scale-98 whitespace-nowrap cursor-pointer';
+          }
         }
       });
     }
 
     // Initialize UI Selectors
     document.addEventListener('DOMContentLoaded', () => {
-      document.getElementById('inactivitySelect').value = inactivityDays;
-      document.getElementById('graceSelect').value = graceDays;
+      const inactSelectEl = document.getElementById('inactivitySelect');
+      if (inactSelectEl) inactSelectEl.value = initialInactPref;
+      const graceSelectEl = document.getElementById('graceSelect');
+      const savedGracePref = localStorage.getItem('aegis_grace_days') || '7';
+      if (graceSelectEl) graceSelectEl.value = savedGracePref;
+      const modalGraceEl = document.getElementById('modalGraceSelect');
+      if (modalGraceEl) modalGraceEl.value = savedGracePref;
       
       const savedTg = localStorage.getItem('aegis_tg');
       const savedEmail = localStorage.getItem('aegis_email');
@@ -4869,31 +8330,64 @@ if (typeof window !== "undefined") {
       renderBunkerAddresses();
       loadSavedAddresses();
       updatePanicUI();
-      fetchLiveBalances(false); // Uses 1-hour cache if fresh
-      setInterval(() => fetchLiveBalances(false), 60 * 60 * 1000); // Poll once per hour (prevents RPC spam)
+      fetchLiveBalances(false); // Uses 30s cache if fresh
+      setInterval(() => fetchLiveBalances(false), 30 * 1000); // Check balances every 30s
+      setInterval(updateLiveSyncTimer, 1000); // Live seconds timer display
     });
 
-    function changeInactivityPeriod(days) {
-      inactivityDays = parseInt(days);
-      MAX_SECONDS = inactivityDays * 24 * 3600;
-      remainingSeconds = MAX_SECONDS;
-      localStorage.setItem('aegis_inactivity_days', days);
+    function changeInactivityPeriod(val) {
+      let hbNs;
+      let cpNs = null;
+      if (val === 'demo_120s') {
+        MAX_SECONDS = 120;
+        remainingSeconds = 120;
+        hbNs = '120000000000'; // 120 seconds (2 minutes)
+        cpNs = '30000000000'; // 30 seconds Grace Window for fast Judge Demo
+        localStorage.setItem('aegis_inactivity_days', 'demo_120s');
+        localStorage.setItem('aegis_grace_days', 'demo_30s');
+        const sel1 = document.getElementById('graceSelect');
+        const sel2 = document.getElementById('modalGraceSelect');
+        if (sel1) sel1.value = 'demo_30s';
+        if (sel2) sel2.value = 'demo_30s';
+        showToast('⚡ Judge Demo Mode: 2m Heartbeat + 30s Grace Window Activated!');
+      } else {
+        inactivityDays = parseInt(val);
+        MAX_SECONDS = inactivityDays * 24 * 3600;
+        remainingSeconds = MAX_SECONDS;
+        hbNs = (BigInt(val) * 86400n * 1000000000n).toString();
+        localStorage.setItem('aegis_inactivity_days', val);
+        showToast(`Broadcasting check-in timer update (${val} days) to NEAR...`);
+      }
       updateCountdownDisplay();
-      const hbNs = (BigInt(days) * 86400n * 1000000000n).toString();
-      dispatchNearTransaction('update_intervals', { heartbeat_interval_ns: hbNs, challenge_period_ns: null });
-      showToast(`Broadcasting check-in timer update (${days} days) to NEAR...`);
+      if (!lastFetchedVaultInfo || lastFetchedVaultInfo.state === 'Unconfigured') {
+        showToast(`Timer set to ${val === 'demo_120s' ? '2m' : val + ' days'}. Will be armed on-chain once you save policy.`);
+        return;
+      }
+      dispatchNearTransaction('update_intervals', { heartbeat_interval_ns: hbNs, challenge_period_ns: cpNs });
     }
 
-    function changeGracePeriod(days) {
-      graceDays = parseInt(days);
+    function changeGracePeriod(val) {
+      let cpNs;
       const sel1 = document.getElementById('graceSelect');
       const sel2 = document.getElementById('modalGraceSelect');
-      if (sel1) sel1.value = days;
-      if (sel2) sel2.value = days;
-      localStorage.setItem('aegis_grace_days', days);
-      const cpNs = (BigInt(days) * 86400n * 1000000000n).toString();
+      if (sel1) sel1.value = val;
+      if (sel2) sel2.value = val;
+
+      if (val === 'demo_30s') {
+        cpNs = '30000000000'; // 30 seconds
+        localStorage.setItem('aegis_grace_days', 'demo_30s');
+        showToast('⚡ Judge Demo Mode: 30s Grace Window Activated!');
+      } else {
+        graceDays = parseInt(val);
+        cpNs = (BigInt(val) * 86400n * 1000000000n).toString();
+        localStorage.setItem('aegis_grace_days', val);
+        showToast(`Broadcasting grace period update (${val} days) to NEAR...`);
+      }
+      if (!lastFetchedVaultInfo || lastFetchedVaultInfo.state === 'Unconfigured') {
+        showToast(`Grace window set to ${val === 'demo_30s' ? '30s' : val + ' days'}. Will be armed on-chain once you save policy.`);
+        return;
+      }
       dispatchNearTransaction('update_intervals', { heartbeat_interval_ns: null, challenge_period_ns: cpNs });
-      showToast(`Broadcasting grace period update (${days} days) to NEAR...`);
     }
 
     function openGraceModal() {
@@ -4944,28 +8438,45 @@ if (typeof window !== "undefined") {
 
       // Check if Vault is Evacuated or Burned
       if (isVaultEvacuatedOrBurned()) {
+        const isInheritance = lastFetchedVaultInfo && lastFetchedVaultInfo.state === 'Inheritance';
         if (onchainEl) onchainEl.classList.add('hidden');
         const nextEpoch = lastFetchedVaultInfo && typeof lastFetchedVaultInfo.epoch === 'number'
           ? (lastFetchedVaultInfo.epoch + 1)
           : (currentEpochIndex + 1);
 
-        if (pulseDot) pulseDot.className = 'w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse';
+        if (pulseDot) pulseDot.className = isInheritance ? 'w-2.5 h-2.5 rounded-full bg-purple-500 animate-pulse' : 'w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse';
         if (cardTitle) {
-          cardTitle.className = 'text-xs font-mono font-bold uppercase tracking-wider text-red-400';
-          cardTitle.innerText = 'BUNKER EVACUATED · KEYS BURNED';
+          cardTitle.className = isInheritance ? 'text-xs font-mono font-bold uppercase tracking-wider text-purple-400' : 'text-xs font-mono font-bold uppercase tracking-wider text-red-400';
+          cardTitle.innerText = isInheritance ? 'AUTONOMOUS INHERITANCE · TRANSFERRED' : 'BUNKER EVACUATED · KEYS BURNED';
         }
         if (heartbeatTag) {
-          heartbeatTag.className = 'text-xs font-mono font-medium text-red-400 bg-red-950/40 px-3 py-1 rounded-full border border-red-500/30';
-          heartbeatTag.innerText = 'Vault Evacuated · Inactive';
+          heartbeatTag.className = isInheritance
+            ? 'text-xs font-mono font-medium text-purple-300 bg-purple-950/40 px-3 py-1 rounded-full border border-purple-500/30'
+            : 'text-xs font-mono font-medium text-red-400 bg-red-950/40 px-3 py-1 rounded-full border border-red-500/30';
+          heartbeatTag.innerText = isInheritance ? 'Inheritance Executed · Inactive' : 'Vault Evacuated · Inactive';
         }
-        if (countdownTitle) countdownTitle.innerText = 'Bunker Evacuated · Rotation Required:';
-        if (countdownBox) countdownBox.innerHTML = '<span class="text-red-400 font-extrabold tracking-wider">EVACUATED</span>';
-        if (statusDisplay) statusDisplay.innerHTML = 'Status: <strong class="text-red-400 font-bold">Evacuated (Keys Burned)</strong>';
+        if (countdownTitle) {
+          countdownTitle.innerText = isInheritance ? 'Heir Transfer Executed · Rotation Required:' : 'Bunker Evacuated · Rotation Required:';
+        }
+        if (countdownBox) {
+          countdownBox.innerHTML = isInheritance
+            ? '<span class="text-purple-400 font-extrabold tracking-wider">INHERITED</span>'
+            : '<span class="text-red-400 font-extrabold tracking-wider">EVACUATED</span>';
+        }
+        if (statusDisplay) {
+          statusDisplay.innerHTML = isInheritance
+            ? 'Status: <strong class="text-purple-400 font-bold">Transferred to Heirs (Bunker Closed)</strong>'
+            : 'Status: <strong class="text-red-400 font-bold">Evacuated (Keys Burned)</strong>';
+        }
         if (timerBar) {
           timerBar.style.width = '0%';
-          timerBar.className = 'h-full bg-red-500 rounded-full transition-all duration-300';
+          timerBar.className = isInheritance
+            ? 'h-full bg-purple-500 rounded-full transition-all duration-300'
+            : 'h-full bg-red-500 rounded-full transition-all duration-300';
         }
-        if (pctEl) pctEl.innerText = '0.0% · Vault Burned';
+        if (pctEl) {
+          pctEl.innerText = isInheritance ? '0.0% · Transferred to Heirs' : '0.0% · Vault Burned';
+        }
 
         if (pingBtn) {
           pingBtn.className = 'w-full bg-nearGreen hover:bg-nearGreenHover text-nearBlack font-extrabold py-3.5 px-6 near-pill-btn text-sm sm:text-base tracking-wide transition shadow-near-glow active:scale-98 flex items-center justify-center gap-2';
@@ -4980,6 +8491,27 @@ if (typeof window !== "undefined") {
         if (pingBtnText) {
           pingBtnText.innerText = `Activate Clean Bunker (Epoch ${nextEpoch})`;
         }
+
+        // Header Panic Button: Disabled
+        const headerPanic = document.getElementById('headerPanicBtn');
+        const panicLabel = document.getElementById('panicBtnLabel');
+        const panicDot = document.getElementById('panicBtnDot');
+        if (headerPanic) {
+          headerPanic.disabled = true;
+          headerPanic.className = 'px-4 py-2.5 rounded-xl bg-red-950/20 text-red-500/50 border border-red-500/20 text-xs sm:text-sm font-mono font-bold tracking-wider cursor-not-allowed opacity-40 flex items-center gap-2';
+        }
+        if (panicLabel) {
+          panicLabel.innerText = isInheritance ? 'INHERITANCE EXECUTED' : 'VAULT EVACUATED';
+        }
+        if (panicDot) {
+          panicDot.className = isInheritance ? 'w-2 h-2 rounded-full bg-purple-500/40' : 'w-2 h-2 rounded-full bg-red-500/40';
+        }
+
+        // Dropdowns: Disabled when evacuated
+        const inactSelect = document.getElementById('inactivitySelect');
+        const graceSelect = document.getElementById('graceSelect');
+        if (inactSelect) inactSelect.disabled = true;
+        if (graceSelect) graceSelect.disabled = true;
         return;
       }
 
@@ -5017,6 +8549,21 @@ if (typeof window !== "undefined") {
         if (pingBtnText) {
           pingBtnText.innerText = 'Save Policy Below to Arm Vault';
         }
+
+        const headerPanic = document.getElementById('headerPanicBtn');
+        const panicLabel = document.getElementById('panicBtnLabel');
+        const panicDot = document.getElementById('panicBtnDot');
+        if (headerPanic) {
+          headerPanic.disabled = true;
+          headerPanic.className = 'px-4 py-2.5 rounded-xl bg-amber-950/20 text-amber-500/50 border border-amber-500/20 text-xs sm:text-sm font-mono font-bold tracking-wider cursor-not-allowed opacity-40 flex items-center gap-2';
+        }
+        if (panicLabel) panicLabel.innerText = 'VAULT UNARMED';
+        if (panicDot) panicDot.className = 'w-2 h-2 rounded-full bg-amber-500/40';
+
+        const inactSelect = document.getElementById('inactivitySelect');
+        const graceSelect = document.getElementById('graceSelect');
+        if (inactSelect) inactSelect.disabled = false;
+        if (graceSelect) graceSelect.disabled = false;
         return;
       }
 
@@ -5043,16 +8590,60 @@ if (typeof window !== "undefined") {
         pingBtnIcon.removeAttribute('stroke-width');
       }
 
+      const headerPanic = document.getElementById('headerPanicBtn');
+      if (headerPanic) {
+        headerPanic.disabled = false;
+        updatePanicUI();
+      }
+      const inactSelect = document.getElementById('inactivitySelect');
+      const graceSelect = document.getElementById('graceSelect');
+      if (inactSelect) inactSelect.disabled = false;
+      if (graceSelect) graceSelect.disabled = false;
+
       if (remainingSeconds <= 0) {
         if (countdownBox) countdownBox.innerHTML = '<span class="text-red-400">EXPIRED</span>';
-        if (statusDisplay) statusDisplay.innerHTML = 'Status: <strong class="text-red-400 font-bold">Heartbeat Expired</strong>';
+        let graceRemainingSec = 0;
+        if (lastFetchedVaultInfo && lastFetchedVaultInfo.last_ping_ns) {
+          const fullExpiryMs = Number(
+            (BigInt(lastFetchedVaultInfo.last_ping_ns) +
+              BigInt(lastFetchedVaultInfo.heartbeat_interval_ns || '0') +
+              BigInt(lastFetchedVaultInfo.challenge_period_ns || '0')) / 1000000n
+          );
+          graceRemainingSec = Math.max(0, Math.ceil((fullExpiryMs - Date.now()) / 1000));
+          if (Date.now() >= fullExpiryMs + 1500 && Date.now() - lastCloudKeeperNudgeMs > 20000) {
+            lastCloudKeeperNudgeMs = Date.now();
+            triggerCloudKeeperSweep(false);
+          }
+        }
+        if (statusDisplay) {
+          statusDisplay.innerHTML = graceRemainingSec > 0
+            ? `Status: <strong class="text-amber-400 font-bold">Grace Buffer (${graceRemainingSec}s left)</strong>`
+            : 'Status: <strong class="text-red-400 font-bold">Heartbeat & Grace Expired · Sweeping</strong>';
+        }
         if (timerBar) {
           timerBar.style.width = '0%';
           timerBar.className = 'h-full bg-red-500 rounded-full transition-all duration-300';
         }
         if (pctEl) pctEl.innerText = '0.0% remaining';
         if (pingBtnText) pingBtnText.innerText = "I'M ALIVE (Recover & Reset)";
+        if (onchainEl && !isVaultEvacuatedOrBurned()) {
+          onchainEl.classList.remove('hidden');
+          const bannerLabel = graceRemainingSec > 0
+            ? `Grace Buffer Active (${graceRemainingSec}s before autonomous sweep)`
+            : 'Autonomous Push Inheritance Executing via Cloud Keeper';
+          onchainEl.innerHTML = `
+            <div class="w-full mt-2.5 bg-amber-500/10 border border-amber-500/30 text-amber-300 px-4 py-2.5 rounded-xl text-xs flex items-center justify-between cursor-pointer" onclick="openEvacMonitor()">
+              <span class="flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
+                <span>${bannerLabel}</span>
+              </span>
+              <span class="text-[10px] font-mono bg-amber-950/40 px-2 py-0.5 rounded border border-amber-500/30">View Live Sweep</span>
+            </div>
+          `;
+        }
         return;
+      } else {
+        if (onchainEl) onchainEl.classList.add('hidden');
       }
 
       if (statusDisplay) statusDisplay.innerHTML = 'Status: <strong class="text-nearGreen font-bold">Active & Enforced</strong>';
@@ -5073,6 +8664,45 @@ if (typeof window !== "undefined") {
         timerBar.className = 'h-full bg-nearGreen rounded-full transition-all duration-300';
       }
       if (pctEl) pctEl.innerText = `${pct.toFixed(1)}% remaining`;
+
+      // Sync Top Heartbeat 72h Timelock Notice
+      const hbNotice = document.getElementById('heartbeatTimelockNotice');
+      const hbText = document.getElementById('heartbeatTimelockText');
+      if (hbNotice && hbText) {
+        if (lastFetchedVaultInfo && lastFetchedVaultInfo.pending_policy) {
+          const effectiveNs = BigInt(lastFetchedVaultInfo.pending_policy.effective_at_ns);
+          const nowNs = BigInt(lastFetchedVaultInfo.current_time_ns || (Date.now() * 1000000));
+          const secLeft = Number(effectiveNs > nowNs ? (effectiveNs - nowNs) / 1000000000n : 0n);
+          const hoursLeft = Math.floor(secLeft / 3600);
+          const minsLeft = Math.floor((secLeft % 3600) / 60);
+          hbNotice.classList.remove('hidden');
+          hbText.innerText = secLeft > 0
+            ? `72h Timelock Active (${hoursLeft}h ${minsLeft}m left)`
+            : '72h Timelock Elapsed (Ready to Apply)';
+        } else {
+          hbNotice.classList.add('hidden');
+        }
+      }
+    }
+
+    async function triggerInheritanceNow() {
+      const currentSigner = localStorage.getItem('aegis_signer_account');
+      if (!currentSigner) {
+        showToast('Please connect wallet first', true);
+        return;
+      }
+      showToast('Broadcasting trigger_push_inheritance to NEAR...');
+      try {
+        const outcome = await dispatchNearTransaction('trigger_push_inheritance', { vault_owner: currentSigner });
+        if (outcome) {
+          showToast('Inheritance triggered on-chain! Dispatching Cloud Keeper...');
+          openEvacMonitor();
+          triggerCloudKeeperSweep(false);
+          setTimeout(() => fetchLiveBalances(true), 1500);
+        }
+      } catch (e) {
+        showToast('Failed to trigger inheritance: ' + (e.message || e), true);
+      }
     }
 
     if (countdownInterval) clearInterval(countdownInterval);
@@ -5111,17 +8741,37 @@ if (typeof window !== "undefined") {
     }
 
     function copyAddr(elemId) {
+      if (!localStorage.getItem('aegis_signer_account')) {
+        showToast('Connect wallet first', true);
+        return;
+      }
+      if (isVaultEvacuatedOrBurned()) {
+        showToast('🛑 Deposit rejected: This bunker epoch was evacuated and keys are burned. Activate clean bunker first.', true);
+        return;
+      }
+      const chainId = elemId.replace('Address', '').toLowerCase();
+      const b = lastFetchedVaultInfo?.backup?.[chainId]?.trim();
+      const h = lastFetchedVaultInfo?.heirs?.[chainId]?.trim();
+      if (!b || !h) {
+        showToast(`⚠️ ${chainId.toUpperCase()} locked: Set both Panic & Heir destinations in Tab 1 first.`, true);
+        switchTab('rescue');
+        return;
+      }
       const el = document.getElementById(elemId);
-      const text = el.dataset.full || el.innerText;
+      const text = el ? (el.dataset.full || el.innerText) : '';
+      if (!text || text.includes('Bunker Unarmed') || text.includes('Epoch Burned') || text.includes('Connect wallet') || text.includes('Deriving') || text.includes('Egress Incomplete')) {
+        showToast('No active deposit address available', true);
+        return;
+      }
       navigator.clipboard.writeText(text);
-      showToast('Address copied to clipboard');
+      showToast('Deposit address copied! ⚠️ Do NOT save permanently in exchange whitelist (epoch burns after evacuation).');
     }
 
     // Ping Main Button Handler (Smart Connected / Disconnected / Evacuated / Unconfigured)
     async function handlePingMainBtnClick() {
       const isConnected = !!localStorage.getItem('aegis_signer_account');
       if (!isConnected) {
-        connectNearWallet();
+        openMultichainWalletModal();
         return;
       }
       if (isVaultEvacuatedOrBurned()) {
@@ -5153,13 +8803,33 @@ if (typeof window !== "undefined") {
       document.querySelectorAll('.tab-panel').forEach(p => p.classList.add('hidden'));
 
       const activeBtn = document.getElementById(`tab-${name}`);
-      activeBtn.classList.add('text-nearBlack', 'bg-nearGreen', 'font-bold');
-      activeBtn.classList.remove('text-[#8C929D]', 'font-semibold');
-      document.getElementById(`panel-${name}`).classList.remove('hidden');
+      if (activeBtn) {
+        activeBtn.classList.add('text-nearBlack', 'bg-nearGreen', 'font-bold');
+        activeBtn.classList.remove('text-[#8C929D]', 'font-semibold');
+      }
+      const panel = document.getElementById(`panel-${name}`);
+      if (panel) panel.classList.remove('hidden');
+
+      if (name === 'vault') {
+        fetchLiveBalances(isVaultEvacuatedOrBurned());
+      }
     }
 
     // QR Code
     function openQr(title, address) {
+      if (!localStorage.getItem('aegis_signer_account')) {
+        showToast('Connect wallet first', true);
+        return;
+      }
+      if (isVaultEvacuatedOrBurned()) {
+        showToast('🛑 QR Code disabled: This bunker epoch is burned.', true);
+        return;
+      }
+      if (!address || address.includes('Bunker Unarmed') || address.includes('Epoch Burned') || address.includes('Connect wallet') || address.includes('Deriving') || address.includes('Egress Incomplete')) {
+        showToast('⚠️ QR Code locked: Configure Panic and Heir destinations in Tab 1 first.', true);
+        switchTab('rescue');
+        return;
+      }
       currentQrAddr = address;
       document.getElementById('qrTitle').innerText = `${title} QR Code`;
       document.getElementById('qrAddressText').innerText = address;
@@ -5182,7 +8852,7 @@ if (typeof window !== "undefined") {
 
     function copyCurrentQr() {
       navigator.clipboard.writeText(currentQrAddr);
-      showToast('Address copied to clipboard');
+      showToast('Address copied! ⚠️ Do NOT whitelist on exchanges (epoch burns after evacuation).');
       closeQr();
     }
 
@@ -5242,7 +8912,184 @@ if (typeof window !== "undefined") {
       }
     }
 
+    function parseNumericBalance(str) {
+      if (!str) return 0;
+      const clean = str.replace(/<[^>]*>/g, ' ').trim();
+      const match = clean.match(/([0-9]+(\.[0-9]+)?)/);
+      return match ? parseFloat(match[1]) : 0;
+    }
+
+    function getUnallocatedBunkerFunds() {
+      const unallocated = [];
+      const currentSigner = localStorage.getItem('aegis_signer_account');
+      const info = lastFetchedVaultInfo;
+      // Never show unallocated alerts if disconnected, unconfigured, or already evacuated
+      if (!currentSigner || !info || info.state !== 'Active' || !hasConfiguredDestinations(info)) {
+        return unallocated;
+      }
+      const backup = info.backup || {};
+
+      let cachedBal = {};
+      try {
+        cachedBal = JSON.parse(localStorage.getItem(`aegis_balance_cache_${currentSigner}`) || '{}');
+      } catch(e) {}
+
+      // Strictly read cached balances associated with currentSigner
+      const btcVal = cachedBal.btcBal ? parseNumericBalance(cachedBal.btcBal) : 0;
+      const evmVal = cachedBal.evmBal ? parseNumericBalance(cachedBal.evmBal) : 0;
+      const solVal = cachedBal.solBal ? parseNumericBalance(cachedBal.solBal) : 0;
+      const nearVal = cachedBal.nearBal ? parseNumericBalance(cachedBal.nearBal) : 0;
+
+      const hasBtc = !!(backup.btc?.trim() || document.getElementById('panicBtcAddr')?.value?.trim());
+      const hasEvm = !!(backup.evm?.trim() || document.getElementById('panicEvmAddr')?.value?.trim());
+      const hasSol = !!(backup.sol?.trim() || document.getElementById('panicSolAddr')?.value?.trim());
+      const hasNear = !!(backup.near?.trim() || document.getElementById('panicNearAddr')?.value?.trim());
+
+      if (btcVal > 0 && !hasBtc) {
+        unallocated.push(`Bitcoin (${btcVal} BTC)`);
+      }
+      if (evmVal > 0 && !hasEvm) {
+        unallocated.push(`Ethereum / EVM (${evmVal} ETH)`);
+      }
+      if (solVal > 0 && !hasSol) {
+        unallocated.push(`Solana (${solVal} SOL)`);
+      }
+      if (nearVal > 0 && !hasNear) {
+        unallocated.push(`NEAR (${nearVal} NEAR)`);
+      }
+
+      return unallocated;
+    }
+
+    function getUnallocatedHeirFunds() {
+      const unallocatedHeirs = [];
+      const currentSigner = localStorage.getItem('aegis_signer_account');
+      const info = lastFetchedVaultInfo;
+      if (!currentSigner || !info || info.state !== 'Active' || !hasConfiguredDestinations(info)) {
+        return unallocatedHeirs;
+      }
+      const heirs = info.heirs || {};
+
+      let cachedBal = {};
+      try {
+        cachedBal = JSON.parse(localStorage.getItem(`aegis_balance_cache_${currentSigner}`) || '{}');
+      } catch(e) {}
+
+      const btcVal = cachedBal.btcBal ? parseNumericBalance(cachedBal.btcBal) : 0;
+      const evmVal = cachedBal.evmBal ? parseNumericBalance(cachedBal.evmBal) : 0;
+      const solVal = cachedBal.solBal ? parseNumericBalance(cachedBal.solBal) : 0;
+      const nearVal = cachedBal.nearBal ? parseNumericBalance(cachedBal.nearBal) : 0;
+
+      const hasBtc = !!(heirs.btc?.trim() || document.getElementById('heirBtcAddr')?.value?.trim());
+      const hasEvm = !!(heirs.evm?.trim() || document.getElementById('heirEvmAddr')?.value?.trim());
+      const hasSol = !!(heirs.sol?.trim() || document.getElementById('heirSolAddr')?.value?.trim());
+      const hasNear = !!(heirs.near?.trim() || document.getElementById('heirNearAddr')?.value?.trim());
+
+      if (btcVal > 0 && !hasBtc) {
+        unallocatedHeirs.push(`Bitcoin (${btcVal} BTC)`);
+      }
+      if (evmVal > 0 && !hasEvm) {
+        unallocatedHeirs.push(`Ethereum / EVM (${evmVal} ETH)`);
+      }
+      if (solVal > 0 && !hasSol) {
+        unallocatedHeirs.push(`Solana (${solVal} SOL)`);
+      }
+      if (nearVal > 0 && !hasNear) {
+        unallocatedHeirs.push(`NEAR (${nearVal} NEAR)`);
+      }
+
+      return unallocatedHeirs;
+    }
+
+    function checkUnallocatedFunds() {
+      const unallocated = getUnallocatedBunkerFunds();
+      const unallocatedHeirs = getUnallocatedHeirFunds();
+      const hasUnallocated = unallocated.length > 0 || unallocatedHeirs.length > 0;
+
+      const depBanner = document.getElementById('unallocatedDepositAlert');
+      const depText = document.getElementById('unallocatedDepositText');
+      if (depBanner && depText) {
+        if (unallocated.length > 0) {
+          depBanner.classList.remove('hidden');
+          depBanner.classList.add('flex');
+          depText.innerText = `You have funds deposited in ${unallocated.join(', ')}, but no emergency backup destination address configured. These funds will NOT be evacuated on panic!`;
+        } else {
+          depBanner.classList.add('hidden');
+          depBanner.classList.remove('flex');
+        }
+      }
+
+      const polBanner = document.getElementById('unallocatedPolicyAlert');
+      const polText = document.getElementById('unallocatedPolicyText');
+      if (polBanner && polText) {
+        if (hasUnallocated) {
+          polBanner.classList.remove('hidden');
+          polBanner.classList.add('flex');
+          let msgs = [];
+          if (unallocated.length > 0) msgs.push(`Emergency Panic: missing backup for ${unallocated.join(', ')}`);
+          if (unallocatedHeirs.length > 0) msgs.push(`Family Inheritance: missing heir for ${unallocatedHeirs.join(', ')}`);
+          polText.innerText = `Unallocated assets detected: ${msgs.join(' · ')}. Save destination addresses to protect these assets!`;
+        } else {
+          polBanner.classList.add('hidden');
+          polBanner.classList.remove('flex');
+        }
+      }
+
+      // Also update banner in evacuated state if leftover funds exist
+      const isEvacuated = lastFetchedVaultInfo && (lastFetchedVaultInfo.state === 'Evacuated' || lastFetchedVaultInfo.state === 'Inheritance');
+      const burnedHeader = document.querySelector('#bunkerBurnedBanner h4');
+      const burnedText = document.querySelector('#bunkerBurnedBanner p');
+      if (isEvacuated && burnedHeader && burnedText) {
+        if (unallocated.length > 0) {
+          burnedHeader.innerText = '⚠️ Evacuation Incomplete — Leftover Assets in Bunker!';
+          burnedHeader.className = 'text-sm font-extrabold text-amber-200';
+          burnedText.innerHTML = `Active epoch keys were evacuated, but <strong>${unallocated.join(', ')}</strong> were left behind because destination addresses were missing! Enter addresses in Tab 1 to rescue remaining funds before activating the next bunker.`;
+        } else {
+          burnedHeader.innerText = 'Epoch Exhausted — Path Rotation Required';
+          burnedHeader.className = 'text-sm font-extrabold text-red-200';
+          burnedText.innerText = 'Active epoch keys were exposed on-chain during evacuation. Activate the next bunker to derive fresh uncompromised addresses.';
+        }
+      }
+
+      return unallocated;
+    }
+
     function startAbortCountdown() {
+      if (!localStorage.getItem('aegis_signer_account')) {
+        showToast('🛑 Connect wallet to arm or manage vault', true);
+        return;
+      }
+
+      if (isVaultEvacuatedOrBurned()) {
+        showToast('🛑 VAULT ALREADY EVACUATED: Active epoch keys are burned. Rotate bunker to start new epoch.', true);
+        return;
+      }
+
+      // 1. Guard against panic during 72h policy timelock
+      if (lastFetchedVaultInfo && lastFetchedVaultInfo.pending_policy) {
+        showToast('🛑 PANIC BLOCKED: 72h policy timelock is active. Cancel pending proposal or wait for cooldown.', true);
+        return;
+      }
+
+      // 2. Guard against panic when no backup addresses exist
+      if (!lastFetchedVaultInfo || !hasConfiguredDestinations(lastFetchedVaultInfo) || !lastFetchedVaultInfo.backup || !lastFetchedVaultInfo.backup.near && !lastFetchedVaultInfo.backup.evm && !lastFetchedVaultInfo.backup.btc && !lastFetchedVaultInfo.backup.sol) {
+        showToast('🛑 PANIC BLOCKED: No backup destinations configured! Enter emergency addresses first.', true);
+        return;
+      }
+
+      // 3. Check for deposited funds without corresponding destination addresses
+      const unalloc = checkUnallocatedFunds();
+      const panicAlert = document.getElementById('panicUnallocatedAlert');
+      const panicAlertText = document.getElementById('panicUnallocatedText');
+      if (panicAlert && panicAlertText) {
+        if (unalloc.length > 0) {
+          panicAlert.classList.remove('hidden');
+          panicAlertText.innerText = `You have funds deposited in ${unalloc.join(', ')}, but NO backup address is configured! If you proceed with evacuation, these funds CANNOT be swept and will remain stranded.`;
+        } else {
+          panicAlert.classList.add('hidden');
+        }
+      }
+
       if (isInstantPanicEnabled()) {
         executePanic();
         return;
@@ -5303,37 +9150,72 @@ if (typeof window !== "undefined") {
 
       dispatchNearTransaction('panic').then(() => {
         remainingSeconds = 0;
-        localStorage.setItem('aegis_vault_burned_' + currentEpochIndex, 'true');
         if (lastFetchedVaultInfo) {
           lastFetchedVaultInfo.state = 'Evacuated';
+        }
+        const currentSigner = localStorage.getItem('aegis_signer_account');
+        if (currentSigner) {
+          localStorage.removeItem(`aegis_balance_cache_${currentSigner}`);
         }
         renderBunkerAddresses();
         updateCountdownDisplay();
 
-        showToast('PANIC CONFIRMED ON-CHAIN: Vault evacuated.', true);
+        showToast('PANIC CONFIRMED ON-CHAIN: Dispatching Cloud Keeper sweep...', true);
         openEvacMonitor();
+        triggerCloudKeeperSweep(false);
+
+        fetchLiveBalances(true);
+        setTimeout(() => fetchLiveBalances(true), 2500);
+        setTimeout(() => fetchLiveBalances(true), 6000);
+        setTimeout(() => fetchLiveBalances(true), 12000);
       }).catch(err => {
         console.error('Panic execution aborted or failed:', err);
       });
     }
 
     function openEvacMonitor() {
-      const nearTarget = document.getElementById('panicNearAddr')?.value?.trim() ||
-                         lastFetchedVaultInfo?.backup?.near ||
-                         JSON.parse(localStorage.getItem('aegis_addresses') || '{}').panicNearAddr ||
-                         'Not configured';
-      const btcTarget = document.getElementById('panicBtcAddr')?.value?.trim() ||
-                        lastFetchedVaultInfo?.backup?.btc ||
-                        JSON.parse(localStorage.getItem('aegis_addresses') || '{}').panicBtcAddr ||
-                        'Not configured';
-      const evmTarget = document.getElementById('panicEvmAddr')?.value?.trim() ||
-                        lastFetchedVaultInfo?.backup?.evm ||
-                        JSON.parse(localStorage.getItem('aegis_addresses') || '{}').panicEvmAddr ||
-                        'Not configured';
-      const solTarget = document.getElementById('panicSolAddr')?.value?.trim() ||
-                        lastFetchedVaultInfo?.backup?.sol ||
-                        JSON.parse(localStorage.getItem('aegis_addresses') || '{}').panicSolAddr ||
-                        'Not configured';
+      const isInheritance = lastFetchedVaultInfo && lastFetchedVaultInfo.state === 'Inheritance';
+      const titleEl = document.querySelector('#evacMonitorModal h3');
+      if (titleEl) {
+        titleEl.innerText = isInheritance ? 'Multichain Inheritance Transfer Monitor' : 'Multichain Evacuation Monitor';
+      }
+
+      let nearTarget, btcTarget, evmTarget, solTarget;
+      if (isInheritance) {
+        nearTarget = document.getElementById('heirNearAddr')?.value?.trim() ||
+                     lastFetchedVaultInfo?.heirs?.near ||
+                     JSON.parse(localStorage.getItem('aegis_addresses') || '{}').heirNearAddr ||
+                     'Not configured';
+        btcTarget = document.getElementById('heirBtcAddr')?.value?.trim() ||
+                    lastFetchedVaultInfo?.heirs?.btc ||
+                    JSON.parse(localStorage.getItem('aegis_addresses') || '{}').heirBtcAddr ||
+                    'Not configured';
+        evmTarget = document.getElementById('heirEvmAddr')?.value?.trim() ||
+                    lastFetchedVaultInfo?.heirs?.evm ||
+                    JSON.parse(localStorage.getItem('aegis_addresses') || '{}').heirEvmAddr ||
+                    'Not configured';
+        solTarget = document.getElementById('heirSolAddr')?.value?.trim() ||
+                    lastFetchedVaultInfo?.heirs?.sol ||
+                    JSON.parse(localStorage.getItem('aegis_addresses') || '{}').heirSolAddr ||
+                    'Not configured';
+      } else {
+        nearTarget = document.getElementById('panicNearAddr')?.value?.trim() ||
+                     lastFetchedVaultInfo?.backup?.near ||
+                     JSON.parse(localStorage.getItem('aegis_addresses') || '{}').panicNearAddr ||
+                     'Not configured';
+        btcTarget = document.getElementById('panicBtcAddr')?.value?.trim() ||
+                    lastFetchedVaultInfo?.backup?.btc ||
+                    JSON.parse(localStorage.getItem('aegis_addresses') || '{}').panicBtcAddr ||
+                    'Not configured';
+        evmTarget = document.getElementById('panicEvmAddr')?.value?.trim() ||
+                    lastFetchedVaultInfo?.backup?.evm ||
+                    JSON.parse(localStorage.getItem('aegis_addresses') || '{}').panicEvmAddr ||
+                    'Not configured';
+        solTarget = document.getElementById('panicSolAddr')?.value?.trim() ||
+                    lastFetchedVaultInfo?.backup?.sol ||
+                    JSON.parse(localStorage.getItem('aegis_addresses') || '{}').panicSolAddr ||
+                    'Not configured';
+      }
 
       const btcEl = document.getElementById('monitorBtcTarget');
       const evmEl = document.getElementById('monitorEvmTarget');
@@ -5357,19 +9239,19 @@ if (typeof window !== "undefined") {
       const modal = document.getElementById('evacMonitorModal');
       if (modal) modal.classList.remove('hidden');
 
-      // Fetch Live Relayer Telemetry if available
-      fetch('telemetry.json?t=' + Date.now()).then(r => r.json()).then(t => {
-        if (!t || !t.sweeps) return;
-        const currentSigner = localStorage.getItem('aegis_signer_account');
-        if (t.vault_owner && t.vault_owner !== currentSigner) return;
-
+      const applyTelemetryRecord = (t) => {
+        if (!t || !t.sweeps) return false;
         if (t.sweeps.btc) {
           const s = t.sweeps.btc;
           const statusEl = document.getElementById('monitorBtcStatus');
           const linkEl = document.getElementById('monitorBtcLink');
           if (statusEl && s.status) statusEl.innerText = s.status;
+          if (s.amount && document.getElementById('monitorBtcBal')) document.getElementById('monitorBtcBal').innerText = s.amount;
           if (linkEl && s.explorer) {
-            linkEl.innerHTML = `<a href="${s.explorer}" target="_blank" rel="noopener noreferrer" class="text-amber-400 hover:underline flex items-center gap-1 font-mono">View on Mempool.space ↗</a>`;
+            const mpcLink = s.near_mpc_tx
+              ? ` <span class="text-white/20">|</span> <a href="${s.near_mpc_tx}" target="_blank" rel="noopener noreferrer" class="text-nearGreen hover:underline">MPC Proof (v1.signer) ↗</a>`
+              : '';
+            linkEl.innerHTML = `<a href="${s.explorer}" target="_blank" rel="noopener noreferrer" class="text-amber-400 hover:underline font-mono">View on Mempool.space ↗</a>${mpcLink}`;
           }
         }
         if (t.sweeps.evm) {
@@ -5377,8 +9259,12 @@ if (typeof window !== "undefined") {
           const statusBadge = document.getElementById('evmTxStatusBadge');
           const linkEl = document.getElementById('monitorEvmLink');
           if (statusBadge && s.status) statusBadge.innerText = s.status;
+          if (s.amount && document.getElementById('monitorEvmBal')) document.getElementById('monitorEvmBal').innerText = s.amount;
           if (linkEl && s.explorer) {
-            linkEl.innerHTML = `<a href="${s.explorer}" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:underline flex items-center gap-1 font-mono">View on Etherscan ↗</a>`;
+            const mpcLink = s.near_mpc_tx
+              ? ` <span class="text-white/20">|</span> <a href="${s.near_mpc_tx}" target="_blank" rel="noopener noreferrer" class="text-nearGreen hover:underline">MPC Proof (v1.signer) ↗</a>`
+              : '';
+            linkEl.innerHTML = `<a href="${s.explorer}" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:underline font-mono">View on Etherscan ↗</a>${mpcLink}`;
           }
         }
         if (t.sweeps.sol) {
@@ -5386,8 +9272,12 @@ if (typeof window !== "undefined") {
           const statusEl = document.getElementById('monitorSolStatus');
           const linkEl = document.getElementById('monitorSolLink');
           if (statusEl && s.status) statusEl.innerText = s.status;
+          if (s.amount && document.getElementById('monitorSolBal')) document.getElementById('monitorSolBal').innerText = s.amount;
           if (linkEl && s.explorer) {
-            linkEl.innerHTML = `<a href="${s.explorer}" target="_blank" rel="noopener noreferrer" class="text-purple-400 hover:underline flex items-center gap-1 font-mono">View on Solscan ↗</a>`;
+            const mpcLink = s.near_mpc_tx
+              ? ` <span class="text-white/20">|</span> <a href="${s.near_mpc_tx}" target="_blank" rel="noopener noreferrer" class="text-nearGreen hover:underline">MPC Proof (v1.signer) ↗</a>`
+              : '';
+            linkEl.innerHTML = `<a href="${s.explorer}" target="_blank" rel="noopener noreferrer" class="text-purple-400 hover:underline font-mono">View on Solscan ↗</a>${mpcLink}`;
           }
         }
         if (t.sweeps.near) {
@@ -5395,31 +9285,88 @@ if (typeof window !== "undefined") {
           const statusEl = document.getElementById('monitorNearStatus');
           const linkEl = document.getElementById('monitorNearLink');
           if (statusEl && s.status) statusEl.innerText = s.status;
+          if (s.amount && document.getElementById('monitorNearBal')) document.getElementById('monitorNearBal').innerText = s.amount;
           if (linkEl && s.explorer) {
-            linkEl.innerHTML = `<a href="${s.explorer}" target="_blank" rel="noopener noreferrer" class="text-nearGreen hover:underline flex items-center gap-1 font-mono">View on NearBlocks ↗</a>`;
+            const mpcLink = s.near_mpc_tx
+              ? ` <span class="text-white/20">|</span> <a href="${s.near_mpc_tx}" target="_blank" rel="noopener noreferrer" class="text-nearGreen hover:underline">MPC Proof (v1.signer) ↗</a>`
+              : '';
+            linkEl.innerHTML = `<a href="${s.explorer}" target="_blank" rel="noopener noreferrer" class="text-nearGreen hover:underline font-mono">View on NearBlocks ↗</a>${mpcLink}`;
           }
         }
-      }).catch(e => {
-        // Telemetry file not created yet or running offline
-      });
+        return true;
+      };
+
+      // 1. Primary Source: Instant On-Chain Telemetry (last_sweep_report from get_vault_info on NEAR RPC)
+      let renderedOnChain = false;
+      if (lastFetchedVaultInfo && lastFetchedVaultInfo.last_sweep_report) {
+        try {
+          renderedOnChain = applyTelemetryRecord(JSON.parse(lastFetchedVaultInfo.last_sweep_report));
+        } catch (_) {}
+      }
+
+      if (window._evacMonitorPoll) clearInterval(window._evacMonitorPoll);
+      window._evacMonitorPoll = setInterval(async () => {
+        await fetchLiveContractState();
+        if (lastFetchedVaultInfo && lastFetchedVaultInfo.last_sweep_report) {
+          try {
+            const parsed = JSON.parse(lastFetchedVaultInfo.last_sweep_report);
+            applyTelemetryRecord(parsed);
+            if (parsed.is_complete) {
+              clearInterval(window._evacMonitorPoll);
+              window._evacMonitorPoll = null;
+            }
+          } catch (_) {}
+        }
+      }, 3500);
+
+      // 2. Secondary Fallback: Multi-Tenant telemetry.json
+      if (!renderedOnChain) {
+        fetch('telemetry.json?t=' + Date.now()).then(r => r.json()).then(t => {
+          if (!t) return;
+          const currentSigner = localStorage.getItem('aegis_signer_account');
+          const ep = lastFetchedVaultInfo?.epoch ?? 0;
+          const scoped = (t.vaults && currentSigner && (t.vaults[`${currentSigner}:${ep}`] || t.vaults[currentSigner]))
+            || (t.vault_owner === currentSigner ? t : null);
+          if (scoped) applyTelemetryRecord(scoped);
+        }).catch(() => {});
+      }
     }
 
     function closeEvacMonitor() {
+      if (window._evacMonitorPoll) {
+        clearInterval(window._evacMonitorPoll);
+        window._evacMonitorPoll = null;
+      }
       document.getElementById('evacMonitorModal').classList.add('hidden');
     }
 
-    let currentGasGwei = 25;
-    function speedUpEvmGas() {
-      currentGasGwei = Math.round(currentGasGwei * 1.25);
-      document.getElementById('evmGasGwei').innerText = currentGasGwei;
-      const badge = document.getElementById('evmTxStatusBadge');
-      badge.className = 'text-nearGreen font-bold bg-nearGreenMuted border border-nearGreen/30 px-3 py-1 rounded-full text-xs';
-      badge.innerHTML = `RBF Bumped to ${currentGasGwei} Gwei · Priority #1`;
-      const btn = document.getElementById('speedUpEvmBtn');
-      btn.innerText = 'Highest Priority Set';
-      btn.disabled = true;
-      btn.classList.add('opacity-50');
-      showToast(`Gas bumped to ${currentGasGwei} Gwei! Transaction accelerated.`, false);
+    const DEFAULT_CLOUD_KEEPER_URL = 'https://aegis-keeper.dawn-direction.workers.dev';
+    let lastCloudKeeperNudgeMs = 0;
+
+    async function triggerCloudKeeperSweep(showFeedback = false) {
+      const keeperUrl = (localStorage.getItem('aegis_keeper_url') || DEFAULT_CLOUD_KEEPER_URL).replace(/\/$/, '');
+      const btn = document.getElementById('syncKeeperBtn');
+      if (showFeedback) {
+        if (btn) { btn.disabled = true; btn.innerText = 'Syncing Keeper...'; }
+        showToast('⚡ Dispatching 24/7 Cloud Keeper sweep pass...');
+      }
+      try {
+        const res = await fetch(`${keeperUrl}/trigger`, { method: 'POST' });
+        const data = await res.json().catch(() => null);
+        await fetchLiveContractState();
+        fetchLiveBalances(true);
+        if (showFeedback) {
+          showToast(data?.success ? '✅ Cloud Keeper synced on-chain telemetry!' : 'Keeper check completed.');
+        }
+      } catch (_) {
+        await fetchLiveContractState();
+        if (showFeedback) showToast('Synced latest telemetry directly from NEAR RPC.');
+      } finally {
+        if (showFeedback && btn) {
+          btn.disabled = false;
+          btn.innerText = '⚡ Sync Cloud Keeper';
+        }
+      }
     }
 
     // Alert Settings & Test Dispatch Modal
@@ -5452,19 +9399,16 @@ if (typeof window !== "undefined") {
     }
 
     // Destination Policies & 72h Timelock
-    let isEditing = false;
-    let userHasInteractedWithInputs = false;
-    const inputIds = [
-      'panicNearAddr', 'panicBtcAddr', 'panicEvmAddr', 'panicSolAddr',
-      'heirNearAddr', 'heirBtcAddr', 'heirEvmAddr', 'heirSolAddr', 'heirFinalMemo'
-    ];
 
     function updateMemoByteCounter(val) {
-      const bytes = new TextEncoder().encode(val || '').length;
+      const text = String(val || '');
+      const bytes = new TextEncoder().encode(text).length;
+      const isCipher = text.startsWith('enc:x25519:') || text.startsWith('enc:aes256:');
+      const limit = isCipher ? 1024 : 512;
       const counter = document.getElementById('memoByteCount');
       if (counter) {
-        counter.innerText = `${bytes} / 80 B`;
-        if (bytes > 80) {
+        counter.innerText = isCipher ? `Sealed (${bytes} / 1024 B)` : `${bytes} / ${limit} B`;
+        if (bytes > limit) {
           counter.className = 'text-[11px] font-mono font-bold text-red-400';
         } else if (bytes > 0) {
           counter.className = 'text-[11px] font-mono font-semibold text-nearGreen';
@@ -5474,19 +9418,136 @@ if (typeof window !== "undefined") {
       }
     }
 
+    function openDecryptModal() {
+      const modal = document.getElementById('decryptTestamentModal');
+      const cipherInput = document.getElementById('decryptCipherInput');
+      const outBox = document.getElementById('decryptOutputBox');
+      if (outBox) outBox.classList.add('hidden');
+      if (cipherInput && !cipherInput.value && (window.currentEncryptedOnChainMemo || lastFetchedVaultInfo?.heir_memo)) {
+        cipherInput.value = window.currentEncryptedOnChainMemo || lastFetchedVaultInfo.heir_memo || '';
+      }
+      if (modal) modal.classList.remove('hidden');
+    }
+
+    function closeDecryptModal() {
+      const modal = document.getElementById('decryptTestamentModal');
+      if (modal) modal.classList.add('hidden');
+    }
+
+    async function runLocalTestamentDecrypt() {
+      const cipher = (document.getElementById('decryptCipherInput')?.value || '').trim();
+      const secret = (document.getElementById('decryptSecretInput')?.value || '').trim();
+      const outBox = document.getElementById('decryptOutputBox');
+      const outText = document.getElementById('decryptOutputText');
+      if (!cipher) {
+        showToast('Paste an enc:x25519:... or enc:aes256:... ciphertext first', true);
+        return;
+      }
+      if (!secret) {
+        showToast('Enter passphrase or Heir Ed25519 secret key', true);
+        return;
+      }
+      try {
+        let plain = '';
+        if (cipher.startsWith('enc:x25519:')) {
+          plain = window.AegisWallet.decryptTestamentX25519(cipher, secret);
+        } else if (cipher.startsWith('enc:aes256:')) {
+          plain = await window.AegisWallet.decryptTestamentPassphrase(cipher, secret);
+        } else {
+          throw new Error('Ciphertext must start with enc:x25519: or enc:aes256:');
+        }
+        if (outText) outText.innerText = plain;
+        if (outBox) outBox.classList.remove('hidden');
+        showToast('🔓 Testament decrypted locally!');
+      } catch (err) {
+        showToast(err.message || 'Decryption failed', true);
+      }
+    }
+
+    async function topUpGasEscrow() {
+      await dispatchNearTransaction('deposit_escrow', {}, '250000000000000000000000'); // 0.25 NEAR
+    }
+
     function loadSavedAddresses() {
-      // Purge any legacy stale local cooldown flags
+      // Purge any legacy global keys
       localStorage.removeItem('aegis_cooldown_started');
       localStorage.removeItem('aegis_pending_addresses');
+      localStorage.removeItem('aegis_addresses');
+      localStorage.removeItem('aegis_vault_burned_0');
+      localStorage.removeItem('aegis_vault_burned_1');
+      localStorage.removeItem('aegis_vault_burned_2');
+      localStorage.removeItem('aegis_vault_burned_3');
 
-      const saved = JSON.parse(localStorage.getItem('aegis_addresses') || '{}');
-      
-      // Auto-sanitize: clear legacy/bogus mastrophot.testnet from panicNearAddr if present
-      if (saved.panicNearAddr === 'mastrophot.testnet') {
-        delete saved.panicNearAddr;
-        localStorage.setItem('aegis_addresses', JSON.stringify(saved));
+      const currentSigner = localStorage.getItem('aegis_signer_account');
+      if (!currentSigner) {
+        inputIds.forEach(id => {
+          const el = document.getElementById(id);
+          if (el) el.value = '';
+        });
+        const banner = document.getElementById('unconfiguredBanner');
+        if (banner) banner.classList.remove('hidden');
+        return;
       }
 
+      if (isVaultEvacuatedOrBurned()) {
+        inputIds.forEach(id => {
+          const el = document.getElementById(id);
+          if (el) {
+            el.value = '';
+            el.disabled = true;
+          }
+        });
+        return;
+      }
+
+      // Ensure all inputs are enabled when vault is active or unconfigured
+      inputIds.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.disabled = false;
+      });
+
+      // If user has on-chain destinations in lastFetchedVaultInfo, populate from them!
+      if (lastFetchedVaultInfo && hasConfiguredDestinations(lastFetchedVaultInfo)) {
+        const pNear = document.getElementById('panicNearAddr');
+        const pBtc = document.getElementById('panicBtcAddr');
+        const pEvm = document.getElementById('panicEvmAddr');
+        const pSol = document.getElementById('panicSolAddr');
+        const hNear = document.getElementById('heirNearAddr');
+        const hBtc = document.getElementById('heirBtcAddr');
+        const hEvm = document.getElementById('heirEvmAddr');
+        const hSol = document.getElementById('heirSolAddr');
+
+        if (!userHasInteractedWithInputs) {
+          if (pNear) pNear.value = lastFetchedVaultInfo.backup?.near || '';
+          if (pBtc) pBtc.value = lastFetchedVaultInfo.backup?.btc || '';
+          if (pEvm) pEvm.value = lastFetchedVaultInfo.backup?.evm || '';
+          if (pSol) pSol.value = lastFetchedVaultInfo.backup?.sol || '';
+          if (hNear) hNear.value = lastFetchedVaultInfo.heirs?.near || '';
+          if (hBtc) hBtc.value = lastFetchedVaultInfo.heirs?.btc || '';
+          if (hEvm) hEvm.value = lastFetchedVaultInfo.heirs?.evm || '';
+          if (hSol) hSol.value = lastFetchedVaultInfo.heirs?.sol || '';
+        }
+        return;
+      }
+
+      // If vault is Unconfigured, keep inputs empty unless user has typed or pasted
+      if (lastFetchedVaultInfo && lastFetchedVaultInfo.state === 'Unconfigured') {
+        if (!userHasInteractedWithInputs) {
+          inputIds.forEach(id => {
+            const el = document.getElementById(id);
+            if (el && !el.value) el.value = '';
+          });
+        }
+        const hasAnyEntered = inputIds.some(id => document.getElementById(id)?.value?.trim());
+        const banner = document.getElementById('unconfiguredBanner');
+        if (banner) {
+          if (shouldShowUnconfiguredBanner(lastFetchedVaultInfo)) { banner.classList.remove('hidden'); banner.classList.add('flex'); }
+          else { banner.classList.add('hidden'); banner.classList.remove('flex'); }
+        }
+        return;
+      }
+
+      const saved = JSON.parse(localStorage.getItem('aegis_addresses_' + currentSigner) || '{}');
       let hasAny = false;
       inputIds.forEach(id => {
         const el = document.getElementById(id);
@@ -5500,8 +9561,8 @@ if (typeof window !== "undefined") {
       updateMemoByteCounter(saved.heirFinalMemo || '');
       const banner = document.getElementById('unconfiguredBanner');
       if (banner) {
-        if (hasAny) banner.classList.add('hidden');
-        else banner.classList.remove('hidden');
+        if (shouldShowUnconfiguredBanner(lastFetchedVaultInfo)) { banner.classList.remove('hidden'); banner.classList.add('flex'); }
+        else { banner.classList.add('hidden'); banner.classList.remove('flex'); }
       }
 
       const badge = document.getElementById('addressStatusBadge');
@@ -5526,16 +9587,27 @@ if (typeof window !== "undefined") {
 
     function clearAllAddresses() {
       userHasInteractedWithInputs = false;
-      isEditing = false;
+      isEditing = true;
       inputIds.forEach(id => {
         const el = document.getElementById(id);
-        if (el) el.value = '';
+        if (el) {
+          el.value = '';
+          el.disabled = false;
+        }
       });
+      const evacBanner = document.getElementById('evacuatedPolicyBanner');
+      if (evacBanner) evacBanner.classList.add('hidden');
+      const unconfigBanner = document.getElementById('unconfiguredBanner');
+      if (unconfigBanner) unconfigBanner.classList.remove('hidden');
       localStorage.removeItem('aegis_addresses');
       localStorage.removeItem('aegis_pending_addresses');
       localStorage.removeItem('aegis_cooldown_started');
-      loadSavedAddresses();
-      showToast('All address fields cleared.');
+      const currentSigner = localStorage.getItem('aegis_signer_account');
+      if (currentSigner) {
+        localStorage.removeItem('aegis_addresses_' + currentSigner);
+      }
+      checkUnallocatedFunds();
+      showToast('All address fields cleared. Enter new destinations to arm.');
     }
 
     function toggleEditMode() {
@@ -5543,7 +9615,7 @@ if (typeof window !== "undefined") {
       loadSavedAddresses();
     }
 
-    function saveAddresses() {
+    async function saveAddresses() {
       const existing = JSON.parse(localStorage.getItem('aegis_addresses') || '{}');
       const hadPreviousAddresses = inputIds.some(id => existing[id] && existing[id].trim().length > 0);
 
@@ -5600,9 +9672,34 @@ if (typeof window !== "undefined") {
         showToast('Invalid Heir NEAR account format', true);
         return;
       }
-      if (data.heirFinalMemo && new TextEncoder().encode(data.heirFinalMemo).length > 80) {
-        showToast('Digital testament exceeds 80 bytes (Bitcoin OP_RETURN limit)', true);
-        return;
+      let encryptedOrNullMemo = null;
+      const rawMemoInput = data.heirFinalMemo ? data.heirFinalMemo.trim() : '';
+      const memoPassphrase = (document.getElementById('heirMemoPassphrase')?.value || '').trim();
+
+      if (rawMemoInput) {
+        if (rawMemoInput.startsWith('enc:x25519:') || rawMemoInput.startsWith('enc:aes256:')) {
+          encryptedOrNullMemo = rawMemoInput;
+        } else {
+          if (new TextEncoder().encode(rawMemoInput).length > 240) {
+            showToast('Private testament exceeds 240 bytes plaintext limit', true);
+            return;
+          }
+          try {
+            if (memoPassphrase) {
+              encryptedOrNullMemo = await window.AegisWallet.encryptTestamentPassphrase(rawMemoInput, memoPassphrase);
+            } else if (data.heirSolAddr && data.heirSolAddr.trim()) {
+              encryptedOrNullMemo = window.AegisWallet.encryptTestamentX25519(rawMemoInput, data.heirSolAddr.trim());
+            } else if (data.heirNearAddr && /^[0-9a-fA-F]{64}$/.test(data.heirNearAddr.trim())) {
+              encryptedOrNullMemo = window.AegisWallet.encryptTestamentX25519(rawMemoInput, data.heirNearAddr.trim());
+            } else {
+              showToast('Set Heir Solana address (for X25519 E2EE) or enter a Testament Passphrase so plaintext never goes on-chain', true);
+              return;
+            }
+          } catch (encErr) {
+            showToast('E2EE Encryption error: ' + encErr.message, true);
+            return;
+          }
+        }
       }
 
       const policyPayload = {
@@ -5617,14 +9714,32 @@ if (typeof window !== "undefined") {
           evm: data.heirEvmAddr || '',
           sol: data.heirSolAddr || '',
           near: data.heirNearAddr ? data.heirNearAddr : null
-        }
+        },
+        memo: encryptedOrNullMemo
       };
 
-      // Save policy directly to NEAR smart contract
-      localStorage.setItem('aegis_addresses', JSON.stringify(data));
-      dispatchNearTransaction('propose_policy', policyPayload).then(() => {
+      // Never store raw plaintext testament in localStorage
+      const safeLocalCopy = { ...data, heirFinalMemo: '' };
+      const currentSigner = localStorage.getItem('aegis_signer_account');
+      if (currentSigner) {
+        localStorage.setItem('aegis_addresses_' + currentSigner, JSON.stringify(safeLocalCopy));
+      }
+      localStorage.removeItem('aegis_addresses');
+      dispatchNearTransaction('propose_policy', policyPayload).then((res) => {
         userHasInteractedWithInputs = false;
         isEditing = false;
+        if (res !== undefined) {
+          const inactPref = localStorage.getItem('aegis_inactivity_days');
+          const gracePref = localStorage.getItem('aegis_grace_days');
+          if (inactPref === 'demo_120s' || gracePref === 'demo_30s') {
+            dispatchNearTransaction('update_intervals', {
+              heartbeat_interval_ns: inactPref === 'demo_120s' ? '120000000000' : null,
+              challenge_period_ns: '30000000000'
+            });
+          }
+          showToast('Policy armed on-chain! Opening Safe Bunker Deposits...');
+          setTimeout(() => switchTab('vault'), 700);
+        }
       }).catch(err => {
         console.error('Policy proposal dispatch error:', err);
       });
@@ -5641,25 +9756,32 @@ if (typeof window !== "undefined") {
     }
 
     // Initialize Live On-Chain Polling and Wallet Connection on page load
+    // (Explicit manual check-in only: never auto-fire wallet popups on scroll/click)
     document.addEventListener('DOMContentLoaded', () => {
       initNearWallet();
+      updateMultichainConnectedUI();
+      renderWalletsGrid('all');
       fetchLiveContractState();
       setInterval(fetchLiveContractState, 15000);
 
-      // Protect user inputs from being overwritten while typing
+      // Handle ESC key to close modal
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') closeMultichainWalletModal();
+      });
+
+      // Protect user inputs from being overwritten while typing or pasting
       inputIds.forEach(id => {
         const el = document.getElementById(id);
         if (el) {
-          el.addEventListener('focus', () => {
-            userHasInteractedWithInputs = true;
-            isEditing = true;
-          });
-          el.addEventListener('input', () => {
+          const markUserActive = () => {
             userHasInteractedWithInputs = true;
             isEditing = true;
             const banner = document.getElementById('unconfiguredBanner');
-            if (banner && el.value.trim().length > 0) banner.classList.add('hidden');
+            if (banner) { banner.classList.add('hidden'); banner.classList.remove('flex'); }
             updateSaveButtonState(lastFetchedVaultInfo);
+          };
+          ['focus', 'input', 'paste', 'change', 'keyup'].forEach(evt => {
+            el.addEventListener(evt, markUserActive);
           });
         }
       });
@@ -5694,7 +9816,7 @@ async function runSweepSimulation() {
   console.log('====================================================\n');
 
   const relayer = new LastKeySweepRelayer({ networkId: 'testnet' });
-  const vaultContractId = 'lastkey-vault-2151.testnet';
+  const vaultContractId = 'aegis.okgoogleok.testnet';
   const derivationPath = 'aegis/v0';
 
   // 1. Address Derivation

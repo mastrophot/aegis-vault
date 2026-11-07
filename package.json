@@ -1,12 +1,13 @@
 {
-  "name": "lastkey-spike",
-  "version": "0.1.0",
+  "name": "aegis-vault",
+  "version": "1.0.0",
   "private": true,
-  "description": "Spike testing for NEAR Chain Signatures v1.signer (Bitcoin, EVM, Solana)",
+  "description": "Autonomous Multichain Dead-Man's Switch & Panic Evacuation Vault powered by NEAR Chain Signatures",
   "scripts": {
-    "start": "node relayer/service.js --watch",
-    "relayer": "node relayer/service.js --watch",
-    "keeper": "node relayer/service.js --once",
+    "start": "node relayer/service.js --server",
+    "relayer": "node relayer/service.js --server",
+    "keeper": "node relayer/service.js --sweep-all",
+    "test": "node scripts/test_sweep_flow.js",
     "derive": "node scripts/derive_addresses.js"
   },
   "dependencies": {
@@ -16,6 +17,7 @@
     "@near-wallet-selector/meteor-wallet": "^10.1.4",
     "@near-wallet-selector/nightly": "^10.1.4",
     "@near-wallet-selector/sender": "^10.1.4",
+    "@noble/curves": "^1.2.0",
     "@solana/web3.js": "^1.99.0",
     "bitcoinjs-lib": "^6.1.6",
     "bs58": "^6.0.0",
@@ -26,7 +28,8 @@
     "js-sha256": "^0.9.0",
     "near-api-js": "^4.0.3",
     "near-seed-phrase": "^0.2.1",
-    "tiny-secp256k1": "^2.2.3"
+    "tiny-secp256k1": "^2.2.3",
+    "tweetnacl": "^1.0.3"
   },
   "devDependencies": {
     "@esbuild-plugins/node-modules-polyfill": "^0.2.2",

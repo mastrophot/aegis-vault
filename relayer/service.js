@@ -11,8 +11,8 @@
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const nearAPI = require('near-api-js');
-const { sha256 } = require('js-sha256');
 const { ethers } = require('ethers');
 const web3 = require('@solana/web3.js');
 const bitcoin = require('bitcoinjs-lib');
@@ -649,7 +649,7 @@ class AegisRelayerService {
               blockHash
             );
             const serializedTx = transaction.encode();
-            const txHash = Buffer.from(sha256.array(serializedTx));
+            const txHash = crypto.createHash('sha256').update(Buffer.from(serializedTx)).digest();
 
             const sigRes = await this.account.functionCall({
               contractId: this.contractId,

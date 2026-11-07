@@ -19,14 +19,14 @@ ENV NODE_ENV=production \
     PORT=8080 \
     NEAR_NETWORK=testnet \
     CONTRACT_ID=aegis.okgoogleok.testnet \
-    RELAYER_ACCOUNT_ID=okgoogleok.testnet \
+    RELAYER_ACCOUNT_ID=keeper.aegis.okgoogleok.testnet \
     NEAR_RPC_URL=https://test.rpc.fastnear.com \
     SOLANA_RPC_URL=https://api.devnet.solana.com \
-    EVM_RPC_URL=https://rpc.sepolia.org
+    EVM_RPC_URL=https://ethereum-sepolia-rpc.publicnode.com
 
 EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:8080/health || exit 1
 
-CMD ["node", "relayer/service.js", "--watch"]
+CMD ["node", "relayer/service.js", "--server"]

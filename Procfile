@@ -1,2 +1,2 @@
-web: node relayer/service.js --watch
-worker: node relayer/service.js --watch
+web: node relayer/service.js --server
+worker: node relayer/service.js --server

@@ -2,8 +2,8 @@ name: Aegis Autonomous Relayer Keeper
 
 on:
   schedule:
-    # Fallback serverless cloud keeper (every 10 minutes); telemetry is stored directly on-chain
-    - cron: '*/10 * * * *'
+    # Serverless cloud keeper (every 5 minutes); telemetry is stored directly on-chain
+    - cron: '*/5 * * * *'
   workflow_dispatch:
 
 jobs:
