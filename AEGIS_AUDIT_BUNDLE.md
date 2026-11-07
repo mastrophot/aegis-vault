@@ -3104,6 +3104,10 @@ class AegisRelayerService {
 
     this.near = null;
     this.account = null;
+    this._signerKeyPair = null;
+    this._nextNonce = null;
+    this._recentBlockHash = null;
+    this._blockFetchedAt = 0;
     this.hasSignerKey = false;
     this.processedSweeps = new Set();
   }
@@ -3127,6 +3131,7 @@ class AegisRelayerService {
 
       if (privKey) {
         const keyPair = nearAPI.KeyPair.fromString(privKey);
+        this._signerKeyPair = keyPair;
         await keyStore.setKey(this.networkId, this.relayerAccountId, keyPair);
         this.hasSignerKey = true;
       }
@@ -3147,6 +3152,78 @@ class AegisRelayerService {
       throw new Error(
         `Missing RELAYER_PRIVATE_KEY for ${this.relayerAccountId}. Configure RELAYER_PRIVATE_KEY env secret or ${this.credPath}.`
       );
+    }
+  }
+
+  async nearRpc(method, params = {}) {
+    const candidates = [
+      this.nearRpcUrl,
+      this.networkId === 'testnet' ? 'https://test.rpc.fastnear.com' : 'https://free.rpc.fastnear.com',
+      this.networkId === 'testnet' ? 'https://rpc.testnet.fastnear.com' : 'https://rpc.mainnet.fastnear.com'
+    ].filter((u, idx, arr) => u && arr.indexOf(u) === idx);
+
+    let lastErr = null;
+    for (const url of candidates) {
+      try {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'User-Agent': 'AegisVaultRelayer/1.0'
+          },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            id: 1,
+            method,
+            params
+          })
+        });
+        if (!res.ok) {
+          lastErr = new Error(`NEAR RPC HTTP ${res.status} (${url})`);
+          continue;
+        }
+        const body = await res.json();
+        if (body.error) {
+          const errData = body.error.data ? JSON.stringify(body.error.data) : body.error.message;
+          const rpcErr = new Error(`NEAR RPC ${body.error.name || 'Error'}: ${errData}`);
+          rpcErr.rpcError = body.error;
+          throw rpcErr;
+        }
+        return body.result;
+      } catch (err) {
+        lastErr = err;
+        // Do not failover on deterministic NEAR execution/state errors (e.g. InvalidNonce, UNKNOWN_ACCOUNT)
+        if (err.rpcError && err.rpcError.name !== 'INTERNAL_ERROR' && !String(err.message).includes('Timeout')) {
+          throw err;
+        }
+      }
+    }
+    throw lastErr || new Error('All NEAR RPC endpoints failed');
+  }
+
+  async ensureSignerNonceAndBlock(forceResync = false) {
+    const pubKeyStr = this._signerKeyPair.getPublicKey().toString();
+    const blockStale = Date.now() - this._blockFetchedAt > 60_000;
+    if (forceResync || this._nextNonce === null) {
+      const [keyInfo, block] = await Promise.all([
+        this.nearRpc('query', {
+          request_type: 'view_access_key',
+          finality: 'final',
+          account_id: this.relayerAccountId,
+          public_key: pubKeyStr
+        }),
+        this.nearRpc('block', { finality: 'final' })
+      ]);
+      if (keyInfo && keyInfo.error) {
+        throw new Error(`Access key query failed for ${this.relayerAccountId}: ${keyInfo.error}`);
+      }
+      this._nextNonce = BigInt(keyInfo.nonce || 0);
+      this._recentBlockHash = nearAPI.utils.serialize.base_decode(block.header.hash);
+      this._blockFetchedAt = Date.now();
+    } else if (blockStale) {
+      const block = await this.nearRpc('block', { finality: 'final' });
+      this._recentBlockHash = nearAPI.utils.serialize.base_decode(block.header.hash);
+      this._blockFetchedAt = Date.now();
     }
   }
 
@@ -3235,14 +3312,64 @@ class AegisRelayerService {
     await this.init({ requireSigner: true });
     let lastErr;
     for (let attempt = 0; attempt < 3; attempt++) {
+      let txHashBase58 = '';
       try {
-        return await this.account.functionCall({
-          contractId: this.contractId,
+        await this.ensureSignerNonceAndBlock(attempt > 0);
+        this._nextNonce += 1n;
+        const txNonce = this._nextNonce;
+        const pubKey = this._signerKeyPair.getPublicKey();
+        const action = nearAPI.transactions.functionCall(
           methodName,
           args,
-          gas,
-          attachedDeposit
+          BigInt(gas),
+          BigInt(attachedDeposit)
+        );
+        const tx = nearAPI.transactions.createTransaction(
+          this.relayerAccountId,
+          pubKey,
+          this.contractId,
+          txNonce,
+          [action],
+          this._recentBlockHash
+        );
+        const encodedTx = tx.encode();
+        const txHashBytes = crypto.createHash('sha256').update(Buffer.from(encodedTx)).digest();
+        txHashBase58 = nearAPI.utils.serialize.base_encode(txHashBytes);
+        const sig = this._signerKeyPair.sign(txHashBytes);
+        const signedTx = new nearAPI.transactions.SignedTransaction({
+          transaction: tx,
+          signature: new nearAPI.transactions.Signature({
+            keyType: pubKey.keyType,
+            data: sig.signature
+          })
         });
+        const signedTxBase64 = Buffer.from(signedTx.encode()).toString('base64');
+
+        let outcome;
+        try {
+          outcome = await this.nearRpc('send_tx', {
+            signed_tx_base64: signedTxBase64,
+            wait_until: 'EXECUTED_OPTIMISTIC'
+          });
+        } catch (sendErr) {
+          if (String(sendErr.message || '').includes('Timeout') && txHashBase58) {
+            await new Promise(r => setTimeout(r, 2000));
+            outcome = await this.nearRpc('tx', {
+              tx_hash: txHashBase58,
+              sender_account_id: this.relayerAccountId,
+              wait_until: 'EXECUTED_OPTIMISTIC'
+            });
+          } else {
+            throw sendErr;
+          }
+        }
+
+        if (outcome && outcome.status && typeof outcome.status === 'object' && outcome.status.Failure) {
+          throw new Error(
+            `NEAR transaction ${txHashBase58} failed: ${JSON.stringify(outcome.status.Failure)}`
+          );
+        }
+        return outcome;
       } catch (err) {
         lastErr = err;
         const msg = String(err?.message || err);
@@ -3250,12 +3377,13 @@ class AegisRelayerService {
           attempt < 2 &&
           (msg.includes('InvalidNonce') ||
             msg.includes('nonce') ||
+            msg.includes('Expired') ||
             msg.includes('Timeout') ||
             msg.includes('502') ||
             msg.includes('503') ||
             msg.includes('429'))
         ) {
-          await new Promise(r => setTimeout(r, 1200 * (attempt + 1)));
+          await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
           continue;
         }
         throw err;
@@ -3266,13 +3394,16 @@ class AegisRelayerService {
 
   async viewContract(methodName, args = {}) {
     await this.init({ requireSigner: false });
-    const raw = await this.near.connection.provider.query({
+    const raw = await this.nearRpc('query', {
       request_type: 'call_function',
       finality: 'optimistic',
       account_id: this.contractId,
       method_name: methodName,
       args_base64: Buffer.from(JSON.stringify(args)).toString('base64')
     });
+    if (raw && raw.error) {
+      throw new Error(`View ${methodName} error: ${raw.error}`);
+    }
     return JSON.parse(Buffer.from(raw.result).toString('utf8'));
   }
 
@@ -3304,19 +3435,18 @@ class AegisRelayerService {
     }
     console.log(`⏱️  [Aegis Relayer] Broadcasting verified signed heartbeat for ${vaultOwner}...`);
     try {
-      const outcome = await this.account.functionCall({
-        contractId: this.contractId,
-        methodName: 'ping_by_relayer',
-        args: {
+      const outcome = await this.callContract(
+        'ping_by_relayer',
+        {
           vault_owner: vaultOwner,
           timestamp_ms: String(timestampMs),
           signature_hex: signatureHex,
           nep413_nonce_hex: nep413NonceHex,
           nep413_recipient: nep413Recipient
         },
-        gas: '30000000000000',
-        attachedDeposit: '0'
-      });
+        '30000000000000',
+        '0'
+      );
       const txHash = outcome.transaction.hash;
       console.log(`✅ [Aegis Relayer] Signed heartbeat confirmed! Tx: ${txHash}`);
       return { success: true, txHash };
@@ -3608,19 +3738,18 @@ class AegisRelayerService {
               console.log(
                 `   • Requesting MPC ECDSA signature for BTC input #${sh.inputIndex}/${btcSweep.sighashes.length - 1}...`
               );
-              const outcome = await this.account.functionCall({
-                contractId: this.contractId,
-                methodName: 'request_sweep_signature',
-                args: {
+              const outcome = await this.callContract(
+                'request_sweep_signature',
+                {
                   vault_owner: vaultOwner,
                   chain: 'BTC',
                   payload_hex: sh.sighashHex,
                   target_epoch: epoch,
                   is_eddsa: false
                 },
-                gas: '280000000000000',
-                attachedDeposit: '0'
-              });
+                '280000000000000',
+                '0'
+              );
               lastNearTxHash = outcome.transaction.hash;
               const mpcSig = this.extractMpcSignatureFromOutcome(outcome);
               if (!mpcSig) {
@@ -3781,22 +3910,22 @@ class AegisRelayerService {
         const implicitAccountId = Buffer.from(nearPubKeyObj.data).toString('hex');
         const nearPubKeyStr = 'ed25519:' + vaultAddrs.sol.address;
 
-        const accInfo = await this.near.connection.provider
-          .query({
-            request_type: 'view_account',
-            finality: 'final',
-            account_id: implicitAccountId
-          })
-          .catch(() => null);
+        const accInfo = await this.nearRpc('query', {
+          request_type: 'view_account',
+          finality: 'final',
+          account_id: implicitAccountId
+        }).catch(() => null);
 
-        if (accInfo && BigInt(accInfo.amount) > 10_000_000_000_000_000_000_000n) {
-          const keyInfo = await this.near.connection.provider.query({
-            request_type: 'view_access_key',
-            finality: 'final',
-            account_id: implicitAccountId,
-            public_key: nearPubKeyStr
-          });
-          const block = await this.near.connection.provider.block({ finality: 'final' });
+        if (accInfo && accInfo.amount && BigInt(accInfo.amount) > 10_000_000_000_000_000_000_000n) {
+          const [keyInfo, block] = await Promise.all([
+            this.nearRpc('query', {
+              request_type: 'view_access_key',
+              finality: 'final',
+              account_id: implicitAccountId,
+              public_key: nearPubKeyStr
+            }),
+            this.nearRpc('block', { finality: 'final' })
+          ]);
           const blockHash = nearAPI.utils.serialize.base_decode(block.header.hash);
 
           const totalBal = BigInt(accInfo.amount);
@@ -3804,8 +3933,8 @@ class AegisRelayerService {
           const sweepYocto = totalBal > feeReserve ? totalBal - feeReserve : 0n;
 
           if (sweepYocto > 0n) {
-            const nonce = Number(keyInfo.nonce) + 1;
-            const actions = [nearAPI.transactions.transfer(sweepYocto.toString())];
+            const nonce = BigInt(keyInfo.nonce || 0) + 1n;
+            const actions = [nearAPI.transactions.transfer(BigInt(sweepYocto.toString()))];
             const transaction = nearAPI.transactions.createTransaction(
               implicitAccountId,
               nearPubKeyObj,
@@ -3817,19 +3946,18 @@ class AegisRelayerService {
             const serializedTx = transaction.encode();
             const txHash = crypto.createHash('sha256').update(Buffer.from(serializedTx)).digest();
 
-            const sigRes = await this.account.functionCall({
-              contractId: this.contractId,
-              methodName: 'request_sweep_signature',
-              args: {
+            const sigRes = await this.callContract(
+              'request_sweep_signature',
+              {
                 vault_owner: vaultOwner,
                 chain: 'NEAR',
                 payload_hex: txHash.toString('hex'),
                 target_epoch: epoch,
                 is_eddsa: true
               },
-              gas: '280000000000000',
-              attachedDeposit: '0'
-            });
+              '280000000000000',
+              '0'
+            );
             nearMpcTx = sigRes.transaction.hash;
             const parsedSig = this.extractMpcSignatureFromOutcome(sigRes);
             const rawSigBytes = parsedSig?.signature || parsedSig;
@@ -3848,7 +3976,10 @@ class AegisRelayerService {
               transaction,
               signature
             });
-            const broadcast = await this.near.connection.provider.sendTransaction(signedTx);
+            const broadcast = await this.nearRpc('send_tx', {
+              signed_tx_base64: Buffer.from(signedTx.encode()).toString('base64'),
+              wait_until: 'EXECUTED_OPTIMISTIC'
+            });
             nearSweepTx = broadcast.transaction.hash;
             totalSweptYocto += sweepYocto;
             console.log(`   🚀 NEAR Implicit Bunker Swept! Tx: ${nearSweepTx}`);
