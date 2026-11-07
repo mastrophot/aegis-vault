@@ -1,0 +1,8 @@
+.credentials/
+.git/
+node_modules/
+contracts/vault/target/
+.wrangler/
+.env
+.env.*
+AEGIS_AUDIT_BUNDLE.md

@@ -75,6 +75,8 @@ const MAX_TELEMETRY_BYTES: usize = 4096;
 const MAX_EVM_FEE_PER_GAS_WEI: u128 = 500_000_000_000; // 500 Gwei cap
 const MIN_EVM_GAS_LIMIT: u128 = 21_000;
 const MAX_EVM_GAS_LIMIT: u128 = 250_000;
+const MAX_SPONSOR_CALLS_PER_EPOCH: u8 = 8;
+const MAX_REGISTERED_ACCOUNTS: usize = 500;
 const NEP413_TAG: u32 = 2_147_484_061; // (1 << 31) + 413
 
 #[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -101,6 +103,43 @@ impl ChainAddresses {
             sol: String::new(),
             near: None,
         }
+    }
+
+    /// Validates address lengths and cryptographic formats before storing in policy
+    pub fn validate(&self) {
+        let btc = self.btc.trim();
+        if !btc.is_empty() {
+            require!(btc.len() <= 96, "BTC address exceeds maximum length");
+            require!(
+                address_to_btc_script_pubkey(btc).is_some(),
+                "Invalid Bitcoin destination address format (expected Bech32 tb1/bc1 or Base58Check)"
+            );
+        }
+        let evm = self.evm.trim();
+        if !evm.is_empty() {
+            let clean = evm.trim_start_matches("0x").trim_start_matches("0X");
+            require!(
+                clean.len() == 40 && hex::decode(clean).is_ok(),
+                "Invalid EVM destination address (expected 0x + 40 hex chars)"
+            );
+        }
+        let sol = self.sol.trim();
+        if !sol.is_empty() {
+            let decoded = bs58::decode(sol).into_vec().unwrap_or_default();
+            require!(
+                decoded.len() == 32,
+                "Invalid Solana destination address (expected Base58 32-byte public key)"
+            );
+        }
+    }
+
+    /// Checks if `new` differs from `self` in any chain slot (including filling previously empty slots)
+    pub fn has_any_change(&self, new: &ChainAddresses) -> bool {
+        let btc_changed = self.btc.trim() != new.btc.trim();
+        let evm_changed = !self.evm.trim().eq_ignore_ascii_case(new.evm.trim());
+        let sol_changed = self.sol.trim() != new.sol.trim();
+        let near_changed = self.near != new.near;
+        btc_changed || evm_changed || sol_changed || near_changed
     }
 
     /// Checks if applying `new` would replace any non-empty existing address
@@ -445,12 +484,14 @@ impl LastKeyVault {
     }
 
     /// Emergency Panic button: instantly shifts caller's vault into Evacuated state.
-    /// Strictly blocked if a 72-hour policy cooldown is pending, or if no backup destinations are configured.
+    /// Automatically applies any elapsed 72h pending policy, or blocks if an unelapsed 72h cooldown is active.
     #[payable]
     pub fn panic(&mut self) {
         let caller = env::predecessor_account_id();
         Self::internal_capture_signer_pubkey(&caller);
+        let now = env::block_timestamp();
         let vault = self.vaults.get_mut(&caller).expect("No vault found for account");
+        Self::internal_sync_elapsed_policy(vault, now);
         require!(
             vault.state == VaultState::Active || matches!(vault.state, VaultState::Claiming { .. }),
             "Cannot trigger panic: vault is not Active"
@@ -511,14 +552,19 @@ impl LastKeyVault {
         ));
     }
 
-    /// Resets caller's vault back to clean Unconfigured state (clears all egress addresses).
-    /// Blocked in Evacuated or Inheritance states (use `rotate_bunker` instead to advance epoch).
+    /// Resets caller's vault back to clean Unconfigured state ONLY if no egress destinations are armed yet.
+    /// Prevents `[C2]` 72-hour timelock bypass (`reset_my_vault -> propose_policy -> panic`).
     pub fn reset_my_vault(&mut self) {
         let caller = env::predecessor_account_id();
         let vault = self.vaults.get_mut(&caller).expect("No vault found for account");
         require!(
             vault.state != VaultState::Evacuated && vault.state != VaultState::Inheritance,
             "Use rotate_bunker to advance epoch after evacuation or inheritance"
+        );
+        require!(
+            vault.state == VaultState::Unconfigured
+                || (vault.backup.is_empty() && vault.heirs.is_empty()),
+            "Cannot instantly reset an armed vault with active destinations; propose a new policy (72h timelock) or rotate bunker after evacuation"
         );
         vault.backup = ChainAddresses::empty();
         vault.heirs = ChainAddresses::empty();
@@ -549,8 +595,8 @@ impl LastKeyVault {
     }
 
     /// Sweeps strictly the isolated per-user native NEAR deposit (`near_dep:{vault_owner}`)
-    /// to the configured backup or heir destination account. Never touches shared contract reserves
-    /// or other users' escrows/deposits.
+    /// to the policy-locked backup or heir destination account (no caller destination override allowed).
+    /// Includes an automatic rollback callback (`on_sweep_near_complete`) so funds are never lost if transfer fails.
     pub fn sweep_near(&mut self, vault_owner: AccountId, destination: Option<AccountId>) -> Promise {
         let caller = env::predecessor_account_id();
         let vault = self.vaults.get(&vault_owner).expect("Target vault not found");
@@ -569,16 +615,16 @@ impl LastKeyVault {
             _ => env::panic_str("Invalid state for sweep"),
         };
 
-        let target_account_id: AccountId = if let Some(override_dest) = destination {
-            if &Some(override_dest.clone()) != target_dest {
-                require!(caller == vault_owner, "Only owner can override destination");
-            }
-            override_dest
-        } else {
-            target_dest
-                .clone()
-                .expect("No destination NEAR account configured in vault policy")
-        };
+        let target_account_id: AccountId = target_dest
+            .clone()
+            .expect("No destination NEAR account configured in vault policy");
+
+        if let Some(override_dest) = destination {
+            require!(
+                override_dest == target_account_id,
+                "Destination override forbidden: sweep_near must route strictly to policy-locked NEAR recipient"
+            );
+        }
 
         let user_deposit = Self::internal_get_near_deposit(&vault_owner);
         require!(
@@ -592,11 +638,33 @@ impl LastKeyVault {
             user_deposit, vault_owner, target_account_id
         ));
 
-        Promise::new(target_account_id).transfer(NearToken::from_yoctonear(user_deposit))
+        Promise::new(target_account_id)
+            .transfer(NearToken::from_yoctonear(user_deposit))
+            .then(
+                Self::ext(env::current_account_id())
+                    .with_static_gas(CALLBACK_GAS)
+                    .on_sweep_near_complete(vault_owner, user_deposit.to_string()),
+            )
+    }
+
+    #[private]
+    pub fn on_sweep_near_complete(
+        &mut self,
+        vault_owner: AccountId,
+        amount_yocto_str: String,
+        #[callback_result] result: Result<(), PromiseError>,
+    ) {
+        if result.is_err() {
+            let amount: u128 = amount_yocto_str.parse().unwrap_or(0);
+            if amount > 0 {
+                Self::internal_credit_near_deposit(&vault_owner, amount);
+            }
+            env::panic_str("NEAR transfer to destination account failed; isolated vault deposit restored");
+        }
     }
 
     /// Propose updating backup or heir addresses for caller's bunker.
-    /// Enforces a 72-hour timelock on changes, or activates immediately on initial/additive setup.
+    /// Enforces a strict 72-hour timelock on ANY destination change once armed, or activates immediately on initial setup.
     /// Any attached NEAR deposit (>1 yocto) automatically credits the caller's Gas Escrow.
     #[payable]
     pub fn propose_policy(
@@ -612,6 +680,8 @@ impl LastKeyVault {
             !is_empty_submission,
             "At least one backup or heir destination must be provided"
         );
+        backup.validate();
+        heirs.validate();
 
         let attached = env::attached_deposit().as_yoctonear();
         if attached > 1 {
@@ -660,23 +730,9 @@ impl LastKeyVault {
             return;
         }
 
+        let now = env::block_timestamp();
         let vault = self.vaults.get_mut(&caller).unwrap();
-
-        if vault.state == VaultState::Evacuated {
-            let is_replacing = vault.backup.is_replacing_existing(&backup);
-            require!(
-                !is_replacing,
-                "Cannot overwrite already established evacuation addresses in Evacuated state"
-            );
-            vault.backup = backup;
-            vault.last_ping_ns = env::block_timestamp();
-            Self::internal_set_epoch_swept(&caller, vault.epoch, false);
-            env::log_str(&format!(
-                "POLICY_UPDATED_EVACUATED: Leftover destinations added for {}",
-                caller
-            ));
-            return;
-        }
+        Self::internal_sync_elapsed_policy(vault, now);
 
         require!(
             vault.state == VaultState::Active || vault.state == VaultState::Unconfigured,
@@ -685,14 +741,14 @@ impl LastKeyVault {
 
         let is_initial_setup = vault.state == VaultState::Unconfigured
             || (vault.backup.is_empty() && vault.heirs.is_empty());
-        let is_replacing = vault.backup.is_replacing_existing(&backup)
-            || vault.heirs.is_replacing_existing(&heirs);
+        let has_changes = vault.backup.has_any_change(&backup)
+            || vault.heirs.has_any_change(&heirs);
 
-        if is_initial_setup || !is_replacing {
+        if is_initial_setup || !has_changes {
             vault.backup = backup;
             vault.heirs = heirs;
             vault.pending_policy = None;
-            vault.last_ping_ns = env::block_timestamp();
+            vault.last_ping_ns = now;
             vault.state = VaultState::Active;
             self.internal_register_account(&caller);
             env::log_str(&format!(
@@ -700,26 +756,29 @@ impl LastKeyVault {
                 caller
             ));
         } else {
-            vault.last_ping_ns = env::block_timestamp();
-            let effective_at_ns = env::block_timestamp() + vault.policy_timelock_ns;
+            vault.last_ping_ns = now;
+            let effective_at_ns = now + vault.policy_timelock_ns;
             vault.pending_policy = Some(PendingPolicy {
                 backup,
                 heirs,
                 effective_at_ns,
             });
             env::log_str(&format!(
-                "POLICY_PROPOSED: 72h timelock started for modifying existing configured addresses for {}",
+                "POLICY_PROPOSED: 72h timelock started for modifying configured addresses for {}",
                 caller
             ));
         }
     }
 
-    /// Apply proposed policy after timelock has elapsed for caller's bunker
+    /// Apply proposed policy after timelock has elapsed (callable by owner or any keeper/heir once 72h elapsed)
     #[payable]
-    pub fn apply_policy(&mut self) {
+    pub fn apply_policy(&mut self, account_id: Option<AccountId>) {
         let caller = env::predecessor_account_id();
-        Self::internal_capture_signer_pubkey(&caller);
-        let vault = self.vaults.get_mut(&caller).expect("No vault found for account");
+        let target = account_id.unwrap_or_else(|| {
+            Self::internal_capture_signer_pubkey(&caller);
+            caller.clone()
+        });
+        let vault = self.vaults.get_mut(&target).expect("No vault found for account");
         require!(vault.state == VaultState::Active, "Can only apply policy in Active state");
         if let Some(pending) = vault.pending_policy.take() {
             require!(
@@ -728,8 +787,10 @@ impl LastKeyVault {
             );
             vault.backup = pending.backup;
             vault.heirs = pending.heirs;
-            vault.last_ping_ns = env::block_timestamp();
-            env::log_str(&format!("POLICY_APPLIED: New destinations activated for {}", caller));
+            if caller == target {
+                vault.last_ping_ns = env::block_timestamp();
+            }
+            env::log_str(&format!("POLICY_APPLIED: New destinations activated for {}", target));
         } else {
             env::panic_str("No pending policy found");
         }
@@ -756,12 +817,10 @@ impl LastKeyVault {
     ) {
         let caller = env::predecessor_account_id();
         Self::internal_capture_signer_pubkey(&caller);
+        let now = env::block_timestamp();
         let vault = self.vaults.get_mut(&caller).expect("No vault found for account");
+        Self::internal_sync_elapsed_policy(vault, now);
         require!(vault.state == VaultState::Active, "Can only update intervals in Active state");
-        require!(
-            vault.pending_policy.is_none(),
-            "Cannot update intervals during active 72h policy cooldown"
-        );
         let new_hb = heartbeat_interval_ns
             .map(|v| v.0)
             .unwrap_or(vault.heartbeat_interval_ns);
@@ -777,34 +836,10 @@ impl LastKeyVault {
             "Challenge period must be at least 15 seconds"
         );
 
-        let old_total = vault
-            .heartbeat_interval_ns
-            .saturating_add(vault.challenge_period_ns);
-        let new_total = new_hb.saturating_add(new_cp);
-        let is_shortening = new_total < old_total;
-        let is_configured = !vault.backup.is_empty() || !vault.heirs.is_empty();
-        let is_demo_mode = new_hb <= 300_000_000_000;
-
-        if is_configured && is_shortening && !is_demo_mode {
-            vault.heartbeat_interval_ns = new_hb;
-            vault.challenge_period_ns = new_cp;
-            vault.last_ping_ns = env::block_timestamp();
-            let effective_at_ns = env::block_timestamp() + vault.policy_timelock_ns;
-            vault.pending_policy = Some(PendingPolicy {
-                backup: vault.backup.clone(),
-                heirs: vault.heirs.clone(),
-                effective_at_ns,
-            });
-            env::log_str(&format!(
-                "INTERVALS_SHORTENED_TIMELOCK: Intervals shortened for {}. 72h cooldown armed.",
-                caller
-            ));
-        } else {
-            vault.heartbeat_interval_ns = new_hb;
-            vault.challenge_period_ns = new_cp;
-            vault.last_ping_ns = env::block_timestamp();
-            env::log_str(&format!("INTERVALS_UPDATED: Intervals updated for {}", caller));
-        }
+        vault.heartbeat_interval_ns = new_hb;
+        vault.challenge_period_ns = new_cp;
+        vault.last_ping_ns = now;
+        env::log_str(&format!("INTERVALS_UPDATED: Intervals updated for {}", caller));
     }
 
     /// Set or revoke authorized relayer for caller's bunker
@@ -823,6 +858,7 @@ impl LastKeyVault {
 
     /// Autonomous push inheritance trigger: callable by anyone (relayer, keeper bot, heir)
     /// once the owner's heartbeat interval + grace period has expired without any owner interaction.
+    /// Automatically promotes an elapsed `pending_policy` (or clears an unelapsed one) so inheritance is NEVER deadlocked (`[C3]`).
     pub fn trigger_push_inheritance(&mut self, vault_owner: AccountId) {
         let vault = self
             .vaults
@@ -832,11 +868,8 @@ impl LastKeyVault {
             vault.state == VaultState::Active || matches!(vault.state, VaultState::Claiming { .. }),
             "Vault must be Active to trigger push inheritance"
         );
-        require!(
-            vault.pending_policy.is_none(),
-            "Cannot trigger push inheritance while 72h policy cooldown is active"
-        );
         let now = env::block_timestamp();
+        Self::internal_sync_elapsed_policy(vault, now);
         let total_inactivity_ns = vault
             .heartbeat_interval_ns
             .saturating_add(vault.challenge_period_ns);
@@ -844,6 +877,9 @@ impl LastKeyVault {
             now >= vault.last_ping_ns.saturating_add(total_inactivity_ns),
             "Owner inactivity period (heartbeat + grace) has not elapsed yet"
         );
+        // If an unelapsed pending policy still exists when inactivity expires, discard the unelapsed change
+        // and use the already confirmed `vault.heirs` so inheritance cannot be blocked.
+        vault.pending_policy = None;
         require!(
             !vault.heirs.is_empty(),
             "Cannot trigger inheritance: no heir destination addresses configured"
@@ -898,8 +934,8 @@ impl LastKeyVault {
     }
 
     /// Requests an MPC threshold signature from `v1.signer` for a foreign chain transaction.
-    /// Supports zero-deposit calls from restricted `FunctionCall` keeper keys funded by
-    /// Per-Vault Gas Escrow (or Contract Sponsor Pool) + `0.005 NEAR` keeper gas refund!
+    /// Enforces on-chain transaction verification across all 4 chains (EVM EIP-1559 RLP, Bitcoin BIP-143 SegWit preimage + outputs,
+    /// Solana compiled instructions, and NEAR Borsh transaction) so relayers can NEVER blind-sign (`[C4]`).
     #[payable]
     pub fn request_sweep_signature(
         &mut self,
@@ -918,6 +954,10 @@ impl LastKeyVault {
 
         let epoch_to_sign = target_epoch.unwrap_or(vault.epoch);
         require!(epoch_to_sign <= vault.epoch, "Cannot sign for future epoch");
+        require!(
+            !Self::internal_is_epoch_swept(&vault_owner, epoch_to_sign),
+            "Epoch is already completely swept"
+        );
 
         let target_destination: ChainAddresses = if epoch_to_sign == vault.epoch {
             require!(
@@ -930,10 +970,14 @@ impl LastKeyVault {
                 _ => env::panic_str("Invalid state for sweep"),
             }
         } else {
-            // Historical epoch: load archived destination saved at `rotate_bunker()`, fallback to current backup
-            Self::internal_get_archived_epoch(&vault_owner, epoch_to_sign)
-                .map(|a| a.destination)
-                .unwrap_or_else(|| vault.backup.clone())
+            // Historical epoch: strictly require archived Evacuated/Inheritance state saved at `rotate_bunker()`
+            let archived = Self::internal_get_archived_epoch(&vault_owner, epoch_to_sign)
+                .expect("Historical epoch was not archived from an Evacuated or Inheritance state");
+            require!(
+                archived.state == VaultState::Evacuated || archived.state == VaultState::Inheritance,
+                "Historical epoch is not in a sweepable state"
+            );
+            archived.destination
         };
 
         let path = format!("aegis/{}/{}", vault_owner, epoch_to_sign);
@@ -951,11 +995,18 @@ impl LastKeyVault {
                     !target_destination.btc.trim().is_empty(),
                     "No target Bitcoin address configured for this epoch"
                 );
-                require!(
-                    clean_hex.len() == 64 && hex::decode(&clean_hex).is_ok(),
-                    "Bitcoin payload must be a 32-byte BIP-143 sighash (64 hex characters)"
-                );
-                clean_hex
+                if clean_hex.len() > 364 {
+                    let raw_btc_bytes = hex::decode(&clean_hex)
+                        .unwrap_or_else(|_| env::panic_str("Invalid Bitcoin preimage hex"));
+                    match verify_btc_sweep_payload(&raw_btc_bytes, target_destination.btc.trim()) {
+                        Ok(sighash) => hex::encode(sighash),
+                        Err(reason) => env::panic_str(reason),
+                    }
+                } else {
+                    env::panic_str(
+                        "Bitcoin sweep requires verifiable BIP-143 preimage + serialized outputs (>182 bytes); blind hashes forbidden",
+                    )
+                }
             } else if clean_hex.len() > 64 {
                 let raw_tx_bytes = hex::decode(&clean_hex)
                     .unwrap_or_else(|_| env::panic_str("Invalid EVM tx hex"));
@@ -977,15 +1028,8 @@ impl LastKeyVault {
                 }
                 let hash_bytes = env::keccak256(&raw_tx_bytes);
                 hex::encode(hash_bytes)
-            } else if clean_hex.len() == 64 {
-                require!(
-                    caller == vault_owner,
-                    "Relayers must submit verifiable raw EVM transaction bytes, not blind hashes"
-                );
-                require!(hex::decode(&clean_hex).is_ok(), "Invalid 32-byte ECDSA hex");
-                clean_hex
             } else {
-                env::panic_str("Invalid ECDSA payload length (expected 32-byte hash or raw tx bytes)");
+                env::panic_str("Blind 32-byte ECDSA hashes are forbidden; submit verifiable raw EVM or BIP-143 BTC bytes");
             };
             (SignPayloadV2::Ecdsa(ecdsa_hash), 0)
         } else {
@@ -994,15 +1038,21 @@ impl LastKeyVault {
                 "Invalid EdDSA hex"
             );
             let is_near = chain.eq_ignore_ascii_case("NEAR");
-            if is_near {
+            let eddsa_payload = if is_near {
+                let expected_near = target_destination
+                    .near
+                    .as_ref()
+                    .expect("No target NEAR account configured for this epoch");
                 require!(
-                    target_destination.near.is_some(),
-                    "No target NEAR account configured for this epoch"
+                    clean_hex.len() > 64,
+                    "NEAR implicit sweep requires verifiable Borsh-encoded Transaction bytes; blind 32-byte hashes forbidden"
                 );
-                require!(
-                    clean_hex.len() == 64,
-                    "NEAR implicit sweep payload must be a 32-byte SHA-256 transaction hash"
-                );
+                let raw_tx_bytes = hex::decode(&clean_hex)
+                    .unwrap_or_else(|_| env::panic_str("Invalid NEAR tx hex"));
+                match verify_near_sweep_payload(&raw_tx_bytes, expected_near) {
+                    Ok(tx_hash) => hex::encode(tx_hash),
+                    Err(reason) => env::panic_str(reason),
+                }
             } else {
                 let raw_msg_bytes = hex::decode(&clean_hex)
                     .unwrap_or_else(|_| env::panic_str("Invalid EdDSA hex"));
@@ -1010,29 +1060,34 @@ impl LastKeyVault {
                     verify_solana_sweep_payload(&raw_msg_bytes, &target_destination.sol),
                     "Solana transaction message failed security validation against target recipient"
                 );
-            }
-            (SignPayloadV2::Eddsa(clean_hex), 1)
+                clean_hex
+            };
+            (SignPayloadV2::Eddsa(eddsa_payload), 1)
         };
 
-        // Funding resolution: Caller deposit -> Per-Vault Gas Escrow -> Contract Sponsor Pool
+        // Funding resolution: Caller deposit -> Per-Vault Gas Escrow -> Capped Contract Sponsor Pool
         let attached_yocto = env::attached_deposit().as_yoctonear();
         let reward_keeper = caller != vault_owner;
         let keeper_refund_yocto = if reward_keeper { KEEPER_GAS_REFUND_YOCTO } else { 0 };
 
-        let (sign_deposit_yocto, escrow_debited_yocto, refund_caller_yocto) = if attached_yocto > 0 {
+        let (sign_deposit_yocto, escrow_debited_yocto, refund_caller_yocto, used_sponsor_pool) = if attached_yocto > 0 {
             require!(
                 attached_yocto >= MPC_SIGN_DEPOSIT_YOCTO,
                 "Attached deposit must be 0 (use escrow/sponsor) or at least 0.05 NEAR"
             );
-            (attached_yocto, 0u128, 0u128)
+            (attached_yocto, 0u128, 0u128, false)
         } else {
             let needed = MPC_SIGN_DEPOSIT_YOCTO.saturating_add(keeper_refund_yocto);
             let user_escrow = Self::internal_get_escrow(&vault_owner);
             if user_escrow >= needed {
                 Self::internal_debit_escrow(&vault_owner, needed);
-                (MPC_SIGN_DEPOSIT_YOCTO, needed, keeper_refund_yocto)
+                (MPC_SIGN_DEPOSIT_YOCTO, needed, keeper_refund_yocto, false)
             } else {
-                // Fallback to Contract Sponsor Pool (replenished automatically by v1.signer refunds!)
+                let used = Self::internal_get_sponsor_calls(&vault_owner, epoch_to_sign);
+                require!(
+                    used < MAX_SPONSOR_CALLS_PER_EPOCH,
+                    "Per-epoch sponsor pool limit reached for unfunded vault; top up gas escrow via deposit_escrow"
+                );
                 let min_storage = env::storage_byte_cost()
                     .as_yoctonear()
                     .saturating_mul(env::storage_usage() as u128);
@@ -1047,13 +1102,14 @@ impl LastKeyVault {
                     available_sponsor >= needed,
                     "Vault gas escrow depleted and contract sponsor pool insufficient; top up via deposit_escrow"
                 );
-                (MPC_SIGN_DEPOSIT_YOCTO, 0u128, keeper_refund_yocto)
+                Self::internal_set_sponsor_calls(&vault_owner, epoch_to_sign, used + 1);
+                (MPC_SIGN_DEPOSIT_YOCTO, 0u128, keeper_refund_yocto, true)
             }
         };
 
         env::log_str(&format!(
-            "SWEEP_REQUEST: Vault={}, Epoch={}, Chain={}, Path={}, EscrowDebited={}",
-            vault_owner, epoch_to_sign, chain, path, escrow_debited_yocto
+            "SWEEP_REQUEST: Vault={}, Epoch={}, Chain={}, Path={}, EscrowDebited={}, SponsorUsed={}",
+            vault_owner, epoch_to_sign, chain, path, escrow_debited_yocto, used_sponsor_pool
         ));
 
         let request = SignRequest {
@@ -1082,6 +1138,8 @@ impl LastKeyVault {
                         is_eddsa,
                         U64((escrow_debited_yocto / 1_000_000_000_000_000_000) as u64), // in milli-micro units (10^18)
                         U64((refund_caller_yocto / 1_000_000_000_000_000_000) as u64),
+                        epoch_to_sign,
+                        used_sponsor_pool,
                     ),
             )
     }
@@ -1095,6 +1153,8 @@ impl LastKeyVault {
         is_eddsa: bool,
         escrow_debited_e18: U64,
         keeper_refund_e18: U64,
+        epoch_signed: u32,
+        used_sponsor_pool: bool,
         #[callback_result] result: Result<near_sdk::serde_json::Value, PromiseError>,
     ) -> near_sdk::serde_json::Value {
         let escrow_debited = (escrow_debited_e18.0 as u128).saturating_mul(1_000_000_000_000_000_000);
@@ -1120,6 +1180,12 @@ impl LastKeyVault {
                 if escrow_debited > 0 {
                     Self::internal_credit_escrow(&vault_owner, escrow_debited);
                 }
+                if used_sponsor_pool {
+                    let cur = Self::internal_get_sponsor_calls(&vault_owner, epoch_signed);
+                    if cur > 0 {
+                        Self::internal_set_sponsor_calls(&vault_owner, epoch_signed, cur - 1);
+                    }
+                }
                 env::panic_str("MPC signature generation failed")
             }
         }
@@ -1129,31 +1195,44 @@ impl LastKeyVault {
 
     pub fn get_vault_info(&self, account_id: Option<AccountId>) -> Option<VaultInfo> {
         let target = account_id?;
-        self.vaults.get(&target).map(|vault| VaultInfo {
-            owner: target.clone(),
-            mpc_contract: self.mpc_contract.clone(),
-            state: vault.state.clone(),
-            last_ping_ns: vault.last_ping_ns,
-            heartbeat_interval_ns: vault.heartbeat_interval_ns,
-            challenge_period_ns: vault.challenge_period_ns,
-            policy_timelock_ns: vault.policy_timelock_ns,
-            backup: vault.backup.clone(),
-            heirs: vault.heirs.clone(),
-            pending_policy: vault.pending_policy.clone(),
-            current_time_ns: env::block_timestamp(),
-            epoch: vault.epoch,
-            authorized_relayer: vault.authorized_relayer.clone(),
-            heir_memo: self.get_heir_memo(target.clone()),
-            gas_escrow_yocto: Self::internal_get_escrow(&target).to_string(),
-            near_deposit_yocto: Self::internal_get_near_deposit(&target).to_string(),
-            is_epoch_swept: Self::internal_is_epoch_swept(&target, vault.epoch),
-            last_sweep_report: Self::internal_get_sweep_telemetry(&target, vault.epoch),
+        let now = env::block_timestamp();
+        self.vaults.get(&target).map(|vault| {
+            let (effective_backup, effective_heirs, effective_pending) =
+                if let Some(ref p) = vault.pending_policy {
+                    if now >= p.effective_at_ns {
+                        (p.backup.clone(), p.heirs.clone(), None)
+                    } else {
+                        (vault.backup.clone(), vault.heirs.clone(), Some(p.clone()))
+                    }
+                } else {
+                    (vault.backup.clone(), vault.heirs.clone(), None)
+                };
+            VaultInfo {
+                owner: target.clone(),
+                mpc_contract: self.mpc_contract.clone(),
+                state: vault.state.clone(),
+                last_ping_ns: vault.last_ping_ns,
+                heartbeat_interval_ns: vault.heartbeat_interval_ns,
+                challenge_period_ns: vault.challenge_period_ns,
+                policy_timelock_ns: vault.policy_timelock_ns,
+                backup: effective_backup,
+                heirs: effective_heirs,
+                pending_policy: effective_pending,
+                current_time_ns: now,
+                epoch: vault.epoch,
+                authorized_relayer: vault.authorized_relayer.clone(),
+                heir_memo: self.get_heir_memo(target.clone()),
+                gas_escrow_yocto: Self::internal_get_escrow(&target).to_string(),
+                near_deposit_yocto: Self::internal_get_near_deposit(&target).to_string(),
+                is_epoch_swept: Self::internal_is_epoch_swept(&target, vault.epoch),
+                last_sweep_report: Self::internal_get_sweep_telemetry(&target, vault.epoch),
+            }
         })
     }
 
     /// Single-call view method for stateless serverless keepers:
     /// - Skips already-swept epochs (`is_epoch_swept == true`) to prevent infinite loops
-    /// - Requires `pending_policy.is_none() && !heirs.is_empty()` for expired `Active` vaults
+    /// - Never deadlocks on `pending_policy` once inactivity expires (`[C3]`)
     pub fn get_actionable_vaults(&self) -> Vec<VaultInfo> {
         let now = env::block_timestamp();
         self.get_registered_accounts()
@@ -1165,7 +1244,6 @@ impl LastKeyVault {
                         && !v.is_epoch_swept;
                 let needs_inheritance_trigger =
                     (v.state == VaultState::Active || matches!(v.state, VaultState::Claiming { .. }))
-                        && v.pending_policy.is_none()
                         && !v.heirs.is_empty()
                         && now
                             >= v.last_ping_ns.saturating_add(
@@ -1206,8 +1284,13 @@ impl LastKeyVault {
         Self::internal_get_sweep_telemetry(&account_id, ep)
     }
 
+    /// Registers an account in the keeper index ONLY if it has an initialized vault (`[H2]` DoS mitigation).
     pub fn register_account(&mut self, account_id: Option<AccountId>) {
         let acc = account_id.unwrap_or_else(env::predecessor_account_id);
+        require!(
+            self.vaults.contains_key(&acc),
+            "Cannot register account without an initialized vault"
+        );
         self.internal_register_account(&acc);
     }
 
@@ -1226,13 +1309,38 @@ impl LastKeyVault {
 
     // --- Internal Storage Helpers (Zero Borsh Migration Impact) ---
 
+    fn internal_sync_elapsed_policy(vault: &mut UserVault, now_ns: u64) {
+        let should_apply = vault
+            .pending_policy
+            .as_ref()
+            .map_or(false, |p| now_ns >= p.effective_at_ns);
+        if should_apply {
+            if let Some(pending) = vault.pending_policy.take() {
+                vault.backup = pending.backup;
+                vault.heirs = pending.heirs;
+            }
+        }
+    }
+
+    fn internal_get_sponsor_calls(owner: &AccountId, epoch: u32) -> u8 {
+        let key = format!("spons:{}:{}", owner, epoch);
+        env::storage_read(key.as_bytes())
+            .and_then(|b| b.first().copied())
+            .unwrap_or(0)
+    }
+
+    fn internal_set_sponsor_calls(owner: &AccountId, epoch: u32, count: u8) {
+        let key = format!("spons:{}:{}", owner, epoch);
+        env::storage_write(key.as_bytes(), &[count]);
+    }
+
     fn internal_register_account(&self, account_id: &AccountId) {
         let mut list = self.get_registered_accounts();
-        if !list.contains(account_id) {
+        if !list.contains(account_id) && list.len() < MAX_REGISTERED_ACCOUNTS {
             list.push(account_id.clone());
-        }
-        if let Ok(bytes) = near_sdk::serde_json::to_vec(&list) {
-            env::storage_write(b"reg_accounts", &bytes);
+            if let Ok(bytes) = near_sdk::serde_json::to_vec(&list) {
+                env::storage_write(b"reg_accounts", &bytes);
+            }
         }
     }
 
@@ -1788,6 +1896,295 @@ fn verify_solana_sweep_payload(raw_msg_bytes: &[u8], expected_recipient_sol: &st
     pos == raw_msg_bytes.len() && has_valid_transfer
 }
 
+/// Converts a Bitcoin Bech32/Bech32m (`tb1...`/`bc1...`) or Base58Check (`m`/`n`/`2`/`1`/`3`) address
+/// into its canonical `scriptPubKey` bytes for on-chain BIP-143 output verification.
+fn address_to_btc_script_pubkey(addr: &str) -> Option<Vec<u8>> {
+    let trimmed = addr.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let lower = trimmed.to_ascii_lowercase();
+    if lower.starts_with("tb1") || lower.starts_with("bc1") {
+        let sep = lower.rfind('1')?;
+        if sep < 2 || sep + 7 > lower.len() {
+            return None;
+        }
+        let data_part = &lower[sep + 1..];
+        const CHARSET: &[u8; 32] = b"qpzry9x8gf2tvdw0s3jn54khce6mua7l";
+        let mut values = Vec::with_capacity(data_part.len());
+        for b in data_part.bytes() {
+            let idx = CHARSET.iter().position(|&c| c == b)? as u8;
+            values.push(idx);
+        }
+        if values.len() < 7 {
+            return None;
+        }
+        let witness_version = values[0];
+        if witness_version > 16 {
+            return None;
+        }
+        let payload_5bit = &values[1..values.len() - 6];
+        let mut acc: u32 = 0;
+        let mut bits: u32 = 0;
+        let mut prog = Vec::with_capacity((payload_5bit.len() * 5) / 8);
+        for &v in payload_5bit {
+            acc = (acc << 5) | (v as u32);
+            bits += 5;
+            while bits >= 8 {
+                bits -= 8;
+                prog.push(((acc >> bits) & 0xff) as u8);
+            }
+        }
+        if bits >= 5 || ((acc << (8 - bits)) & 0xff) != 0 {
+            return None;
+        }
+        if prog.len() < 2 || prog.len() > 40 {
+            return None;
+        }
+        if witness_version == 0 && prog.len() != 20 && prog.len() != 32 {
+            return None;
+        }
+        let version_opcode = if witness_version == 0 {
+            0x00
+        } else {
+            0x50 + witness_version
+        };
+        let mut script = Vec::with_capacity(2 + prog.len());
+        script.push(version_opcode);
+        script.push(prog.len() as u8);
+        script.extend_from_slice(&prog);
+        return Some(script);
+    }
+
+    // Base58Check P2PKH (`1`, `m`, `n`) or P2SH (`3`, `2`)
+    let decoded = bs58::decode(trimmed).into_vec().ok()?;
+    if decoded.len() != 25 {
+        return None;
+    }
+    let version = decoded[0];
+    let hash20 = &decoded[1..21];
+    let checksum = &decoded[21..25];
+    let dhash = env::sha256(&env::sha256(&decoded[0..21]));
+    if &dhash[0..4] != checksum {
+        return None;
+    }
+    match version {
+        0x00 | 0x6f => {
+            let mut s = Vec::with_capacity(25);
+            s.extend_from_slice(&[0x76, 0xa9, 0x14]);
+            s.extend_from_slice(hash20);
+            s.extend_from_slice(&[0x88, 0xac]);
+            Some(s)
+        }
+        0x05 | 0xc4 => {
+            let mut s = Vec::with_capacity(23);
+            s.extend_from_slice(&[0xa9, 0x14]);
+            s.extend_from_slice(hash20);
+            s.push(0x87);
+            Some(s)
+        }
+        _ => None,
+    }
+}
+
+/// On-chain verification of a Bitcoin SegWit v0 BIP-143 preimage (182 bytes) + serialized transaction outputs (`[C4]` & `[H9]`):
+/// 1) Verifies P2WPKH `scriptCode` (`0x1976a914...88ac`) and `SIGHASH_ALL` (`0x01000000`)
+/// 2) Verifies `SHA256(SHA256(outputs))` matches `hashOutputs` inside the BIP-143 preimage (`preimage[142..174]`)
+/// 3) Verifies Output 0 transfers `>= 546` sats strictly to `expected_btc_addr` (plus optional 0-sat `OP_RETURN` Output 1)
+/// 4) Computes and returns the 32-byte BIP-143 sighash `SHA256(SHA256(preimage))` inside WASM
+fn verify_btc_sweep_payload(
+    raw_bytes: &[u8],
+    expected_btc_addr: &str,
+) -> Result<[u8; 32], &'static str> {
+    if raw_bytes.len() <= 182 {
+        return Err("Bitcoin payload too short: expected 182-byte BIP-143 preimage + serialized outputs");
+    }
+    let preimage = &raw_bytes[0..182];
+    let outputs_bytes = &raw_bytes[182..];
+
+    // Check P2WPKH scriptCode at offset 104..130: `0x19 0x76 0xa9 0x14 <20B> 0x88 0xac`
+    if preimage[104] != 0x19
+        || preimage[105..108] != [0x76, 0xa9, 0x14]
+        || preimage[128..130] != [0x88, 0xac]
+    {
+        return Err("Invalid BIP-143 P2WPKH scriptCode in Bitcoin preimage");
+    }
+
+    let sighash_type = u32::from_le_bytes([
+        preimage[178],
+        preimage[179],
+        preimage[180],
+        preimage[181],
+    ]);
+    if sighash_type != 1 {
+        return Err("Bitcoin BIP-143 sighash type must be SIGHASH_ALL (1)");
+    }
+
+    let input_value = u64::from_le_bytes([
+        preimage[130],
+        preimage[131],
+        preimage[132],
+        preimage[133],
+        preimage[134],
+        preimage[135],
+        preimage[136],
+        preimage[137],
+    ]);
+    if input_value < 546 {
+        return Err("Bitcoin input value below dust threshold");
+    }
+
+    let computed_hash_outputs = env::sha256(&env::sha256(outputs_bytes));
+    if computed_hash_outputs.as_slice() != &preimage[142..174] {
+        return Err("Bitcoin hashOutputs mismatch: serialized outputs do not match BIP-143 preimage");
+    }
+
+    let expected_script = address_to_btc_script_pubkey(expected_btc_addr)
+        .ok_or("Invalid target Bitcoin address in vault policy")?;
+
+    // Parse Output 0: must pay >= 546 sats to `expected_script`
+    if outputs_bytes.len() < 9 {
+        return Err("Truncated Bitcoin output 0");
+    }
+    let out0_val = u64::from_le_bytes([
+        outputs_bytes[0],
+        outputs_bytes[1],
+        outputs_bytes[2],
+        outputs_bytes[3],
+        outputs_bytes[4],
+        outputs_bytes[5],
+        outputs_bytes[6],
+        outputs_bytes[7],
+    ]);
+    if out0_val < 546 {
+        return Err("Bitcoin primary output value below 546-sat dust threshold");
+    }
+    let out0_script_len = outputs_bytes[8] as usize;
+    let out0_end = 9usize
+        .checked_add(out0_script_len)
+        .ok_or("Output 0 script length overflow")?;
+    if out0_end > outputs_bytes.len() {
+        return Err("Output 0 script exceeds serialized outputs buffer");
+    }
+    if &outputs_bytes[9..out0_end] != expected_script.as_slice() {
+        return Err("Bitcoin output 0 scriptPubKey does not match policy-locked recipient address");
+    }
+
+    // Optional Output 1: strictly 0-sat `OP_RETURN` (`0x6a`) testament commitment
+    if out0_end < outputs_bytes.len() {
+        let rem = &outputs_bytes[out0_end..];
+        if rem.len() < 10 {
+            return Err("Malformed trailing Bitcoin output");
+        }
+        let out1_val = u64::from_le_bytes([
+            rem[0], rem[1], rem[2], rem[3], rem[4], rem[5], rem[6], rem[7],
+        ]);
+        if out1_val != 0 {
+            return Err("Secondary Bitcoin output must have 0 satoshis (OP_RETURN only)");
+        }
+        let out1_script_len = rem[8] as usize;
+        if 9 + out1_script_len != rem.len() || out1_script_len == 0 || rem[9] != 0x6a {
+            return Err("Secondary Bitcoin output must be a valid OP_RETURN script with no trailing outputs");
+        }
+    }
+
+    let sighash_vec = env::sha256(&env::sha256(preimage));
+    let mut sighash = [0u8; 32];
+    sighash.copy_from_slice(&sighash_vec);
+    Ok(sighash)
+}
+
+/// On-chain verification of a Borsh-encoded unsigned NEAR `Transaction` for implicit bunker sweeps (`[C4]` & `[H9]`):
+/// - Verifies `receiver_id == expected_receiver`
+/// - Verifies `block_hash != 0`
+/// - Verifies exactly 1 `Action::Transfer { deposit > 0 }` with zero trailing bytes
+/// - Returns `SHA256(raw_tx)` (32 bytes) to be signed by `v1.signer`
+fn verify_near_sweep_payload(
+    raw_tx: &[u8],
+    expected_receiver: &AccountId,
+) -> Result<[u8; 32], &'static str> {
+    if raw_tx.len() < 4 + 1 + 32 + 8 + 4 + 32 + 4 + 1 + 16 {
+        return Err("NEAR transaction payload too short");
+    }
+    let mut pos = 0usize;
+
+    let signer_len = u32::from_le_bytes([raw_tx[0], raw_tx[1], raw_tx[2], raw_tx[3]]) as usize;
+    pos += 4;
+    if signer_len == 0 || signer_len > 64 || pos + signer_len > raw_tx.len() {
+        return Err("Invalid signer_id in NEAR transaction");
+    }
+    pos += signer_len;
+
+    // PublicKey: 1 byte key_type (0 = Ed25519) + 32 bytes
+    if pos + 33 > raw_tx.len() || raw_tx[pos] != 0 {
+        return Err("Invalid Ed25519 public key in NEAR transaction");
+    }
+    pos += 33;
+
+    // Nonce: u64 LE
+    if pos + 8 > raw_tx.len() {
+        return Err("Truncated nonce in NEAR transaction");
+    }
+    pos += 8;
+
+    // ReceiverId: u32 LE length + UTF-8 string
+    if pos + 4 > raw_tx.len() {
+        return Err("Truncated receiver_id length in NEAR transaction");
+    }
+    let recv_len = u32::from_le_bytes([
+        raw_tx[pos],
+        raw_tx[pos + 1],
+        raw_tx[pos + 2],
+        raw_tx[pos + 3],
+    ]) as usize;
+    pos += 4;
+    if pos + recv_len > raw_tx.len() {
+        return Err("Truncated receiver_id in NEAR transaction");
+    }
+    let recv_bytes = &raw_tx[pos..pos + recv_len];
+    if recv_bytes != expected_receiver.as_str().as_bytes() {
+        return Err("NEAR transaction receiver_id does not match policy-locked destination");
+    }
+    pos += recv_len;
+
+    // BlockHash: 32 bytes (must not be all zeros)
+    if pos + 32 > raw_tx.len() {
+        return Err("Truncated block_hash in NEAR transaction");
+    }
+    let bh = &raw_tx[pos..pos + 32];
+    if bh.iter().all(|&b| b == 0) {
+        return Err("NEAR transaction block_hash cannot be all zeros");
+    }
+    pos += 32;
+
+    // Actions: u32 LE count == 1, action variant == 3 (Transfer), deposit u128 > 0
+    if pos + 4 + 1 + 16 != raw_tx.len() {
+        return Err("NEAR sweep transaction must contain exactly one Transfer action and no trailing bytes");
+    }
+    let action_count = u32::from_le_bytes([
+        raw_tx[pos],
+        raw_tx[pos + 1],
+        raw_tx[pos + 2],
+        raw_tx[pos + 3],
+    ]);
+    pos += 4;
+    if action_count != 1 || raw_tx[pos] != 3 {
+        return Err("NEAR sweep transaction must contain strictly a single Transfer action (opcode 3)");
+    }
+    pos += 1;
+    let mut dep_bytes = [0u8; 16];
+    dep_bytes.copy_from_slice(&raw_tx[pos..pos + 16]);
+    let deposit = u128::from_le_bytes(dep_bytes);
+    if deposit == 0 {
+        return Err("NEAR transfer deposit must be greater than zero");
+    }
+
+    let hash_vec = env::sha256(raw_tx);
+    let mut out = [0u8; 32];
+    out.copy_from_slice(&hash_vec);
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1804,18 +2201,47 @@ mod tests {
 
     fn sample_addresses() -> (ChainAddresses, ChainAddresses) {
         let backup = ChainAddresses {
-            btc: "tb1qbackup".to_string(),
+            btc: "tb1qug7ge5vzhslcywjqs62k5392uy7ta5klvd2f7c".to_string(),
             evm: "0x1111111111111111111111111111111111111111".to_string(),
             sol: "4uQeVj5tqViQh7yWWGStvkEG1Zmhx6uasJtWCJziofM".to_string(),
             near: Some("backup.testnet".parse().unwrap()),
         };
         let heirs = ChainAddresses {
-            btc: "tb1qheir".to_string(),
+            btc: "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx".to_string(),
             evm: "0x2222222222222222222222222222222222222222".to_string(),
             sol: "8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR".to_string(),
             near: Some("heir.testnet".parse().unwrap()),
         };
         (backup, heirs)
+    }
+
+    fn build_valid_btc_preimage_and_outputs(target_btc: &str, sats: u64) -> Vec<u8> {
+        let script = address_to_btc_script_pubkey(target_btc).expect("Valid BTC address");
+        let mut outputs = Vec::new();
+        outputs.extend_from_slice(&sats.to_le_bytes());
+        outputs.push(script.len() as u8);
+        outputs.extend_from_slice(&script);
+
+        let hash_outputs = env::sha256(&env::sha256(&outputs));
+        let mut preimage = Vec::with_capacity(182);
+        preimage.extend_from_slice(&2u32.to_le_bytes()); // nVersion
+        preimage.extend_from_slice(&[0x11u8; 32]); // hashPrevouts
+        preimage.extend_from_slice(&[0x22u8; 32]); // hashSequence
+        preimage.extend_from_slice(&[0x33u8; 36]); // outpoint
+        // scriptCode: 0x19 76 a9 14 <20B> 88 ac
+        preimage.extend_from_slice(&[0x19, 0x76, 0xa9, 0x14]);
+        preimage.extend_from_slice(&[0x44u8; 20]);
+        preimage.extend_from_slice(&[0x88, 0xac]);
+        preimage.extend_from_slice(&(sats + 1000).to_le_bytes()); // input value
+        preimage.extend_from_slice(&0xfffffffdu32.to_le_bytes()); // nSequence
+        preimage.extend_from_slice(&hash_outputs); // hashOutputs (32B)
+        preimage.extend_from_slice(&0u32.to_le_bytes()); // nLockTime
+        preimage.extend_from_slice(&1u32.to_le_bytes()); // SIGHASH_ALL (1)
+        assert_eq!(preimage.len(), 182);
+
+        let mut payload = preimage;
+        payload.extend_from_slice(&outputs);
+        payload
     }
 
     fn encode_rlp_bytes(bytes: &[u8]) -> Vec<u8> {
@@ -2172,7 +2598,7 @@ mod tests {
             .signer_account_id(bob.clone())
             .attached_deposit(NearToken::from_near(2))
             .build());
-        contract.propose_policy(backup, heirs, None);
+        contract.propose_policy(backup.clone(), heirs, None);
         contract.deposit_near_vault(None);
 
         // Alice triggers panic
@@ -2191,10 +2617,11 @@ mod tests {
             .predecessor_account_id(keeper.clone())
             .attached_deposit(NearToken::from_yoctonear(0))
             .build());
+        let btc_payload_hex = hex::encode(build_valid_btc_preimage_and_outputs(&backup.btc, 50_000));
         let _ = contract.request_sweep_signature(
             alice.clone(),
             "BTC".to_string(),
-            "aa".repeat(32),
+            btc_payload_hex,
             Some(0),
             false,
         );
@@ -2328,6 +2755,67 @@ mod tests {
         }))
         .is_err());
     }
+
+    #[test]
+    fn test_timelock_anti_bypass_pending_policy_inheritance_and_btc_near_verifiers() {
+        let alice: AccountId = "alice.testnet".parse().unwrap();
+        let keeper: AccountId = "keeper.testnet".parse().unwrap();
+        let mpc: AccountId = "v1.signer-prod.testnet".parse().unwrap();
+        let (backup, heirs) = sample_addresses();
+
+        let mut context = get_context(alice.clone());
+        let t0 = 1_000_000_000_000_000_000u64;
+        testing_env!(context.block_timestamp(t0).build());
+
+        let mut contract = LastKeyVault::new(mpc, Some(keeper));
+        contract.propose_policy(backup.clone(), heirs.clone(), None);
+
+        // 1. `[C2]` Attempting `reset_my_vault()` on an armed vault MUST panic (prevents 72h timelock bypass)
+        assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            contract.reset_my_vault();
+        }))
+        .is_err());
+
+        // 2. Proposing a modified destination arms a 72h `PendingPolicy`
+        let mut new_heirs = heirs.clone();
+        new_heirs.near = Some("new_heir.testnet".parse().unwrap());
+        contract.propose_policy(backup.clone(), new_heirs.clone(), None);
+        assert!(contract.get_vault_info(Some(alice.clone())).unwrap().pending_policy.is_some());
+
+        // 3. `[C3]` If owner becomes inactive for `heartbeat + grace` (>72h), `trigger_push_inheritance`
+        // automatically promotes the elapsed `pending_policy` and transitions to `Inheritance` (never deadlocks!)
+        let expire_ns = t0 + DEFAULT_HEARTBEAT_INTERVAL_NS + DEFAULT_CHALLENGE_PERIOD_NS + 1;
+        testing_env!(context.block_timestamp(expire_ns).build());
+        assert_eq!(contract.get_actionable_vaults().len(), 1);
+        contract.trigger_push_inheritance(alice.clone());
+        let info = contract.get_vault_info(Some(alice)).unwrap();
+        assert_eq!(info.state, VaultState::Inheritance);
+        assert_eq!(info.heirs.near, Some("new_heir.testnet".parse().unwrap()));
+
+        // 4. `[C4]` Verify BTC BIP-143 preimage verifier accepts valid target and rejects attacker output
+        let valid_btc = build_valid_btc_preimage_and_outputs(&backup.btc, 75_000);
+        assert!(verify_btc_sweep_payload(&valid_btc, &backup.btc).is_ok());
+        assert!(verify_btc_sweep_payload(&valid_btc, &heirs.btc).is_err());
+
+        // 5. `[C4]` Verify NEAR Borsh transaction verifier accepts valid Transfer and rejects wrong receiver
+        let target_near: AccountId = "backup.testnet".parse().unwrap();
+        let wrong_near: AccountId = "attacker.testnet".parse().unwrap();
+        let mut near_tx = Vec::new();
+        let signer_str = "a".repeat(64);
+        near_tx.extend_from_slice(&(signer_str.len() as u32).to_le_bytes());
+        near_tx.extend_from_slice(signer_str.as_bytes());
+        near_tx.push(0u8); // Ed25519
+        near_tx.extend_from_slice(&[0x11u8; 32]);
+        near_tx.extend_from_slice(&1u64.to_le_bytes()); // nonce
+        near_tx.extend_from_slice(&(target_near.as_str().len() as u32).to_le_bytes());
+        near_tx.extend_from_slice(target_near.as_str().as_bytes());
+        near_tx.extend_from_slice(&[0x22u8; 32]); // block_hash
+        near_tx.extend_from_slice(&1u32.to_le_bytes()); // 1 action
+        near_tx.push(3u8); // Transfer
+        near_tx.extend_from_slice(&100_000_000_000_000_000_000_000u128.to_le_bytes());
+        assert!(verify_near_sweep_payload(&near_tx, &target_near).is_ok());
+        assert!(verify_near_sweep_payload(&near_tx, &wrong_near).is_err());
+    }
 }
 
 ```
@@ -2418,7 +2906,10 @@ class LastKeySweepRelayer {
     // Exact intrinsic gas per EIP-2028: 16 per non-zero byte, 4 per zero byte
     let calldataGas = 0n;
     for (const b of dataBytes) calldataGas += (b === 0 ? 4n : 16n);
-    const computedGasLimit = 21000n + calldataGas;
+    const minIntrinsicGas = 21000n + calldataGas;
+    const requestedGas = BigInt(gasLimit || 21000n);
+    const rawGasLimit = requestedGas > minIntrinsicGas ? requestedGas : minIntrinsicGas;
+    const computedGasLimit = rawGasLimit > 250000n ? 250000n : rawGasLimit;
 
     // For L2 networks (Base, Optimism, Arbitrum), account for L1 Rollup Data fee buffer
     const isL2 = [8453, 84532, 10, 42161, 421614].includes(Number(chainId));
@@ -2724,9 +3215,80 @@ class LastKeySweepRelayer {
 
     const txForHash = psbt.__CACHE.__TX;
     const prevOutScript = bitcoin.address.toOutputScript(fromAddress, network);
+    // BIP-143 P2WPKH scriptCode MUST be the 25-byte P2PKH script (0x76a914<20-byte-pkh>88ac)
+    const p2pkhScript =
+      prevOutScript.length === 22 && prevOutScript[0] === 0x00 && prevOutScript[1] === 0x14
+        ? bitcoin.payments.p2pkh({ hash: prevOutScript.subarray(2), network }).output
+        : prevOutScript;
+
+    const dsha256 = buf =>
+      crypto.createHash('sha256').update(crypto.createHash('sha256').update(buf).digest()).digest();
+
+    const prevoutsParts = [];
+    const sequencesParts = [];
+    for (const txIn of txForHash.ins) {
+      const idxBuf = Buffer.alloc(4);
+      idxBuf.writeUInt32LE(txIn.index, 0);
+      prevoutsParts.push(Buffer.from(txIn.hash), idxBuf);
+      const seqBuf = Buffer.alloc(4);
+      seqBuf.writeUInt32LE(txIn.sequence, 0);
+      sequencesParts.push(seqBuf);
+    }
+    const hashPrevouts = dsha256(Buffer.concat(prevoutsParts));
+    const hashSequence = dsha256(Buffer.concat(sequencesParts));
+
+    const outputsParts = [];
+    for (const txOut of txForHash.outs) {
+      const valBuf = Buffer.alloc(8);
+      valBuf.writeBigUInt64LE(BigInt(txOut.value), 0);
+      const scriptBuf = Buffer.from(txOut.script);
+      outputsParts.push(valBuf, Buffer.from([scriptBuf.length]), scriptBuf);
+    }
+    const outputsBuffer = Buffer.concat(outputsParts);
+    const hashOutputs = dsha256(outputsBuffer);
+
     const sighashes = effectiveUtxos.map((u, idx) => {
-      const hash = txForHash.hashForWitnessV0(idx, prevOutScript, u.value, bitcoin.Transaction.SIGHASH_ALL);
-      return { inputIndex: idx, sighashHex: Buffer.from(hash).toString('hex') };
+      const hash = txForHash.hashForWitnessV0(
+        idx,
+        p2pkhScript,
+        u.value,
+        bitcoin.Transaction.SIGHASH_ALL
+      );
+      const sighashHex = Buffer.from(hash).toString('hex');
+
+      const verBuf = Buffer.alloc(4);
+      verBuf.writeInt32LE(txForHash.version, 0);
+      const voutBuf = Buffer.alloc(4);
+      voutBuf.writeUInt32LE(txForHash.ins[idx].index, 0);
+      const valBuf = Buffer.alloc(8);
+      valBuf.writeBigUInt64LE(BigInt(u.value), 0);
+      const seqBuf = Buffer.alloc(4);
+      seqBuf.writeUInt32LE(txForHash.ins[idx].sequence, 0);
+      const lockBuf = Buffer.alloc(4);
+      lockBuf.writeUInt32LE(txForHash.locktime, 0);
+      const sighashTypeBuf = Buffer.alloc(4);
+      sighashTypeBuf.writeUInt32LE(bitcoin.Transaction.SIGHASH_ALL, 0);
+
+      const preimage = Buffer.concat([
+        verBuf,
+        hashPrevouts,
+        hashSequence,
+        Buffer.from(txForHash.ins[idx].hash),
+        voutBuf,
+        Buffer.from([p2pkhScript.length]),
+        Buffer.from(p2pkhScript),
+        valBuf,
+        seqBuf,
+        hashOutputs,
+        lockBuf,
+        sighashTypeBuf
+      ]);
+
+      return {
+        inputIndex: idx,
+        sighashHex,
+        verifiablePayloadHex: Buffer.concat([preimage, outputsBuffer]).toString('hex')
+      };
     });
 
     return {
@@ -2776,12 +3338,21 @@ class LastKeySweepRelayer {
     );
 
     if (memo) {
+      const rawMemoBuf = Buffer.from(String(memo), 'utf8');
+      // Cap inline Solana memo at 560 bytes so 1 + 64 + message.length never exceeds 1232-byte PACKET_DATA_SIZE
+      const solMemoBuf =
+        rawMemoBuf.length <= 560
+          ? rawMemoBuf
+          : Buffer.from(
+              `aegis-e2ee:${crypto.createHash('sha256').update(rawMemoBuf).digest('hex')}`,
+              'utf8'
+            );
       const MEMO_PROGRAM_ID = new web3.PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr');
       transaction.add(
         new web3.TransactionInstruction({
           keys: [{ pubkey: from, isSigner: true, isWritable: true }],
           programId: MEMO_PROGRAM_ID,
-          data: Buffer.from(memo, 'utf8')
+          data: solMemoBuf
         })
       );
     }
@@ -2875,12 +3446,20 @@ class LastKeySweepRelayer {
     );
 
     if (memo) {
+      const rawMemoBuf = Buffer.from(String(memo), 'utf8');
+      const solMemoBuf =
+        rawMemoBuf.length <= 560
+          ? rawMemoBuf
+          : Buffer.from(
+              `aegis-e2ee:${crypto.createHash('sha256').update(rawMemoBuf).digest('hex')}`,
+              'utf8'
+            );
       const MEMO_PROGRAM_ID = new web3.PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr');
       transaction.add(
         new web3.TransactionInstruction({
           keys: [{ pubkey: fromOwner, isSigner: true, isWritable: true }],
           programId: MEMO_PROGRAM_ID,
-          data: Buffer.from(memo, 'utf8')
+          data: solMemoBuf
         })
       );
     }
@@ -3117,7 +3696,14 @@ class AegisRelayerService {
       const keyStore = new nearAPI.keyStores.InMemoryKeyStore();
       let privKey = (this.privateKey || process.env.RELAYER_PRIVATE_KEY || '').trim();
 
-      if (!privKey && this.credPath && fs && typeof fs.existsSync === 'function' && fs.existsSync(this.credPath)) {
+      if (
+        !privKey &&
+        process.env.NODE_ENV !== 'production' &&
+        this.credPath &&
+        fs &&
+        typeof fs.existsSync === 'function' &&
+        fs.existsSync(this.credPath)
+      ) {
         try {
           const cred = JSON.parse(fs.readFileSync(this.credPath, 'utf8'));
           privKey = (cred.privateKey || cred.private_key || '').trim();
@@ -3373,7 +3959,7 @@ class AegisRelayerService {
         if (
           attempt < 2 &&
           (msg.includes('InvalidNonce') ||
-            msg.includes('nonce') ||
+            msg.includes('ak_nonce') ||
             msg.includes('Expired') ||
             msg.includes('Timeout') ||
             msg.includes('502') ||
@@ -3428,10 +4014,34 @@ class AegisRelayerService {
    */
   async sponsorPing(vaultOwner, { timestampMs, signatureHex, nep413NonceHex = null, nep413Recipient = null } = {}) {
     await this.init({ requireSigner: true });
-    if (!timestampMs || !signatureHex) {
+    if (!vaultOwner || !timestampMs || !signatureHex) {
       return {
         success: false,
-        error: 'ping_by_relayer requires cryptographic owner signature (timestampMs + signatureHex)'
+        error: 'ping_by_relayer requires vaultOwner, timestampMs, and signatureHex'
+      };
+    }
+    const cleanSig = String(signatureHex).trim().replace(/^0x/i, '');
+    if (!/^[0-9a-fA-F]{128}$/.test(cleanSig)) {
+      return {
+        success: false,
+        error: 'Invalid signatureHex: must be a 64-byte (128 hex chars) Ed25519 signature'
+      };
+    }
+    if (nep413NonceHex !== null && nep413NonceHex !== undefined) {
+      const cleanNonce = String(nep413NonceHex).trim().replace(/^0x/i, '');
+      if (!/^[0-9a-fA-F]{64}$/.test(cleanNonce)) {
+        return {
+          success: false,
+          error: 'Invalid nep413NonceHex: must be 32 bytes (64 hex chars)'
+        };
+      }
+    }
+    const tsNum = Number(timestampMs);
+    const nowMs = Date.now();
+    if (!Number.isFinite(tsNum) || Math.abs(nowMs - tsNum) > 10 * 60 * 1000) {
+      return {
+        success: false,
+        error: 'Heartbeat timestamp expired or out of 10-minute window'
       };
     }
     console.log(`⏱️  [Aegis Relayer] Broadcasting verified signed heartbeat for ${vaultOwner}...`);
@@ -3441,8 +4051,8 @@ class AegisRelayerService {
         {
           vault_owner: vaultOwner,
           timestamp_ms: String(timestampMs),
-          signature_hex: signatureHex,
-          nep413_nonce_hex: nep413NonceHex,
+          signature_hex: cleanSig,
+          nep413_nonce_hex: nep413NonceHex ? String(nep413NonceHex).trim().replace(/^0x/i, '') : null,
           nep413_recipient: nep413Recipient
         },
         '30000000000000',
@@ -3466,12 +4076,13 @@ class AegisRelayerService {
     }
   }
 
-  async getActionableVaults() {
+  async getActionableVaults({ throwOnError = false } = {}) {
     try {
       const vaults = await this.viewContract('get_actionable_vaults', {});
       return Array.isArray(vaults) ? vaults : [];
     } catch (err) {
       console.warn(`[Aegis Relayer] get_actionable_vaults error:`, err.message);
+      if (throwOnError) throw err;
       return [];
     }
   }
@@ -3603,7 +4214,23 @@ class AegisRelayerService {
           const memoBytes = sweepMemo ? ethers.toUtf8Bytes(sweepMemo) : new Uint8Array(0);
           let calldataGas = 0n;
           for (const b of memoBytes) calldataGas += b === 0 ? 4n : 16n;
-          const gasLimit = 21000n + calldataGas;
+          const minGasLimit = 21000n + calldataGas;
+          let gasLimit = minGasLimit;
+          try {
+            const estHex = await this.evmRpc('eth_estimateGas', [
+              {
+                from: vaultAddrs.evm.address,
+                to: destination.evm.trim(),
+                value: '0x1',
+                data: sweepMemo ? ethers.hexlify(memoBytes) : '0x'
+              }
+            ]);
+            if (estHex) {
+              const est = (BigInt(estHex) * 120n) / 100n; // +20% safety margin for smart contract wallets
+              if (est > gasLimit) gasLimit = est;
+              if (gasLimit > 250000n) gasLimit = 250000n;
+            }
+          } catch (_) {}
           const isL2 = [8453, 84532, 10, 42161, 421614].includes(chainId);
           const l1Buffer = isL2 ? 15_000_000_000_000n : 0n;
           const totalGasCost = gasLimit * maxFeePerGas + l1Buffer;
@@ -3621,6 +4248,7 @@ class AegisRelayerService {
               fromAddress: vaultAddrs.evm.address,
               toAddress: destination.evm.trim(),
               valueWei: sweepValueWei,
+              gasLimit,
               nonce,
               maxFeePerGas,
               maxPriorityFeePerGas,
@@ -3651,7 +4279,17 @@ class AegisRelayerService {
             const rawSignedHex = signedEvmTx.signedTx.startsWith('0x')
               ? signedEvmTx.signedTx
               : '0x' + signedEvmTx.signedTx;
-            const broadcastHash = await this.evmRpc('eth_sendRawTransaction', [rawSignedHex]);
+            let broadcastHash = null;
+            try {
+              broadcastHash = await this.evmRpc('eth_sendRawTransaction', [rawSignedHex]);
+            } catch (bErr) {
+              const bMsg = String(bErr?.message || bErr).toLowerCase();
+              if (bMsg.includes('already known') || bMsg.includes('known transaction')) {
+                broadcastHash = signedEvmTx.txHash;
+              } else {
+                throw bErr;
+              }
+            }
             const evmHash = broadcastHash || signedEvmTx.txHash;
             console.log(`   🚀 EVM Sweep Broadcasted! TxHash: ${evmHash}`);
 
@@ -3744,7 +4382,7 @@ class AegisRelayerService {
                 {
                   vault_owner: vaultOwner,
                   chain: 'BTC',
-                  payload_hex: sh.sighashHex,
+                  payload_hex: sh.verifiablePayloadHex || sh.sighashHex,
                   target_epoch: epoch,
                   is_eddsa: false
                 },
@@ -3916,19 +4554,16 @@ class AegisRelayerService {
           console.log(`   🚀 NEAR Isolated Vault Deposit Swept! Tx: ${sweepOutcome.transaction.hash}`);
         }
 
-        // 4b. Check NEAR implicit bunker account if not already swept in an edge-constrained pass
+        // 4b. Check NEAR implicit bunker account
         const nearPubKeyObj = nearAPI.utils.PublicKey.from('ed25519:' + vaultAddrs.sol.address);
         const implicitAccountId = Buffer.from(nearPubKeyObj.data).toString('hex');
         const nearPubKeyStr = 'ed25519:' + vaultAddrs.sol.address;
 
-        const accInfo =
-          isolatedNearDeposit > 0n && options.transitionedInSamePass
-            ? null
-            : await this.nearRpc('query', {
-                request_type: 'view_account',
-                finality: 'final',
-                account_id: implicitAccountId
-              }).catch(() => null);
+        const accInfo = await this.nearRpc('query', {
+          request_type: 'view_account',
+          finality: 'final',
+          account_id: implicitAccountId
+        }).catch(() => null);
 
         if (accInfo && accInfo.amount && BigInt(accInfo.amount) > 10_000_000_000_000_000_000_000n) {
           const keyInfo = await this.nearRpc('query', {
@@ -3955,14 +4590,14 @@ class AegisRelayerService {
               blockHash
             );
             const serializedTx = transaction.encode();
-            const txHash = crypto.createHash('sha256').update(Buffer.from(serializedTx)).digest();
+            const rawBorshHex = Buffer.from(serializedTx).toString('hex');
 
             const sigRes = await this.callContract(
               'request_sweep_signature',
               {
                 vault_owner: vaultOwner,
                 chain: 'NEAR',
-                payload_hex: txHash.toString('hex'),
+                payload_hex: rawBorshHex,
                 target_epoch: epoch,
                 is_eddsa: true
               },
@@ -4195,9 +4830,20 @@ class AegisRelayerService {
    * - Triggers push inheritance & executes verified multichain sweeps for expired/evacuated vaults
    */
   async sweepAllActionable() {
+    if (this._activeSweepPromise) {
+      console.log('⏳ [Aegis Relayer] Sweep cycle already in progress; coalescing concurrent request.');
+      return this._activeSweepPromise;
+    }
+    this._activeSweepPromise = this._executeSweepAllActionable().finally(() => {
+      this._activeSweepPromise = null;
+    });
+    return this._activeSweepPromise;
+  }
+
+  async _executeSweepAllActionable() {
     await this.init({ requireSigner: false });
     console.log(`🔍 [Aegis Relayer] Querying get_actionable_vaults on ${this.contractId}...`);
-    const actionable = await this.getActionableVaults();
+    const actionable = await this.getActionableVaults({ throwOnError: true });
 
     if (!actionable || actionable.length === 0) {
       console.log('✅ 0 actionable vaults found. All bunkers healthy or already swept. 0 gas burned.');
@@ -5763,7 +6409,7 @@ if (typeof window !== "undefined") {
                       <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" /></svg>
                       <span>Private Note to Heirs (Zero Plaintext On-Chain)</span>
                     </div>
-                    <span id="memoByteCount" class="font-mono text-nearGreen text-xs font-bold">0 / 512 B</span>
+                    <span id="memoByteCount" class="font-mono text-nearGreen text-xs font-bold">0 / 240 B</span>
                   </div>
                   <input type="text" id="heirFinalMemo" name="aegis_heirFinalMemo_noautofill" autocomplete="new-password" data-form-type="other" readonly onfocus="if(!this.disabled)this.removeAttribute('readonly');" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" oninput="updateMemoByteCounter(this.value)" placeholder="e.g. Hardware wallet PIN & family vault instructions..." class="w-full bg-transparent pt-0.5 text-xs sm:text-[13px] font-mono text-white placeholder:text-[#585E6A] outline-none">
                   <div class="flex items-center gap-2 pt-1 border-t border-white/[0.06]">
@@ -6515,6 +7161,33 @@ if (typeof window !== "undefined") {
       // If network errors occur, preserve existing state to prevent flickering
     }
 
+    function escapeHtml(str) {
+      return String(str ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function sanitizeExplorerUrl(url) {
+      try {
+        const parsed = new URL(String(url || '').trim());
+        const allowedHosts = [
+          'mempool.space',
+          'sepolia.etherscan.io',
+          'etherscan.io',
+          'solscan.io',
+          'testnet.nearblocks.io',
+          'nearblocks.io'
+        ];
+        if (parsed.protocol === 'https:' && allowedHosts.includes(parsed.hostname)) {
+          return escapeHtml(parsed.href);
+        }
+      } catch (_) {}
+      return '#';
+    }
+
     function syncUIWithOnChainState(info, signerAccount) {
       if (!signerAccount) {
         lastFetchedVaultInfo = null;
@@ -6797,14 +7470,19 @@ if (typeof window !== "undefined") {
 
       if (isEvacuated) {
         const isInheritance = info && info.state === 'Inheritance';
+        const isEpochSwept = Boolean(info && info.is_epoch_swept);
         if (activeBanner) activeBanner.classList.add('hidden');
         if (unconfiguredBanner) unconfiguredBanner.classList.add('hidden');
         if (evacuatedBanner) {
           evacuatedBanner.classList.remove('hidden');
           if (evacuatedSummary) {
             evacuatedSummary.innerHTML = isInheritance
-              ? 'All bunker assets autonomously transferred to designated family heirs. Active epoch keys permanently closed. Click <strong>Activate Clean Bunker</strong> to advance to next epoch.'
-              : 'All bunker assets swept. Active epoch keys permanently burned. Click <strong>Activate Clean Bunker</strong> to advance to next epoch.';
+              ? (isEpochSwept
+                  ? 'All bunker assets autonomously transferred to designated family heirs. Active epoch keys permanently closed. Click <strong>Activate Clean Bunker</strong> to advance to next epoch.'
+                  : 'Autonomous inheritance triggered. Cloud Keeper sweep is in progress. Once sweep completes, click <strong>Activate Clean Bunker</strong> to advance to next epoch.')
+              : (isEpochSwept
+                  ? 'All bunker assets swept. Active epoch keys permanently burned. Click <strong>Activate Clean Bunker</strong> to advance to next epoch.'
+                  : 'Emergency panic confirmed on-chain. Cloud Keeper multichain sweep is in progress. Click <strong>Activate Clean Bunker</strong> once sweep completes.');
           }
         }
         if (tabRescue) {
@@ -6813,7 +7491,9 @@ if (typeof window !== "undefined") {
             : `1. Rescue & Inheritance <span class="ml-1.5 px-2 py-0.5 text-[10px] bg-red-950/60 text-red-400 border border-red-500/40 rounded-full font-bold">EVACUATED</span>`;
         }
         if (badge) {
-          badge.innerText = isInheritance ? 'Inherited (Transferred to Heirs)' : 'Evacuated (Keys Burned)';
+          badge.innerText = isInheritance
+            ? (isEpochSwept ? 'Inherited (Transferred to Heirs)' : 'Inheritance (Sweep in Progress)')
+            : (isEpochSwept ? 'Evacuated (Keys Burned)' : 'Evacuating (Sweep in Progress)');
           badge.className = isInheritance ? 'text-purple-400 font-mono font-bold' : 'text-red-400 font-mono font-bold';
         }
         if (dot) dot.className = isInheritance ? 'w-2.5 h-2.5 rounded-full bg-purple-500 animate-pulse' : 'w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse';
@@ -6831,14 +7511,14 @@ if (typeof window !== "undefined") {
         if (activeBanner) {
           activeBanner.classList.remove('hidden');
           let parts = [];
-          if (info.backup?.near) parts.push(`Backup NEAR: <strong class="text-white">${info.backup.near}</strong>`);
-          if (info.backup?.btc) parts.push(`Backup BTC: <strong class="text-white">${info.backup.btc.slice(0, 10)}...</strong>`);
-          if (info.backup?.evm) parts.push(`Backup EVM: <strong class="text-white">${info.backup.evm.slice(0, 8)}...</strong>`);
-          if (info.backup?.sol) parts.push(`Backup SOL: <strong class="text-white">${info.backup.sol.slice(0, 8)}...</strong>`);
-          if (info.heirs?.near) parts.push(`Heir NEAR: <strong class="text-white">${info.heirs.near}</strong>`);
-          if (info.heirs?.btc) parts.push(`Heir BTC: <strong class="text-white">${info.heirs.btc.slice(0, 10)}...</strong>`);
-          if (info.heirs?.evm) parts.push(`Heir EVM: <strong class="text-white">${info.heirs.evm.slice(0, 8)}...</strong>`);
-          if (info.heirs?.sol) parts.push(`Heir SOL: <strong class="text-white">${info.heirs.sol.slice(0, 8)}...</strong>`);
+          if (info.backup?.near) parts.push(`Backup NEAR: <strong class="text-white">${escapeHtml(info.backup.near)}</strong>`);
+          if (info.backup?.btc) parts.push(`Backup BTC: <strong class="text-white">${escapeHtml(info.backup.btc.slice(0, 10))}...</strong>`);
+          if (info.backup?.evm) parts.push(`Backup EVM: <strong class="text-white">${escapeHtml(info.backup.evm.slice(0, 8))}...</strong>`);
+          if (info.backup?.sol) parts.push(`Backup SOL: <strong class="text-white">${escapeHtml(info.backup.sol.slice(0, 8))}...</strong>`);
+          if (info.heirs?.near) parts.push(`Heir NEAR: <strong class="text-white">${escapeHtml(info.heirs.near)}</strong>`);
+          if (info.heirs?.btc) parts.push(`Heir BTC: <strong class="text-white">${escapeHtml(info.heirs.btc.slice(0, 10))}...</strong>`);
+          if (info.heirs?.evm) parts.push(`Heir EVM: <strong class="text-white">${escapeHtml(info.heirs.evm.slice(0, 8))}...</strong>`);
+          if (info.heirs?.sol) parts.push(`Heir SOL: <strong class="text-white">${escapeHtml(info.heirs.sol.slice(0, 8))}...</strong>`);
           if (activeSummary) activeSummary.innerHTML = parts.join(' · ') || 'Active on-chain destinations loaded.';
         }
         if (tabRescue) {
@@ -7267,10 +7947,9 @@ if (typeof window !== "undefined") {
         const ethAddress = accounts[0];
         localStorage.setItem('aegis_connected_evm', ethAddress);
 
-        // If no NEAR account connected yet, use EVM address as active preview for bunker derivation
-        if (!localStorage.getItem('aegis_signer_account')) {
-          localStorage.setItem('aegis_signer_account', ethAddress);
-        }
+        // Auto-fill EVM destination fields in Tab 1 if empty
+        const pEvm = document.getElementById('panicEvmAddr');
+        if (pEvm && !pEvm.value.trim()) pEvm.value = ethAddress;
 
         closeMultichainWalletModal();
         updateMultichainConnectedUI();
@@ -7410,10 +8089,10 @@ if (typeof window !== "undefined") {
         <div class="flex items-center justify-between p-2 rounded-xl bg-white/[0.03] border border-white/[0.06]">
           <div class="flex items-center gap-2 overflow-hidden">
             <span class="w-2 h-2 rounded-full ${item.color.replace('text-', 'bg-')} shrink-0"></span>
-            <span class="text-[#8E99AD] font-semibold">${item.name}:</span>
-            <span class="text-white truncate max-w-[200px] sm:max-w-[280px]" title="${item.addr}">${item.addr}</span>
+            <span class="text-[#8E99AD] font-semibold">${escapeHtml(item.name)}:</span>
+            <span class="text-white truncate max-w-[200px] sm:max-w-[280px]" title="${escapeHtml(item.addr)}">${escapeHtml(item.addr)}</span>
           </div>
-          <button onclick="disconnectChain('${item.chain}')" class="text-[11px] text-[#8E99AD] hover:text-red-400 transition ml-2 shrink-0 cursor-pointer">Disconnect</button>
+          <button onclick="disconnectChain('${escapeHtml(item.chain)}')" class="text-[11px] text-[#8E99AD] hover:text-red-400 transition ml-2 shrink-0 cursor-pointer">Disconnect</button>
         </div>
       `).join('');
     }
@@ -7440,19 +8119,20 @@ if (typeof window !== "undefined") {
         const isNear = Boolean(nearAcc && !nearAcc.startsWith('0x'));
         const isSol = Boolean(!nearAcc && solAcc);
         const isEvm = Boolean(!nearAcc && !solAcc && evmAcc);
+        const isBtc = Boolean(!nearAcc && !solAcc && !evmAcc && btcAcc);
 
         if (nameEl) {
           nameEl.innerText = primaryAcc.length > 20 ? primaryAcc.slice(0, 8) + '...' + primaryAcc.slice(-6) : primaryAcc;
           nameEl.title = primaryAcc;
           nameEl.className = isNear
             ? 'font-bold text-nearGreen hidden sm:inline whitespace-nowrap'
-            : (isSol ? 'font-bold text-purple-400 hidden sm:inline whitespace-nowrap' : 'font-bold text-blue-400 hidden sm:inline whitespace-nowrap');
+            : (isSol ? 'font-bold text-purple-400 hidden sm:inline whitespace-nowrap' : (isBtc ? 'font-bold text-amber-400 hidden sm:inline whitespace-nowrap' : 'font-bold text-blue-400 hidden sm:inline whitespace-nowrap'));
         }
         if (nameMobEl) {
           nameMobEl.innerText = primaryAcc.slice(0, 6) + '...';
           nameMobEl.className = isNear
             ? 'font-bold text-nearGreen sm:hidden whitespace-nowrap'
-            : (isSol ? 'font-bold text-purple-400 sm:hidden whitespace-nowrap' : 'font-bold text-blue-400 sm:hidden whitespace-nowrap');
+            : (isSol ? 'font-bold text-purple-400 sm:hidden whitespace-nowrap' : (isBtc ? 'font-bold text-amber-400 sm:hidden whitespace-nowrap' : 'font-bold text-blue-400 sm:hidden whitespace-nowrap'));
         }
 
         // Live balance update for header
@@ -7470,13 +8150,13 @@ if (typeof window !== "undefined") {
         if (badgesEl) {
           badgesEl.innerHTML = '';
           if (evmAcc && primaryAcc !== evmAcc) {
-            badgesEl.innerHTML += `<span class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-blue-500/15 text-blue-300 border border-blue-500/30" title="${evmAcc}">ETH: ${evmAcc.slice(0, 6)}...</span>`;
+            badgesEl.innerHTML += `<span class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-blue-500/15 text-blue-300 border border-blue-500/30" title="${escapeHtml(evmAcc)}">ETH: ${escapeHtml(evmAcc.slice(0, 6))}...</span>`;
           }
           if (solAcc && primaryAcc !== solAcc) {
-            badgesEl.innerHTML += `<span class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-purple-500/15 text-purple-300 border border-purple-500/30" title="${solAcc}">SOL: ${solAcc.slice(0, 5)}...</span>`;
+            badgesEl.innerHTML += `<span class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-purple-500/15 text-purple-300 border border-purple-500/30" title="${escapeHtml(solAcc)}">SOL: ${escapeHtml(solAcc.slice(0, 5))}...</span>`;
           }
           if (btcAcc && primaryAcc !== btcAcc) {
-            badgesEl.innerHTML += `<span class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-amber-500/15 text-amber-300 border border-amber-500/30" title="${btcAcc}">BTC: ${btcAcc.slice(0, 5)}...</span>`;
+            badgesEl.innerHTML += `<span class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-amber-500/15 text-amber-300 border border-amber-500/30" title="${escapeHtml(btcAcc)}">BTC: ${escapeHtml(btcAcc.slice(0, 5))}...</span>`;
           }
           badgesEl.className = badgesEl.innerHTML ? 'flex items-center gap-1.5 border-l border-white/10 pl-2' : 'hidden';
         }
@@ -7884,9 +8564,13 @@ if (typeof window !== "undefined") {
         // 3. Not signed in: Trigger Wallet Connect
         showToast('Please connect your Web3 wallet first!', true);
         openMultichainWalletModal();
+        throw new Error('Wallet not connected');
       } catch (err) {
         console.error(`❌ [Aegis] Failed to dispatch ${methodName}:`, err);
-        showToast(`Error dispatching ${methodName}: ${err.message}`, true);
+        if (err.message !== 'Wallet not connected') {
+          showToast(`Error dispatching ${methodName}: ${err.message}`, true);
+        }
+        throw err;
       }
     }
 
@@ -7969,6 +8653,7 @@ if (typeof window !== "undefined") {
       // 2. Guard 1: Evacuated or Burned bunker (Keys exposed/evacuated - NEVER show deposit addresses!)
       if (isBurned) {
         const isInheritance = lastFetchedVaultInfo && lastFetchedVaultInfo.state === 'Inheritance';
+        const isEpochSwept = Boolean(lastFetchedVaultInfo && lastFetchedVaultInfo.is_epoch_swept);
         const burnedMsg = isInheritance
           ? `Epoch ${currentEpochIndex} Inherited · Deposits Disabled`
           : `Epoch ${currentEpochIndex} Burned · Deposits Disabled`;
@@ -7984,15 +8669,15 @@ if (typeof window !== "undefined") {
             c.actionsEl.innerHTML = `
               <div class="col-span-2 py-2.5 px-3 rounded-xl ${isInheritance ? 'bg-purple-950/30 border border-purple-500/20 text-purple-300' : 'bg-red-950/30 border border-red-500/20 text-red-400'} text-center text-xs font-mono flex items-center justify-center gap-1.5 select-none">
                 <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
-                <span>${isInheritance ? 'Epoch Closed · Assets Transferred' : 'Epoch Burned · Deposits Disabled'}</span>
+                <span>${isInheritance ? (isEpochSwept ? 'Epoch Closed · Assets Transferred' : 'Epoch Closed · Sweep in Progress') : (isEpochSwept ? 'Epoch Burned · Assets Swept' : 'Epoch Burned · Sweep in Progress')}</span>
               </div>
             `;
           }
         });
         if (pill) {
           pill.innerText = isInheritance
-            ? `Epoch ${currentEpochIndex} · Inherited (Transferred)`
-            : `Epoch ${currentEpochIndex} · Burned (Inactive)`;
+            ? `Epoch ${currentEpochIndex} · ${isEpochSwept ? 'Inherited (Transferred)' : 'Inheritance (Sweeping)'}`
+            : `Epoch ${currentEpochIndex} · ${isEpochSwept ? 'Burned (Inactive)' : 'Evacuating (Sweeping)'}`;
           pill.className = isInheritance
             ? 'text-[11px] font-mono font-bold text-purple-300 bg-purple-950/40 border border-purple-500/30 px-2.5 py-0.5 rounded-full whitespace-nowrap'
             : 'text-[11px] font-mono font-bold text-red-400 bg-red-950/40 border border-red-500/30 px-2.5 py-0.5 rounded-full whitespace-nowrap';
@@ -8011,8 +8696,12 @@ if (typeof window !== "undefined") {
           }
           if (bannerText) {
             bannerText.innerText = isInheritance
-              ? 'Active vault assets were autonomously transferred to designated heirs. Deposits are permanently disabled for this epoch. Activate the next clean bunker to derive fresh uncompromised addresses.'
-              : 'Active epoch keys were exposed on-chain during evacuation. Activate the next bunker to derive fresh uncompromised addresses.';
+              ? (isEpochSwept
+                  ? 'Active vault assets were autonomously transferred to designated heirs. Deposits are permanently disabled for this epoch. Activate the next clean bunker to derive fresh uncompromised addresses.'
+                  : 'Autonomous inheritance triggered. Cloud Keeper sweep is in progress. Activate the next clean bunker to derive fresh uncompromised addresses.')
+              : (isEpochSwept
+                  ? 'Active epoch keys were exposed on-chain during evacuation. Activate the next bunker to derive fresh uncompromised addresses.'
+                  : 'Emergency evacuation triggered; Cloud Keeper sweep is in progress. Activate the next bunker to derive fresh uncompromised addresses.');
           }
         }
         if (unarmedBanner) unarmedBanner.classList.add('hidden');
@@ -8415,7 +9104,16 @@ if (typeof window !== "undefined") {
         return;
       }
 
-      showToast('Broadcasting rotate_bunker() to NEAR Testnet...');
+      if (
+        lastFetchedVaultInfo &&
+        (lastFetchedVaultInfo.state === 'Evacuated' || lastFetchedVaultInfo.state === 'Inheritance') &&
+        !lastFetchedVaultInfo.is_epoch_swept
+      ) {
+        showToast('ℹ️ Archiving current epoch for background Cloud Keeper sweep and rotating to clean epoch...');
+        triggerCloudKeeperSweep(false);
+      } else {
+        showToast('Broadcasting rotate_bunker() to NEAR Testnet...');
+      }
       try {
         const outcome = await dispatchNearTransaction('rotate_bunker');
         if (outcome) {
@@ -8554,14 +9252,7 @@ if (typeof window !== "undefined") {
           `;
           btn.className = 'save-policy-btn bg-nearGreen/15 hover:bg-nearGreen/25 text-nearGreen border border-nearGreen/40 font-bold py-2 px-5 rounded-xl text-xs transition active:scale-98 whitespace-nowrap cursor-pointer';
         } else {
-          const isReplacingExisting = (onChainBackupNear && pNear && onChainBackupNear !== pNear) ||
-                                      (onChainBackupBtc && pBtc && onChainBackupBtc !== pBtc) ||
-                                      (onChainBackupEvm && pEvm && onChainBackupEvm.toLowerCase() !== pEvm.toLowerCase()) ||
-                                      (onChainBackupSol && pSol && onChainBackupSol !== pSol) ||
-                                      (onChainHeirNear && hNear && onChainHeirNear !== hNear) ||
-                                      (onChainHeirBtc && hBtc && onChainHeirBtc !== hBtc) ||
-                                      (onChainHeirEvm && hEvm && onChainHeirEvm.toLowerCase() !== hEvm.toLowerCase()) ||
-                                      (onChainHeirSol && hSol && onChainHeirSol !== hSol);
+          const isReplacingExisting = hasOnChain && !isMatching;
           if (isReplacingExisting) {
             btn.innerHTML = `Save Policy (72h Cooldown)`;
             btn.className = 'save-policy-btn bg-amber-400 hover:bg-amber-300 text-black font-extrabold py-2 px-5 rounded-xl text-xs transition shadow-sm active:scale-98 whitespace-nowrap cursor-pointer';
@@ -8591,7 +9282,7 @@ if (typeof window !== "undefined") {
       if (badge && (savedTg || savedEmail)) {
         badge.innerHTML = `
           <span class="w-2 h-2 rounded-full bg-nearGreen radar-pulse"></span>
-          <span>Relayer: <strong class="text-nearGreen">${savedTg || savedEmail}</strong></span>
+          <span>Relayer: <strong class="text-nearGreen">${escapeHtml(savedTg || savedEmail)}</strong></span>
         `;
       }
 
@@ -9416,7 +10107,8 @@ if (typeof window !== "undefined") {
       resetHoldState();
       document.getElementById('abortModal').classList.add('hidden');
 
-      dispatchNearTransaction('panic').then(() => {
+      dispatchNearTransaction('panic').then((outcome) => {
+        if (!outcome) return;
         remainingSeconds = 0;
         if (lastFetchedVaultInfo) {
           lastFetchedVaultInfo.state = 'Evacuated';
@@ -9516,10 +10208,11 @@ if (typeof window !== "undefined") {
           if (statusEl && s.status) statusEl.innerText = s.status;
           if (s.amount && document.getElementById('monitorBtcBal')) document.getElementById('monitorBtcBal').innerText = s.amount;
           if (linkEl && s.explorer) {
+            const safeExp = sanitizeExplorerUrl(s.explorer);
             const mpcLink = s.near_mpc_tx
-              ? ` <span class="text-white/20">|</span> <a href="${s.near_mpc_tx}" target="_blank" rel="noopener noreferrer" class="text-nearGreen hover:underline">MPC Proof (v1.signer) ↗</a>`
+              ? ` <span class="text-white/20">|</span> <a href="${sanitizeExplorerUrl(s.near_mpc_tx)}" target="_blank" rel="noopener noreferrer" class="text-nearGreen hover:underline">MPC Proof (v1.signer) ↗</a>`
               : '';
-            linkEl.innerHTML = `<a href="${s.explorer}" target="_blank" rel="noopener noreferrer" class="text-amber-400 hover:underline font-mono">View on Mempool.space ↗</a>${mpcLink}`;
+            linkEl.innerHTML = `<a href="${safeExp}" target="_blank" rel="noopener noreferrer" class="text-amber-400 hover:underline font-mono">View on Mempool.space ↗</a>${mpcLink}`;
           }
         }
         if (t.sweeps.evm) {
@@ -9529,10 +10222,11 @@ if (typeof window !== "undefined") {
           if (statusBadge && s.status) statusBadge.innerText = s.status;
           if (s.amount && document.getElementById('monitorEvmBal')) document.getElementById('monitorEvmBal').innerText = s.amount;
           if (linkEl && s.explorer) {
+            const safeExp = sanitizeExplorerUrl(s.explorer);
             const mpcLink = s.near_mpc_tx
-              ? ` <span class="text-white/20">|</span> <a href="${s.near_mpc_tx}" target="_blank" rel="noopener noreferrer" class="text-nearGreen hover:underline">MPC Proof (v1.signer) ↗</a>`
+              ? ` <span class="text-white/20">|</span> <a href="${sanitizeExplorerUrl(s.near_mpc_tx)}" target="_blank" rel="noopener noreferrer" class="text-nearGreen hover:underline">MPC Proof (v1.signer) ↗</a>`
               : '';
-            linkEl.innerHTML = `<a href="${s.explorer}" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:underline font-mono">View on Etherscan ↗</a>${mpcLink}`;
+            linkEl.innerHTML = `<a href="${safeExp}" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:underline font-mono">View on Etherscan ↗</a>${mpcLink}`;
           }
         }
         if (t.sweeps.sol) {
@@ -9542,10 +10236,11 @@ if (typeof window !== "undefined") {
           if (statusEl && s.status) statusEl.innerText = s.status;
           if (s.amount && document.getElementById('monitorSolBal')) document.getElementById('monitorSolBal').innerText = s.amount;
           if (linkEl && s.explorer) {
+            const safeExp = sanitizeExplorerUrl(s.explorer);
             const mpcLink = s.near_mpc_tx
-              ? ` <span class="text-white/20">|</span> <a href="${s.near_mpc_tx}" target="_blank" rel="noopener noreferrer" class="text-nearGreen hover:underline">MPC Proof (v1.signer) ↗</a>`
+              ? ` <span class="text-white/20">|</span> <a href="${sanitizeExplorerUrl(s.near_mpc_tx)}" target="_blank" rel="noopener noreferrer" class="text-nearGreen hover:underline">MPC Proof (v1.signer) ↗</a>`
               : '';
-            linkEl.innerHTML = `<a href="${s.explorer}" target="_blank" rel="noopener noreferrer" class="text-purple-400 hover:underline font-mono">View on Solscan ↗</a>${mpcLink}`;
+            linkEl.innerHTML = `<a href="${safeExp}" target="_blank" rel="noopener noreferrer" class="text-purple-400 hover:underline font-mono">View on Solscan ↗</a>${mpcLink}`;
           }
         }
         if (t.sweeps.near) {
@@ -9555,10 +10250,11 @@ if (typeof window !== "undefined") {
           if (statusEl && s.status) statusEl.innerText = s.status;
           if (s.amount && document.getElementById('monitorNearBal')) document.getElementById('monitorNearBal').innerText = s.amount;
           if (linkEl && s.explorer) {
+            const safeExp = sanitizeExplorerUrl(s.explorer);
             const mpcLink = s.near_mpc_tx
-              ? ` <span class="text-white/20">|</span> <a href="${s.near_mpc_tx}" target="_blank" rel="noopener noreferrer" class="text-nearGreen hover:underline">MPC Proof (v1.signer) ↗</a>`
+              ? ` <span class="text-white/20">|</span> <a href="${sanitizeExplorerUrl(s.near_mpc_tx)}" target="_blank" rel="noopener noreferrer" class="text-nearGreen hover:underline">MPC Proof (v1.signer) ↗</a>`
               : '';
-            linkEl.innerHTML = `<a href="${s.explorer}" target="_blank" rel="noopener noreferrer" class="text-nearGreen hover:underline font-mono">View on NearBlocks ↗</a>${mpcLink}`;
+            linkEl.innerHTML = `<a href="${safeExp}" target="_blank" rel="noopener noreferrer" class="text-nearGreen hover:underline font-mono">View on NearBlocks ↗</a>${mpcLink}`;
           }
         }
         return true;
@@ -9653,7 +10349,7 @@ if (typeof window !== "undefined") {
       if (badge) {
         badge.innerHTML = `
           <span class="w-2 h-2 rounded-full bg-nearGreen radar-pulse"></span>
-          <span>Relayer: <strong class="text-nearGreen">${tg || email || 'Active'}</strong></span>
+          <span>Relayer: <strong class="text-nearGreen">${escapeHtml(tg || email || 'Active')}</strong></span>
         `;
       }
     }
@@ -9677,7 +10373,7 @@ if (typeof window !== "undefined") {
       const text = String(val || '');
       const bytes = new TextEncoder().encode(text).length;
       const isCipher = text.startsWith('enc:x25519:') || text.startsWith('enc:aes256:');
-      const limit = isCipher ? 1024 : 512;
+      const limit = isCipher ? 1024 : 240;
       const counter = document.getElementById('memoByteCount');
       if (counter) {
         counter.innerText = isCipher ? `Sealed (${bytes} / 1024 B)` : `${bytes} / ${limit} B`;
@@ -9907,11 +10603,11 @@ if (typeof window !== "undefined") {
         return;
       }
 
-      // Address format validation
-      const isValidBtc = addr => !addr || /^(bc1|tb1|[13])[a-zA-HJ-NP-Z0-9]{25,62}$/.test(addr);
+      // Address format validation (matches on-chain ChainAddresses::validate)
+      const isValidBtc = addr => !addr || /^(bc1[a-zA-HJ-NP-Z0-9]{25,87}|tb1[a-zA-HJ-NP-Z0-9]{25,87}|[13mn2][a-km-zA-HJ-NP-Z1-9]{25,34})$/.test(addr);
       const isValidEvm = addr => !addr || /^0x[a-fA-F0-9]{40}$/.test(addr);
       const isValidSol = addr => !addr || /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(addr);
-      const isValidNear = addr => !addr || (/^[a-z0-9._-]+$/.test(addr) && addr.length >= 2 && addr.length <= 64);
+      const isValidNear = addr => !addr || (/^(?=.{2,64}$)[a-z0-9]+([_-][a-z0-9]+)*(\.[a-z0-9]+([_-][a-z0-9]+)*)*$/.test(addr) || /^[0-9a-f]{64}$/.test(addr));
 
       if (!isValidBtc(data.panicBtcAddr)) {
         showToast('Invalid Backup Bitcoin address format (use Bech32 tb1q/bc1q)', true);
@@ -9973,6 +10669,9 @@ if (typeof window !== "undefined") {
             return;
           }
         }
+      } else if (userHasInteractedWithInputs && lastFetchedVaultInfo?.heir_memo) {
+        // Allow explicitly clearing an existing on-chain memo when the user empties the input
+        encryptedOrNullMemo = '';
       }
 
       const policyPayload = {
@@ -10161,7 +10860,7 @@ async function runSweepSimulation() {
     utxos: mockUtxos,
     fromAddress: vault.btc.address,
     toAddress: 'tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx',
-    feeSats: 2000,
+    feeSatsOverride: 2000,
     network: bitcoin.networks.testnet
   });
 
@@ -10169,6 +10868,10 @@ async function runSweepSimulation() {
   console.log(`   • Output Amount:  ${btcSweep.sendAmount} sats`);
   console.log(`   • Mining Fee:     ${btcSweep.feeSats} sats`);
   console.log(`   • PSBT Hex:       ${btcSweep.psbtHex.slice(0, 50)}...`);
+  if (!btcSweep.sighashes[0].verifiablePayloadHex || btcSweep.sighashes[0].verifiablePayloadHex.length <= 364) {
+    throw new Error('Bitcoin sweep missing BIP-143 verifiablePayloadHex (>182 bytes)');
+  }
+  console.log(`   • BIP-143 Preimage+Outputs: ${btcSweep.sighashes[0].verifiablePayloadHex.length / 2} bytes (Verifiable On-Chain)`);
 
   // Verify Bitcoin Dust rejection invariant
   try {

@@ -65,9 +65,15 @@ async function deploy() {
   const wasmSize = (fs.statSync(wasmPath).size / 1024).toFixed(1);
   console.log(`📦 Loaded WASM: ${wasmPath} (${wasmSize} KB)\n`);
 
-  // 1. Generate KeyPair
+  // 1. Generate KeyPair & Persist Credentials Immediately (prevents key loss on RPC failure)
   const keyPair = KeyPair.fromRandom('ed25519');
-  console.log(`🔑 Generated Local Deployment Key:`);
+  const credsDir = path.resolve(__dirname, '../.credentials');
+  if (!fs.existsSync(credsDir)) fs.mkdirSync(credsDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(credsDir, `${accountId}.json`),
+    JSON.stringify({ accountId, private_key: keyPair.toString(), publicKey: keyPair.getPublicKey().toString() }, null, 2)
+  );
+  console.log(`🔑 Generated & Saved Local Deployment Key (.credentials/${accountId}.json):`);
   console.log(`   • Account ID:  ${accountId}`);
   console.log(`   • Public Key:  ${keyPair.getPublicKey().toString()}`);
 
@@ -119,10 +125,10 @@ async function deploy() {
   console.log(`✅ Vault initialized! Tx: ${initTx.transaction.hash}\n`);
 
   // 6. Query State via View Method
-  const activeAccounts = await account.viewFunction({
+  const registeredAccounts = await account.viewFunction({
     contractId: accountId,
-    methodName: 'get_active_accounts',
-    args: { from_index: 0, limit: 10 }
+    methodName: 'get_registered_accounts',
+    args: {}
   });
 
   console.log('====================================================');
@@ -131,18 +137,9 @@ async function deploy() {
   console.log(`Contract Account:   ${accountId}`);
   console.log(`MPC Signer:         ${mpcContract}`);
   console.log(`Default Relayer:    ${defaultRelayer}`);
-  console.log(`Active Bunkers:     ${activeAccounts.length}`);
+  console.log(`Registered Vaults:  ${registeredAccounts.length}`);
   console.log(`Explorer Link:      https://testnet.nearblocks.io/address/${accountId}`);
   console.log('====================================================');
-
-  // Save credentials locally for reference
-  const credsDir = path.resolve(__dirname, '../.credentials');
-  if (!fs.existsSync(credsDir)) fs.mkdirSync(credsDir);
-  fs.writeFileSync(
-    path.join(credsDir, `${accountId}.json`),
-    JSON.stringify({ accountId, private_key: keyPair.toString(), publicKey: keyPair.getPublicKey().toString() }, null, 2)
-  );
-  console.log(`💾 Deployment credentials saved to: .credentials/${accountId}.json`);
 }
 
 deploy().catch(err => {

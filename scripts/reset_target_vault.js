@@ -4,12 +4,13 @@ const nearAPI = require('near-api-js');
 
 async function main() {
   const target = process.argv[2] || 'mastrophot.testnet';
-  const parentCredPath = path.resolve(__dirname, '../.credentials/okgoogleok.testnet.json');
-  const parentCred = JSON.parse(fs.readFileSync(parentCredPath, 'utf8'));
+  const contractCredPath = path.resolve(__dirname, '../.credentials/aegis.okgoogleok.testnet.json');
+  const contractCred = JSON.parse(fs.readFileSync(contractCredPath, 'utf8'));
+  const contractAccountId = contractCred.accountId || contractCred.account_id || 'aegis.okgoogleok.testnet';
 
   const keyStore = new nearAPI.keyStores.InMemoryKeyStore();
-  const keyPair = nearAPI.KeyPair.fromString(parentCred.privateKey || parentCred.private_key);
-  await keyStore.setKey('testnet', parentCred.accountId || parentCred.account_id, keyPair);
+  const keyPair = nearAPI.KeyPair.fromString(contractCred.privateKey || contractCred.private_key);
+  await keyStore.setKey('testnet', contractAccountId, keyPair);
 
   const near = await nearAPI.connect({
     networkId: 'testnet',
@@ -17,10 +18,10 @@ async function main() {
     nodeUrl: 'https://test.rpc.fastnear.com'
   });
 
-  const account = await near.account(parentCred.accountId || parentCred.account_id);
-  console.log(`Resetting vault for ${target} on aegis.okgoogleok.testnet...`);
+  const account = await near.account(contractAccountId);
+  console.log(`Resetting vault for ${target} on ${contractAccountId} (self-call)...`);
   const outcome = await account.functionCall({
-    contractId: 'aegis.okgoogleok.testnet',
+    contractId: contractAccountId,
     methodName: 'admin_reset_vault',
     args: { target_account: target },
     gas: '100000000000000'
@@ -29,4 +30,7 @@ async function main() {
   console.log(`✅ Reset confirmed! Tx: ${outcome.transaction.hash}`);
 }
 
-main().catch(console.error);
+main().catch(err => {
+  console.error('❌ Reset failed:', err.message);
+  process.exit(1);
+});

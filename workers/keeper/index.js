@@ -11,6 +11,9 @@
 import './shims/workerd-init.js';
 
 let CachedRelayerService = null;
+let CachedKeeperInstance = null;
+let CachedKeeperConfigKey = '';
+
 async function getRelayerServiceClass() {
   if (!CachedRelayerService) {
     const mod = await import('../../relayer/service.js');
@@ -27,17 +30,30 @@ const CORS_HEADERS = {
 };
 
 async function createKeeperService(env) {
+  const configKey = [
+    env.NEAR_NETWORK || 'testnet',
+    env.CONTRACT_ID || 'aegis.okgoogleok.testnet',
+    env.RELAYER_ACCOUNT_ID || 'keeper.aegis.okgoogleok.testnet',
+    Boolean(env.RELAYER_PRIVATE_KEY)
+  ].join('|');
+
+  if (CachedKeeperInstance && CachedKeeperConfigKey === configKey) {
+    return CachedKeeperInstance;
+  }
+
   const AegisRelayerService = await getRelayerServiceClass();
-  return new AegisRelayerService({
+  CachedKeeperInstance = new AegisRelayerService({
     networkId: env.NEAR_NETWORK || 'testnet',
     contractId: env.CONTRACT_ID || 'aegis.okgoogleok.testnet',
     relayerAccountId: env.RELAYER_ACCOUNT_ID || 'keeper.aegis.okgoogleok.testnet',
     privateKey: env.RELAYER_PRIVATE_KEY || '',
     nearRpcUrl: env.NEAR_RPC_URL || 'https://test.rpc.fastnear.com',
-    solanaRpcUrl: env.SOLANA_RPC_URL || 'https://api.devnet.solana.com',
+    solanaRpcUrl: env.SOLANA_RPC_URL || 'https://solana-devnet.api.onfinality.io/public',
     evmRpcUrl: env.EVM_RPC_URL || 'https://ethereum-sepolia-rpc.publicnode.com',
     disableLocalFileCache: true
   });
+  CachedKeeperConfigKey = configKey;
+  return CachedKeeperInstance;
 }
 
 async function executeSweepCycle(env) {
@@ -86,7 +102,13 @@ export default {
       );
     }
 
-    if ((url.pathname === '/trigger' || url.pathname === '/sweep') && (request.method === 'POST' || request.method === 'GET')) {
+    if (url.pathname === '/trigger' || url.pathname === '/sweep') {
+      if (request.method !== 'POST') {
+        return new Response(
+          JSON.stringify({ success: false, error: 'Method Not Allowed: use POST /trigger' }),
+          { status: 405, headers: CORS_HEADERS }
+        );
+      }
       try {
         const result = await executeSweepCycle(env);
         return new Response(JSON.stringify(result), { status: 200, headers: CORS_HEADERS });

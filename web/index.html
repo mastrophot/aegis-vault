@@ -1017,7 +1017,7 @@
                       <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" /></svg>
                       <span>Private Note to Heirs (Zero Plaintext On-Chain)</span>
                     </div>
-                    <span id="memoByteCount" class="font-mono text-nearGreen text-xs font-bold">0 / 512 B</span>
+                    <span id="memoByteCount" class="font-mono text-nearGreen text-xs font-bold">0 / 240 B</span>
                   </div>
                   <input type="text" id="heirFinalMemo" name="aegis_heirFinalMemo_noautofill" autocomplete="new-password" data-form-type="other" readonly onfocus="if(!this.disabled)this.removeAttribute('readonly');" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" oninput="updateMemoByteCounter(this.value)" placeholder="e.g. Hardware wallet PIN & family vault instructions..." class="w-full bg-transparent pt-0.5 text-xs sm:text-[13px] font-mono text-white placeholder:text-[#585E6A] outline-none">
                   <div class="flex items-center gap-2 pt-1 border-t border-white/[0.06]">
@@ -1769,6 +1769,33 @@
       // If network errors occur, preserve existing state to prevent flickering
     }
 
+    function escapeHtml(str) {
+      return String(str ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function sanitizeExplorerUrl(url) {
+      try {
+        const parsed = new URL(String(url || '').trim());
+        const allowedHosts = [
+          'mempool.space',
+          'sepolia.etherscan.io',
+          'etherscan.io',
+          'solscan.io',
+          'testnet.nearblocks.io',
+          'nearblocks.io'
+        ];
+        if (parsed.protocol === 'https:' && allowedHosts.includes(parsed.hostname)) {
+          return escapeHtml(parsed.href);
+        }
+      } catch (_) {}
+      return '#';
+    }
+
     function syncUIWithOnChainState(info, signerAccount) {
       if (!signerAccount) {
         lastFetchedVaultInfo = null;
@@ -2051,14 +2078,19 @@
 
       if (isEvacuated) {
         const isInheritance = info && info.state === 'Inheritance';
+        const isEpochSwept = Boolean(info && info.is_epoch_swept);
         if (activeBanner) activeBanner.classList.add('hidden');
         if (unconfiguredBanner) unconfiguredBanner.classList.add('hidden');
         if (evacuatedBanner) {
           evacuatedBanner.classList.remove('hidden');
           if (evacuatedSummary) {
             evacuatedSummary.innerHTML = isInheritance
-              ? 'All bunker assets autonomously transferred to designated family heirs. Active epoch keys permanently closed. Click <strong>Activate Clean Bunker</strong> to advance to next epoch.'
-              : 'All bunker assets swept. Active epoch keys permanently burned. Click <strong>Activate Clean Bunker</strong> to advance to next epoch.';
+              ? (isEpochSwept
+                  ? 'All bunker assets autonomously transferred to designated family heirs. Active epoch keys permanently closed. Click <strong>Activate Clean Bunker</strong> to advance to next epoch.'
+                  : 'Autonomous inheritance triggered. Cloud Keeper sweep is in progress. Once sweep completes, click <strong>Activate Clean Bunker</strong> to advance to next epoch.')
+              : (isEpochSwept
+                  ? 'All bunker assets swept. Active epoch keys permanently burned. Click <strong>Activate Clean Bunker</strong> to advance to next epoch.'
+                  : 'Emergency panic confirmed on-chain. Cloud Keeper multichain sweep is in progress. Click <strong>Activate Clean Bunker</strong> once sweep completes.');
           }
         }
         if (tabRescue) {
@@ -2067,7 +2099,9 @@
             : `1. Rescue & Inheritance <span class="ml-1.5 px-2 py-0.5 text-[10px] bg-red-950/60 text-red-400 border border-red-500/40 rounded-full font-bold">EVACUATED</span>`;
         }
         if (badge) {
-          badge.innerText = isInheritance ? 'Inherited (Transferred to Heirs)' : 'Evacuated (Keys Burned)';
+          badge.innerText = isInheritance
+            ? (isEpochSwept ? 'Inherited (Transferred to Heirs)' : 'Inheritance (Sweep in Progress)')
+            : (isEpochSwept ? 'Evacuated (Keys Burned)' : 'Evacuating (Sweep in Progress)');
           badge.className = isInheritance ? 'text-purple-400 font-mono font-bold' : 'text-red-400 font-mono font-bold';
         }
         if (dot) dot.className = isInheritance ? 'w-2.5 h-2.5 rounded-full bg-purple-500 animate-pulse' : 'w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse';
@@ -2085,14 +2119,14 @@
         if (activeBanner) {
           activeBanner.classList.remove('hidden');
           let parts = [];
-          if (info.backup?.near) parts.push(`Backup NEAR: <strong class="text-white">${info.backup.near}</strong>`);
-          if (info.backup?.btc) parts.push(`Backup BTC: <strong class="text-white">${info.backup.btc.slice(0, 10)}...</strong>`);
-          if (info.backup?.evm) parts.push(`Backup EVM: <strong class="text-white">${info.backup.evm.slice(0, 8)}...</strong>`);
-          if (info.backup?.sol) parts.push(`Backup SOL: <strong class="text-white">${info.backup.sol.slice(0, 8)}...</strong>`);
-          if (info.heirs?.near) parts.push(`Heir NEAR: <strong class="text-white">${info.heirs.near}</strong>`);
-          if (info.heirs?.btc) parts.push(`Heir BTC: <strong class="text-white">${info.heirs.btc.slice(0, 10)}...</strong>`);
-          if (info.heirs?.evm) parts.push(`Heir EVM: <strong class="text-white">${info.heirs.evm.slice(0, 8)}...</strong>`);
-          if (info.heirs?.sol) parts.push(`Heir SOL: <strong class="text-white">${info.heirs.sol.slice(0, 8)}...</strong>`);
+          if (info.backup?.near) parts.push(`Backup NEAR: <strong class="text-white">${escapeHtml(info.backup.near)}</strong>`);
+          if (info.backup?.btc) parts.push(`Backup BTC: <strong class="text-white">${escapeHtml(info.backup.btc.slice(0, 10))}...</strong>`);
+          if (info.backup?.evm) parts.push(`Backup EVM: <strong class="text-white">${escapeHtml(info.backup.evm.slice(0, 8))}...</strong>`);
+          if (info.backup?.sol) parts.push(`Backup SOL: <strong class="text-white">${escapeHtml(info.backup.sol.slice(0, 8))}...</strong>`);
+          if (info.heirs?.near) parts.push(`Heir NEAR: <strong class="text-white">${escapeHtml(info.heirs.near)}</strong>`);
+          if (info.heirs?.btc) parts.push(`Heir BTC: <strong class="text-white">${escapeHtml(info.heirs.btc.slice(0, 10))}...</strong>`);
+          if (info.heirs?.evm) parts.push(`Heir EVM: <strong class="text-white">${escapeHtml(info.heirs.evm.slice(0, 8))}...</strong>`);
+          if (info.heirs?.sol) parts.push(`Heir SOL: <strong class="text-white">${escapeHtml(info.heirs.sol.slice(0, 8))}...</strong>`);
           if (activeSummary) activeSummary.innerHTML = parts.join(' · ') || 'Active on-chain destinations loaded.';
         }
         if (tabRescue) {
@@ -2521,10 +2555,9 @@
         const ethAddress = accounts[0];
         localStorage.setItem('aegis_connected_evm', ethAddress);
 
-        // If no NEAR account connected yet, use EVM address as active preview for bunker derivation
-        if (!localStorage.getItem('aegis_signer_account')) {
-          localStorage.setItem('aegis_signer_account', ethAddress);
-        }
+        // Auto-fill EVM destination fields in Tab 1 if empty
+        const pEvm = document.getElementById('panicEvmAddr');
+        if (pEvm && !pEvm.value.trim()) pEvm.value = ethAddress;
 
         closeMultichainWalletModal();
         updateMultichainConnectedUI();
@@ -2664,10 +2697,10 @@
         <div class="flex items-center justify-between p-2 rounded-xl bg-white/[0.03] border border-white/[0.06]">
           <div class="flex items-center gap-2 overflow-hidden">
             <span class="w-2 h-2 rounded-full ${item.color.replace('text-', 'bg-')} shrink-0"></span>
-            <span class="text-[#8E99AD] font-semibold">${item.name}:</span>
-            <span class="text-white truncate max-w-[200px] sm:max-w-[280px]" title="${item.addr}">${item.addr}</span>
+            <span class="text-[#8E99AD] font-semibold">${escapeHtml(item.name)}:</span>
+            <span class="text-white truncate max-w-[200px] sm:max-w-[280px]" title="${escapeHtml(item.addr)}">${escapeHtml(item.addr)}</span>
           </div>
-          <button onclick="disconnectChain('${item.chain}')" class="text-[11px] text-[#8E99AD] hover:text-red-400 transition ml-2 shrink-0 cursor-pointer">Disconnect</button>
+          <button onclick="disconnectChain('${escapeHtml(item.chain)}')" class="text-[11px] text-[#8E99AD] hover:text-red-400 transition ml-2 shrink-0 cursor-pointer">Disconnect</button>
         </div>
       `).join('');
     }
@@ -2694,19 +2727,20 @@
         const isNear = Boolean(nearAcc && !nearAcc.startsWith('0x'));
         const isSol = Boolean(!nearAcc && solAcc);
         const isEvm = Boolean(!nearAcc && !solAcc && evmAcc);
+        const isBtc = Boolean(!nearAcc && !solAcc && !evmAcc && btcAcc);
 
         if (nameEl) {
           nameEl.innerText = primaryAcc.length > 20 ? primaryAcc.slice(0, 8) + '...' + primaryAcc.slice(-6) : primaryAcc;
           nameEl.title = primaryAcc;
           nameEl.className = isNear
             ? 'font-bold text-nearGreen hidden sm:inline whitespace-nowrap'
-            : (isSol ? 'font-bold text-purple-400 hidden sm:inline whitespace-nowrap' : 'font-bold text-blue-400 hidden sm:inline whitespace-nowrap');
+            : (isSol ? 'font-bold text-purple-400 hidden sm:inline whitespace-nowrap' : (isBtc ? 'font-bold text-amber-400 hidden sm:inline whitespace-nowrap' : 'font-bold text-blue-400 hidden sm:inline whitespace-nowrap'));
         }
         if (nameMobEl) {
           nameMobEl.innerText = primaryAcc.slice(0, 6) + '...';
           nameMobEl.className = isNear
             ? 'font-bold text-nearGreen sm:hidden whitespace-nowrap'
-            : (isSol ? 'font-bold text-purple-400 sm:hidden whitespace-nowrap' : 'font-bold text-blue-400 sm:hidden whitespace-nowrap');
+            : (isSol ? 'font-bold text-purple-400 sm:hidden whitespace-nowrap' : (isBtc ? 'font-bold text-amber-400 sm:hidden whitespace-nowrap' : 'font-bold text-blue-400 sm:hidden whitespace-nowrap'));
         }
 
         // Live balance update for header
@@ -2724,13 +2758,13 @@
         if (badgesEl) {
           badgesEl.innerHTML = '';
           if (evmAcc && primaryAcc !== evmAcc) {
-            badgesEl.innerHTML += `<span class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-blue-500/15 text-blue-300 border border-blue-500/30" title="${evmAcc}">ETH: ${evmAcc.slice(0, 6)}...</span>`;
+            badgesEl.innerHTML += `<span class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-blue-500/15 text-blue-300 border border-blue-500/30" title="${escapeHtml(evmAcc)}">ETH: ${escapeHtml(evmAcc.slice(0, 6))}...</span>`;
           }
           if (solAcc && primaryAcc !== solAcc) {
-            badgesEl.innerHTML += `<span class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-purple-500/15 text-purple-300 border border-purple-500/30" title="${solAcc}">SOL: ${solAcc.slice(0, 5)}...</span>`;
+            badgesEl.innerHTML += `<span class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-purple-500/15 text-purple-300 border border-purple-500/30" title="${escapeHtml(solAcc)}">SOL: ${escapeHtml(solAcc.slice(0, 5))}...</span>`;
           }
           if (btcAcc && primaryAcc !== btcAcc) {
-            badgesEl.innerHTML += `<span class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-amber-500/15 text-amber-300 border border-amber-500/30" title="${btcAcc}">BTC: ${btcAcc.slice(0, 5)}...</span>`;
+            badgesEl.innerHTML += `<span class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-amber-500/15 text-amber-300 border border-amber-500/30" title="${escapeHtml(btcAcc)}">BTC: ${escapeHtml(btcAcc.slice(0, 5))}...</span>`;
           }
           badgesEl.className = badgesEl.innerHTML ? 'flex items-center gap-1.5 border-l border-white/10 pl-2' : 'hidden';
         }
@@ -3138,9 +3172,13 @@
         // 3. Not signed in: Trigger Wallet Connect
         showToast('Please connect your Web3 wallet first!', true);
         openMultichainWalletModal();
+        throw new Error('Wallet not connected');
       } catch (err) {
         console.error(`❌ [Aegis] Failed to dispatch ${methodName}:`, err);
-        showToast(`Error dispatching ${methodName}: ${err.message}`, true);
+        if (err.message !== 'Wallet not connected') {
+          showToast(`Error dispatching ${methodName}: ${err.message}`, true);
+        }
+        throw err;
       }
     }
 
@@ -3223,6 +3261,7 @@
       // 2. Guard 1: Evacuated or Burned bunker (Keys exposed/evacuated - NEVER show deposit addresses!)
       if (isBurned) {
         const isInheritance = lastFetchedVaultInfo && lastFetchedVaultInfo.state === 'Inheritance';
+        const isEpochSwept = Boolean(lastFetchedVaultInfo && lastFetchedVaultInfo.is_epoch_swept);
         const burnedMsg = isInheritance
           ? `Epoch ${currentEpochIndex} Inherited · Deposits Disabled`
           : `Epoch ${currentEpochIndex} Burned · Deposits Disabled`;
@@ -3238,15 +3277,15 @@
             c.actionsEl.innerHTML = `
               <div class="col-span-2 py-2.5 px-3 rounded-xl ${isInheritance ? 'bg-purple-950/30 border border-purple-500/20 text-purple-300' : 'bg-red-950/30 border border-red-500/20 text-red-400'} text-center text-xs font-mono flex items-center justify-center gap-1.5 select-none">
                 <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
-                <span>${isInheritance ? 'Epoch Closed · Assets Transferred' : 'Epoch Burned · Deposits Disabled'}</span>
+                <span>${isInheritance ? (isEpochSwept ? 'Epoch Closed · Assets Transferred' : 'Epoch Closed · Sweep in Progress') : (isEpochSwept ? 'Epoch Burned · Assets Swept' : 'Epoch Burned · Sweep in Progress')}</span>
               </div>
             `;
           }
         });
         if (pill) {
           pill.innerText = isInheritance
-            ? `Epoch ${currentEpochIndex} · Inherited (Transferred)`
-            : `Epoch ${currentEpochIndex} · Burned (Inactive)`;
+            ? `Epoch ${currentEpochIndex} · ${isEpochSwept ? 'Inherited (Transferred)' : 'Inheritance (Sweeping)'}`
+            : `Epoch ${currentEpochIndex} · ${isEpochSwept ? 'Burned (Inactive)' : 'Evacuating (Sweeping)'}`;
           pill.className = isInheritance
             ? 'text-[11px] font-mono font-bold text-purple-300 bg-purple-950/40 border border-purple-500/30 px-2.5 py-0.5 rounded-full whitespace-nowrap'
             : 'text-[11px] font-mono font-bold text-red-400 bg-red-950/40 border border-red-500/30 px-2.5 py-0.5 rounded-full whitespace-nowrap';
@@ -3265,8 +3304,12 @@
           }
           if (bannerText) {
             bannerText.innerText = isInheritance
-              ? 'Active vault assets were autonomously transferred to designated heirs. Deposits are permanently disabled for this epoch. Activate the next clean bunker to derive fresh uncompromised addresses.'
-              : 'Active epoch keys were exposed on-chain during evacuation. Activate the next bunker to derive fresh uncompromised addresses.';
+              ? (isEpochSwept
+                  ? 'Active vault assets were autonomously transferred to designated heirs. Deposits are permanently disabled for this epoch. Activate the next clean bunker to derive fresh uncompromised addresses.'
+                  : 'Autonomous inheritance triggered. Cloud Keeper sweep is in progress. Activate the next clean bunker to derive fresh uncompromised addresses.')
+              : (isEpochSwept
+                  ? 'Active epoch keys were exposed on-chain during evacuation. Activate the next bunker to derive fresh uncompromised addresses.'
+                  : 'Emergency evacuation triggered; Cloud Keeper sweep is in progress. Activate the next bunker to derive fresh uncompromised addresses.');
           }
         }
         if (unarmedBanner) unarmedBanner.classList.add('hidden');
@@ -3669,7 +3712,16 @@
         return;
       }
 
-      showToast('Broadcasting rotate_bunker() to NEAR Testnet...');
+      if (
+        lastFetchedVaultInfo &&
+        (lastFetchedVaultInfo.state === 'Evacuated' || lastFetchedVaultInfo.state === 'Inheritance') &&
+        !lastFetchedVaultInfo.is_epoch_swept
+      ) {
+        showToast('ℹ️ Archiving current epoch for background Cloud Keeper sweep and rotating to clean epoch...');
+        triggerCloudKeeperSweep(false);
+      } else {
+        showToast('Broadcasting rotate_bunker() to NEAR Testnet...');
+      }
       try {
         const outcome = await dispatchNearTransaction('rotate_bunker');
         if (outcome) {
@@ -3808,14 +3860,7 @@
           `;
           btn.className = 'save-policy-btn bg-nearGreen/15 hover:bg-nearGreen/25 text-nearGreen border border-nearGreen/40 font-bold py-2 px-5 rounded-xl text-xs transition active:scale-98 whitespace-nowrap cursor-pointer';
         } else {
-          const isReplacingExisting = (onChainBackupNear && pNear && onChainBackupNear !== pNear) ||
-                                      (onChainBackupBtc && pBtc && onChainBackupBtc !== pBtc) ||
-                                      (onChainBackupEvm && pEvm && onChainBackupEvm.toLowerCase() !== pEvm.toLowerCase()) ||
-                                      (onChainBackupSol && pSol && onChainBackupSol !== pSol) ||
-                                      (onChainHeirNear && hNear && onChainHeirNear !== hNear) ||
-                                      (onChainHeirBtc && hBtc && onChainHeirBtc !== hBtc) ||
-                                      (onChainHeirEvm && hEvm && onChainHeirEvm.toLowerCase() !== hEvm.toLowerCase()) ||
-                                      (onChainHeirSol && hSol && onChainHeirSol !== hSol);
+          const isReplacingExisting = hasOnChain && !isMatching;
           if (isReplacingExisting) {
             btn.innerHTML = `Save Policy (72h Cooldown)`;
             btn.className = 'save-policy-btn bg-amber-400 hover:bg-amber-300 text-black font-extrabold py-2 px-5 rounded-xl text-xs transition shadow-sm active:scale-98 whitespace-nowrap cursor-pointer';
@@ -3845,7 +3890,7 @@
       if (badge && (savedTg || savedEmail)) {
         badge.innerHTML = `
           <span class="w-2 h-2 rounded-full bg-nearGreen radar-pulse"></span>
-          <span>Relayer: <strong class="text-nearGreen">${savedTg || savedEmail}</strong></span>
+          <span>Relayer: <strong class="text-nearGreen">${escapeHtml(savedTg || savedEmail)}</strong></span>
         `;
       }
 
@@ -4670,7 +4715,8 @@
       resetHoldState();
       document.getElementById('abortModal').classList.add('hidden');
 
-      dispatchNearTransaction('panic').then(() => {
+      dispatchNearTransaction('panic').then((outcome) => {
+        if (!outcome) return;
         remainingSeconds = 0;
         if (lastFetchedVaultInfo) {
           lastFetchedVaultInfo.state = 'Evacuated';
@@ -4770,10 +4816,11 @@
           if (statusEl && s.status) statusEl.innerText = s.status;
           if (s.amount && document.getElementById('monitorBtcBal')) document.getElementById('monitorBtcBal').innerText = s.amount;
           if (linkEl && s.explorer) {
+            const safeExp = sanitizeExplorerUrl(s.explorer);
             const mpcLink = s.near_mpc_tx
-              ? ` <span class="text-white/20">|</span> <a href="${s.near_mpc_tx}" target="_blank" rel="noopener noreferrer" class="text-nearGreen hover:underline">MPC Proof (v1.signer) ↗</a>`
+              ? ` <span class="text-white/20">|</span> <a href="${sanitizeExplorerUrl(s.near_mpc_tx)}" target="_blank" rel="noopener noreferrer" class="text-nearGreen hover:underline">MPC Proof (v1.signer) ↗</a>`
               : '';
-            linkEl.innerHTML = `<a href="${s.explorer}" target="_blank" rel="noopener noreferrer" class="text-amber-400 hover:underline font-mono">View on Mempool.space ↗</a>${mpcLink}`;
+            linkEl.innerHTML = `<a href="${safeExp}" target="_blank" rel="noopener noreferrer" class="text-amber-400 hover:underline font-mono">View on Mempool.space ↗</a>${mpcLink}`;
           }
         }
         if (t.sweeps.evm) {
@@ -4783,10 +4830,11 @@
           if (statusBadge && s.status) statusBadge.innerText = s.status;
           if (s.amount && document.getElementById('monitorEvmBal')) document.getElementById('monitorEvmBal').innerText = s.amount;
           if (linkEl && s.explorer) {
+            const safeExp = sanitizeExplorerUrl(s.explorer);
             const mpcLink = s.near_mpc_tx
-              ? ` <span class="text-white/20">|</span> <a href="${s.near_mpc_tx}" target="_blank" rel="noopener noreferrer" class="text-nearGreen hover:underline">MPC Proof (v1.signer) ↗</a>`
+              ? ` <span class="text-white/20">|</span> <a href="${sanitizeExplorerUrl(s.near_mpc_tx)}" target="_blank" rel="noopener noreferrer" class="text-nearGreen hover:underline">MPC Proof (v1.signer) ↗</a>`
               : '';
-            linkEl.innerHTML = `<a href="${s.explorer}" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:underline font-mono">View on Etherscan ↗</a>${mpcLink}`;
+            linkEl.innerHTML = `<a href="${safeExp}" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:underline font-mono">View on Etherscan ↗</a>${mpcLink}`;
           }
         }
         if (t.sweeps.sol) {
@@ -4796,10 +4844,11 @@
           if (statusEl && s.status) statusEl.innerText = s.status;
           if (s.amount && document.getElementById('monitorSolBal')) document.getElementById('monitorSolBal').innerText = s.amount;
           if (linkEl && s.explorer) {
+            const safeExp = sanitizeExplorerUrl(s.explorer);
             const mpcLink = s.near_mpc_tx
-              ? ` <span class="text-white/20">|</span> <a href="${s.near_mpc_tx}" target="_blank" rel="noopener noreferrer" class="text-nearGreen hover:underline">MPC Proof (v1.signer) ↗</a>`
+              ? ` <span class="text-white/20">|</span> <a href="${sanitizeExplorerUrl(s.near_mpc_tx)}" target="_blank" rel="noopener noreferrer" class="text-nearGreen hover:underline">MPC Proof (v1.signer) ↗</a>`
               : '';
-            linkEl.innerHTML = `<a href="${s.explorer}" target="_blank" rel="noopener noreferrer" class="text-purple-400 hover:underline font-mono">View on Solscan ↗</a>${mpcLink}`;
+            linkEl.innerHTML = `<a href="${safeExp}" target="_blank" rel="noopener noreferrer" class="text-purple-400 hover:underline font-mono">View on Solscan ↗</a>${mpcLink}`;
           }
         }
         if (t.sweeps.near) {
@@ -4809,10 +4858,11 @@
           if (statusEl && s.status) statusEl.innerText = s.status;
           if (s.amount && document.getElementById('monitorNearBal')) document.getElementById('monitorNearBal').innerText = s.amount;
           if (linkEl && s.explorer) {
+            const safeExp = sanitizeExplorerUrl(s.explorer);
             const mpcLink = s.near_mpc_tx
-              ? ` <span class="text-white/20">|</span> <a href="${s.near_mpc_tx}" target="_blank" rel="noopener noreferrer" class="text-nearGreen hover:underline">MPC Proof (v1.signer) ↗</a>`
+              ? ` <span class="text-white/20">|</span> <a href="${sanitizeExplorerUrl(s.near_mpc_tx)}" target="_blank" rel="noopener noreferrer" class="text-nearGreen hover:underline">MPC Proof (v1.signer) ↗</a>`
               : '';
-            linkEl.innerHTML = `<a href="${s.explorer}" target="_blank" rel="noopener noreferrer" class="text-nearGreen hover:underline font-mono">View on NearBlocks ↗</a>${mpcLink}`;
+            linkEl.innerHTML = `<a href="${safeExp}" target="_blank" rel="noopener noreferrer" class="text-nearGreen hover:underline font-mono">View on NearBlocks ↗</a>${mpcLink}`;
           }
         }
         return true;
@@ -4907,7 +4957,7 @@
       if (badge) {
         badge.innerHTML = `
           <span class="w-2 h-2 rounded-full bg-nearGreen radar-pulse"></span>
-          <span>Relayer: <strong class="text-nearGreen">${tg || email || 'Active'}</strong></span>
+          <span>Relayer: <strong class="text-nearGreen">${escapeHtml(tg || email || 'Active')}</strong></span>
         `;
       }
     }
@@ -4931,7 +4981,7 @@
       const text = String(val || '');
       const bytes = new TextEncoder().encode(text).length;
       const isCipher = text.startsWith('enc:x25519:') || text.startsWith('enc:aes256:');
-      const limit = isCipher ? 1024 : 512;
+      const limit = isCipher ? 1024 : 240;
       const counter = document.getElementById('memoByteCount');
       if (counter) {
         counter.innerText = isCipher ? `Sealed (${bytes} / 1024 B)` : `${bytes} / ${limit} B`;
@@ -5161,11 +5211,11 @@
         return;
       }
 
-      // Address format validation
-      const isValidBtc = addr => !addr || /^(bc1|tb1|[13])[a-zA-HJ-NP-Z0-9]{25,62}$/.test(addr);
+      // Address format validation (matches on-chain ChainAddresses::validate)
+      const isValidBtc = addr => !addr || /^(bc1[a-zA-HJ-NP-Z0-9]{25,87}|tb1[a-zA-HJ-NP-Z0-9]{25,87}|[13mn2][a-km-zA-HJ-NP-Z1-9]{25,34})$/.test(addr);
       const isValidEvm = addr => !addr || /^0x[a-fA-F0-9]{40}$/.test(addr);
       const isValidSol = addr => !addr || /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(addr);
-      const isValidNear = addr => !addr || (/^[a-z0-9._-]+$/.test(addr) && addr.length >= 2 && addr.length <= 64);
+      const isValidNear = addr => !addr || (/^(?=.{2,64}$)[a-z0-9]+([_-][a-z0-9]+)*(\.[a-z0-9]+([_-][a-z0-9]+)*)*$/.test(addr) || /^[0-9a-f]{64}$/.test(addr));
 
       if (!isValidBtc(data.panicBtcAddr)) {
         showToast('Invalid Backup Bitcoin address format (use Bech32 tb1q/bc1q)', true);
@@ -5227,6 +5277,9 @@
             return;
           }
         }
+      } else if (userHasInteractedWithInputs && lastFetchedVaultInfo?.heir_memo) {
+        // Allow explicitly clearing an existing on-chain memo when the user empties the input
+        encryptedOrNullMemo = '';
       }
 
       const policyPayload = {

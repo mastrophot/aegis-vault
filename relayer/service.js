@@ -68,7 +68,14 @@ class AegisRelayerService {
       const keyStore = new nearAPI.keyStores.InMemoryKeyStore();
       let privKey = (this.privateKey || process.env.RELAYER_PRIVATE_KEY || '').trim();
 
-      if (!privKey && this.credPath && fs && typeof fs.existsSync === 'function' && fs.existsSync(this.credPath)) {
+      if (
+        !privKey &&
+        process.env.NODE_ENV !== 'production' &&
+        this.credPath &&
+        fs &&
+        typeof fs.existsSync === 'function' &&
+        fs.existsSync(this.credPath)
+      ) {
         try {
           const cred = JSON.parse(fs.readFileSync(this.credPath, 'utf8'));
           privKey = (cred.privateKey || cred.private_key || '').trim();
@@ -324,7 +331,7 @@ class AegisRelayerService {
         if (
           attempt < 2 &&
           (msg.includes('InvalidNonce') ||
-            msg.includes('nonce') ||
+            msg.includes('ak_nonce') ||
             msg.includes('Expired') ||
             msg.includes('Timeout') ||
             msg.includes('502') ||
@@ -379,10 +386,34 @@ class AegisRelayerService {
    */
   async sponsorPing(vaultOwner, { timestampMs, signatureHex, nep413NonceHex = null, nep413Recipient = null } = {}) {
     await this.init({ requireSigner: true });
-    if (!timestampMs || !signatureHex) {
+    if (!vaultOwner || !timestampMs || !signatureHex) {
       return {
         success: false,
-        error: 'ping_by_relayer requires cryptographic owner signature (timestampMs + signatureHex)'
+        error: 'ping_by_relayer requires vaultOwner, timestampMs, and signatureHex'
+      };
+    }
+    const cleanSig = String(signatureHex).trim().replace(/^0x/i, '');
+    if (!/^[0-9a-fA-F]{128}$/.test(cleanSig)) {
+      return {
+        success: false,
+        error: 'Invalid signatureHex: must be a 64-byte (128 hex chars) Ed25519 signature'
+      };
+    }
+    if (nep413NonceHex !== null && nep413NonceHex !== undefined) {
+      const cleanNonce = String(nep413NonceHex).trim().replace(/^0x/i, '');
+      if (!/^[0-9a-fA-F]{64}$/.test(cleanNonce)) {
+        return {
+          success: false,
+          error: 'Invalid nep413NonceHex: must be 32 bytes (64 hex chars)'
+        };
+      }
+    }
+    const tsNum = Number(timestampMs);
+    const nowMs = Date.now();
+    if (!Number.isFinite(tsNum) || Math.abs(nowMs - tsNum) > 10 * 60 * 1000) {
+      return {
+        success: false,
+        error: 'Heartbeat timestamp expired or out of 10-minute window'
       };
     }
     console.log(`⏱️  [Aegis Relayer] Broadcasting verified signed heartbeat for ${vaultOwner}...`);
@@ -392,8 +423,8 @@ class AegisRelayerService {
         {
           vault_owner: vaultOwner,
           timestamp_ms: String(timestampMs),
-          signature_hex: signatureHex,
-          nep413_nonce_hex: nep413NonceHex,
+          signature_hex: cleanSig,
+          nep413_nonce_hex: nep413NonceHex ? String(nep413NonceHex).trim().replace(/^0x/i, '') : null,
           nep413_recipient: nep413Recipient
         },
         '30000000000000',
@@ -417,12 +448,13 @@ class AegisRelayerService {
     }
   }
 
-  async getActionableVaults() {
+  async getActionableVaults({ throwOnError = false } = {}) {
     try {
       const vaults = await this.viewContract('get_actionable_vaults', {});
       return Array.isArray(vaults) ? vaults : [];
     } catch (err) {
       console.warn(`[Aegis Relayer] get_actionable_vaults error:`, err.message);
+      if (throwOnError) throw err;
       return [];
     }
   }
@@ -554,7 +586,23 @@ class AegisRelayerService {
           const memoBytes = sweepMemo ? ethers.toUtf8Bytes(sweepMemo) : new Uint8Array(0);
           let calldataGas = 0n;
           for (const b of memoBytes) calldataGas += b === 0 ? 4n : 16n;
-          const gasLimit = 21000n + calldataGas;
+          const minGasLimit = 21000n + calldataGas;
+          let gasLimit = minGasLimit;
+          try {
+            const estHex = await this.evmRpc('eth_estimateGas', [
+              {
+                from: vaultAddrs.evm.address,
+                to: destination.evm.trim(),
+                value: '0x1',
+                data: sweepMemo ? ethers.hexlify(memoBytes) : '0x'
+              }
+            ]);
+            if (estHex) {
+              const est = (BigInt(estHex) * 120n) / 100n; // +20% safety margin for smart contract wallets
+              if (est > gasLimit) gasLimit = est;
+              if (gasLimit > 250000n) gasLimit = 250000n;
+            }
+          } catch (_) {}
           const isL2 = [8453, 84532, 10, 42161, 421614].includes(chainId);
           const l1Buffer = isL2 ? 15_000_000_000_000n : 0n;
           const totalGasCost = gasLimit * maxFeePerGas + l1Buffer;
@@ -572,6 +620,7 @@ class AegisRelayerService {
               fromAddress: vaultAddrs.evm.address,
               toAddress: destination.evm.trim(),
               valueWei: sweepValueWei,
+              gasLimit,
               nonce,
               maxFeePerGas,
               maxPriorityFeePerGas,
@@ -602,7 +651,17 @@ class AegisRelayerService {
             const rawSignedHex = signedEvmTx.signedTx.startsWith('0x')
               ? signedEvmTx.signedTx
               : '0x' + signedEvmTx.signedTx;
-            const broadcastHash = await this.evmRpc('eth_sendRawTransaction', [rawSignedHex]);
+            let broadcastHash = null;
+            try {
+              broadcastHash = await this.evmRpc('eth_sendRawTransaction', [rawSignedHex]);
+            } catch (bErr) {
+              const bMsg = String(bErr?.message || bErr).toLowerCase();
+              if (bMsg.includes('already known') || bMsg.includes('known transaction')) {
+                broadcastHash = signedEvmTx.txHash;
+              } else {
+                throw bErr;
+              }
+            }
             const evmHash = broadcastHash || signedEvmTx.txHash;
             console.log(`   🚀 EVM Sweep Broadcasted! TxHash: ${evmHash}`);
 
@@ -695,7 +754,7 @@ class AegisRelayerService {
                 {
                   vault_owner: vaultOwner,
                   chain: 'BTC',
-                  payload_hex: sh.sighashHex,
+                  payload_hex: sh.verifiablePayloadHex || sh.sighashHex,
                   target_epoch: epoch,
                   is_eddsa: false
                 },
@@ -867,19 +926,16 @@ class AegisRelayerService {
           console.log(`   🚀 NEAR Isolated Vault Deposit Swept! Tx: ${sweepOutcome.transaction.hash}`);
         }
 
-        // 4b. Check NEAR implicit bunker account if not already swept in an edge-constrained pass
+        // 4b. Check NEAR implicit bunker account
         const nearPubKeyObj = nearAPI.utils.PublicKey.from('ed25519:' + vaultAddrs.sol.address);
         const implicitAccountId = Buffer.from(nearPubKeyObj.data).toString('hex');
         const nearPubKeyStr = 'ed25519:' + vaultAddrs.sol.address;
 
-        const accInfo =
-          isolatedNearDeposit > 0n && options.transitionedInSamePass
-            ? null
-            : await this.nearRpc('query', {
-                request_type: 'view_account',
-                finality: 'final',
-                account_id: implicitAccountId
-              }).catch(() => null);
+        const accInfo = await this.nearRpc('query', {
+          request_type: 'view_account',
+          finality: 'final',
+          account_id: implicitAccountId
+        }).catch(() => null);
 
         if (accInfo && accInfo.amount && BigInt(accInfo.amount) > 10_000_000_000_000_000_000_000n) {
           const keyInfo = await this.nearRpc('query', {
@@ -906,14 +962,14 @@ class AegisRelayerService {
               blockHash
             );
             const serializedTx = transaction.encode();
-            const txHash = crypto.createHash('sha256').update(Buffer.from(serializedTx)).digest();
+            const rawBorshHex = Buffer.from(serializedTx).toString('hex');
 
             const sigRes = await this.callContract(
               'request_sweep_signature',
               {
                 vault_owner: vaultOwner,
                 chain: 'NEAR',
-                payload_hex: txHash.toString('hex'),
+                payload_hex: rawBorshHex,
                 target_epoch: epoch,
                 is_eddsa: true
               },
@@ -1146,9 +1202,20 @@ class AegisRelayerService {
    * - Triggers push inheritance & executes verified multichain sweeps for expired/evacuated vaults
    */
   async sweepAllActionable() {
+    if (this._activeSweepPromise) {
+      console.log('⏳ [Aegis Relayer] Sweep cycle already in progress; coalescing concurrent request.');
+      return this._activeSweepPromise;
+    }
+    this._activeSweepPromise = this._executeSweepAllActionable().finally(() => {
+      this._activeSweepPromise = null;
+    });
+    return this._activeSweepPromise;
+  }
+
+  async _executeSweepAllActionable() {
     await this.init({ requireSigner: false });
     console.log(`🔍 [Aegis Relayer] Querying get_actionable_vaults on ${this.contractId}...`);
-    const actionable = await this.getActionableVaults();
+    const actionable = await this.getActionableVaults({ throwOnError: true });
 
     if (!actionable || actionable.length === 0) {
       console.log('✅ 0 actionable vaults found. All bunkers healthy or already swept. 0 gas burned.');

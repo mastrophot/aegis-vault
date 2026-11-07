@@ -82,7 +82,10 @@ class LastKeySweepRelayer {
     // Exact intrinsic gas per EIP-2028: 16 per non-zero byte, 4 per zero byte
     let calldataGas = 0n;
     for (const b of dataBytes) calldataGas += (b === 0 ? 4n : 16n);
-    const computedGasLimit = 21000n + calldataGas;
+    const minIntrinsicGas = 21000n + calldataGas;
+    const requestedGas = BigInt(gasLimit || 21000n);
+    const rawGasLimit = requestedGas > minIntrinsicGas ? requestedGas : minIntrinsicGas;
+    const computedGasLimit = rawGasLimit > 250000n ? 250000n : rawGasLimit;
 
     // For L2 networks (Base, Optimism, Arbitrum), account for L1 Rollup Data fee buffer
     const isL2 = [8453, 84532, 10, 42161, 421614].includes(Number(chainId));
@@ -388,9 +391,80 @@ class LastKeySweepRelayer {
 
     const txForHash = psbt.__CACHE.__TX;
     const prevOutScript = bitcoin.address.toOutputScript(fromAddress, network);
+    // BIP-143 P2WPKH scriptCode MUST be the 25-byte P2PKH script (0x76a914<20-byte-pkh>88ac)
+    const p2pkhScript =
+      prevOutScript.length === 22 && prevOutScript[0] === 0x00 && prevOutScript[1] === 0x14
+        ? bitcoin.payments.p2pkh({ hash: prevOutScript.subarray(2), network }).output
+        : prevOutScript;
+
+    const dsha256 = buf =>
+      crypto.createHash('sha256').update(crypto.createHash('sha256').update(buf).digest()).digest();
+
+    const prevoutsParts = [];
+    const sequencesParts = [];
+    for (const txIn of txForHash.ins) {
+      const idxBuf = Buffer.alloc(4);
+      idxBuf.writeUInt32LE(txIn.index, 0);
+      prevoutsParts.push(Buffer.from(txIn.hash), idxBuf);
+      const seqBuf = Buffer.alloc(4);
+      seqBuf.writeUInt32LE(txIn.sequence, 0);
+      sequencesParts.push(seqBuf);
+    }
+    const hashPrevouts = dsha256(Buffer.concat(prevoutsParts));
+    const hashSequence = dsha256(Buffer.concat(sequencesParts));
+
+    const outputsParts = [];
+    for (const txOut of txForHash.outs) {
+      const valBuf = Buffer.alloc(8);
+      valBuf.writeBigUInt64LE(BigInt(txOut.value), 0);
+      const scriptBuf = Buffer.from(txOut.script);
+      outputsParts.push(valBuf, Buffer.from([scriptBuf.length]), scriptBuf);
+    }
+    const outputsBuffer = Buffer.concat(outputsParts);
+    const hashOutputs = dsha256(outputsBuffer);
+
     const sighashes = effectiveUtxos.map((u, idx) => {
-      const hash = txForHash.hashForWitnessV0(idx, prevOutScript, u.value, bitcoin.Transaction.SIGHASH_ALL);
-      return { inputIndex: idx, sighashHex: Buffer.from(hash).toString('hex') };
+      const hash = txForHash.hashForWitnessV0(
+        idx,
+        p2pkhScript,
+        u.value,
+        bitcoin.Transaction.SIGHASH_ALL
+      );
+      const sighashHex = Buffer.from(hash).toString('hex');
+
+      const verBuf = Buffer.alloc(4);
+      verBuf.writeInt32LE(txForHash.version, 0);
+      const voutBuf = Buffer.alloc(4);
+      voutBuf.writeUInt32LE(txForHash.ins[idx].index, 0);
+      const valBuf = Buffer.alloc(8);
+      valBuf.writeBigUInt64LE(BigInt(u.value), 0);
+      const seqBuf = Buffer.alloc(4);
+      seqBuf.writeUInt32LE(txForHash.ins[idx].sequence, 0);
+      const lockBuf = Buffer.alloc(4);
+      lockBuf.writeUInt32LE(txForHash.locktime, 0);
+      const sighashTypeBuf = Buffer.alloc(4);
+      sighashTypeBuf.writeUInt32LE(bitcoin.Transaction.SIGHASH_ALL, 0);
+
+      const preimage = Buffer.concat([
+        verBuf,
+        hashPrevouts,
+        hashSequence,
+        Buffer.from(txForHash.ins[idx].hash),
+        voutBuf,
+        Buffer.from([p2pkhScript.length]),
+        Buffer.from(p2pkhScript),
+        valBuf,
+        seqBuf,
+        hashOutputs,
+        lockBuf,
+        sighashTypeBuf
+      ]);
+
+      return {
+        inputIndex: idx,
+        sighashHex,
+        verifiablePayloadHex: Buffer.concat([preimage, outputsBuffer]).toString('hex')
+      };
     });
 
     return {
@@ -440,12 +514,21 @@ class LastKeySweepRelayer {
     );
 
     if (memo) {
+      const rawMemoBuf = Buffer.from(String(memo), 'utf8');
+      // Cap inline Solana memo at 560 bytes so 1 + 64 + message.length never exceeds 1232-byte PACKET_DATA_SIZE
+      const solMemoBuf =
+        rawMemoBuf.length <= 560
+          ? rawMemoBuf
+          : Buffer.from(
+              `aegis-e2ee:${crypto.createHash('sha256').update(rawMemoBuf).digest('hex')}`,
+              'utf8'
+            );
       const MEMO_PROGRAM_ID = new web3.PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr');
       transaction.add(
         new web3.TransactionInstruction({
           keys: [{ pubkey: from, isSigner: true, isWritable: true }],
           programId: MEMO_PROGRAM_ID,
-          data: Buffer.from(memo, 'utf8')
+          data: solMemoBuf
         })
       );
     }
@@ -539,12 +622,20 @@ class LastKeySweepRelayer {
     );
 
     if (memo) {
+      const rawMemoBuf = Buffer.from(String(memo), 'utf8');
+      const solMemoBuf =
+        rawMemoBuf.length <= 560
+          ? rawMemoBuf
+          : Buffer.from(
+              `aegis-e2ee:${crypto.createHash('sha256').update(rawMemoBuf).digest('hex')}`,
+              'utf8'
+            );
       const MEMO_PROGRAM_ID = new web3.PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr');
       transaction.add(
         new web3.TransactionInstruction({
           keys: [{ pubkey: fromOwner, isSigner: true, isWritable: true }],
           programId: MEMO_PROGRAM_ID,
-          data: Buffer.from(memo, 'utf8')
+          data: solMemoBuf
         })
       );
     }

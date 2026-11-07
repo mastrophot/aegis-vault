@@ -93,7 +93,7 @@ async function runSweepSimulation() {
     utxos: mockUtxos,
     fromAddress: vault.btc.address,
     toAddress: 'tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx',
-    feeSats: 2000,
+    feeSatsOverride: 2000,
     network: bitcoin.networks.testnet
   });
 
@@ -101,6 +101,10 @@ async function runSweepSimulation() {
   console.log(`   • Output Amount:  ${btcSweep.sendAmount} sats`);
   console.log(`   • Mining Fee:     ${btcSweep.feeSats} sats`);
   console.log(`   • PSBT Hex:       ${btcSweep.psbtHex.slice(0, 50)}...`);
+  if (!btcSweep.sighashes[0].verifiablePayloadHex || btcSweep.sighashes[0].verifiablePayloadHex.length <= 364) {
+    throw new Error('Bitcoin sweep missing BIP-143 verifiablePayloadHex (>182 bytes)');
+  }
+  console.log(`   • BIP-143 Preimage+Outputs: ${btcSweep.sighashes[0].verifiablePayloadHex.length / 2} bytes (Verifiable On-Chain)`);
 
   // Verify Bitcoin Dust rejection invariant
   try {

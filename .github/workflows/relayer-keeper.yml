@@ -6,9 +6,14 @@ on:
     - cron: '*/5 * * * *'
   workflow_dispatch:
 
+concurrency:
+  group: aegis-relayer-keeper
+  cancel-in-progress: false
+
 jobs:
   run-relayer-keeper:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:
@@ -30,7 +35,7 @@ jobs:
           RELAYER_ACCOUNT_ID: keeper.aegis.okgoogleok.testnet
           RELAYER_PRIVATE_KEY: ${{ secrets.RELAYER_PRIVATE_KEY }}
           NEAR_RPC_URL: https://test.rpc.fastnear.com
-          SOLANA_RPC_URL: https://api.devnet.solana.com
+          SOLANA_RPC_URL: https://solana-devnet.api.onfinality.io/public
           EVM_RPC_URL: https://ethereum-sepolia-rpc.publicnode.com
         run: |
           node relayer/service.js --sweep-all
