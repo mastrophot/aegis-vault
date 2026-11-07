@@ -120,27 +120,43 @@ class AegisRelayerService {
   }
 
   async solanaRpc(method, params = []) {
-    const res = await fetch(this.solanaRpcUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'User-Agent': 'AegisVaultRelayer/1.0'
-      },
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        id: 1,
-        method,
-        params
-      })
-    });
-    if (!res.ok) {
-      throw new Error(`Solana RPC HTTP ${res.status}`);
+    const candidates = [
+      this.solanaRpcUrl,
+      'https://solana-devnet.api.onfinality.io/public',
+      'https://rpc.magicblock.app/devnet',
+      'https://api.devnet.solana.com'
+    ].filter((u, idx, arr) => u && arr.indexOf(u) === idx);
+
+    let lastErr = null;
+    for (const url of candidates) {
+      try {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'User-Agent': 'AegisVaultRelayer/1.0'
+          },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            id: 1,
+            method,
+            params
+          })
+        });
+        if (!res.ok) {
+          lastErr = new Error(`Solana RPC HTTP ${res.status} (${url})`);
+          continue;
+        }
+        const body = await res.json();
+        if (body.error) {
+          throw new Error(body.error.message || JSON.stringify(body.error));
+        }
+        return body.result;
+      } catch (err) {
+        lastErr = err;
+      }
     }
-    const body = await res.json();
-    if (body.error) {
-      throw new Error(body.error.message || JSON.stringify(body.error));
-    }
-    return body.result;
+    throw lastErr || new Error('All Solana Devnet RPC endpoints failed');
   }
 
   async callContract(methodName, args = {}, gas = '100000000000000', attachedDeposit = '0') {
