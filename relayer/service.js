@@ -91,7 +91,7 @@ class AegisRelayerService {
       this.account = await this.near.account(this.relayerAccountId);
 
       try {
-        this.evmProvider = new ethers.JsonRpcProvider(this.evmRpcUrl);
+        this.evmProvider = new ethers.JsonRpcProvider(this.evmRpcUrl, undefined, { staticNetwork: true });
       } catch (e) {
         console.warn('[Relayer] EVM provider notice:', e.message);
       }
@@ -100,6 +100,7 @@ class AegisRelayerService {
         const boundFetch = typeof globalThis.fetch === 'function' ? globalThis.fetch.bind(globalThis) : undefined;
         this.solanaConnection = new web3.Connection(this.solanaRpcUrl, {
           commitment: 'confirmed',
+          disableRetryOnRateLimit: true,
           ...(boundFetch ? { fetch: boundFetch } : {})
         });
       } catch (e) {
@@ -116,6 +117,30 @@ class AegisRelayerService {
         `Missing RELAYER_PRIVATE_KEY for ${this.relayerAccountId}. Configure RELAYER_PRIVATE_KEY env secret or ${this.credPath}.`
       );
     }
+  }
+
+  async solanaRpc(method, params = []) {
+    const res = await fetch(this.solanaRpcUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent': 'AegisVaultRelayer/1.0'
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method,
+        params
+      })
+    });
+    if (!res.ok) {
+      throw new Error(`Solana RPC HTTP ${res.status}`);
+    }
+    const body = await res.json();
+    if (body.error) {
+      throw new Error(body.error.message || JSON.stringify(body.error));
+    }
+    return body.result;
   }
 
   async callContract(methodName, args = {}, gas = '100000000000000', attachedDeposit = '0') {
@@ -560,9 +585,11 @@ class AegisRelayerService {
     if (destination.sol && destination.sol.trim().length > 20) {
       console.log(`\n[Solana Sweep] Checking ${vaultAddrs.sol.address} -> ${destination.sol}...`);
       try {
-        const solConn = this.solanaConnection || new web3.Connection(this.solanaRpcUrl, 'confirmed');
-        const bal = await solConn.getBalance(new web3.PublicKey(vaultAddrs.sol.address));
-        const liveLamports = BigInt(bal);
+        const balResult = await this.solanaRpc('getBalance', [
+          vaultAddrs.sol.address,
+          { commitment: 'confirmed' }
+        ]);
+        const liveLamports = BigInt(balResult?.value ?? 0);
         console.log(
           `   • Solana Bunker Balance: ${Number(liveLamports) / 1e9} SOL (${liveLamports} lamports)`
         );
@@ -575,28 +602,32 @@ class AegisRelayerService {
             amount: `${(Number(liveLamports) / 1e9).toFixed(4)} SOL`
           };
         } else {
-          const latest = await solConn.getLatestBlockhash('confirmed');
+          const latestResult = await this.solanaRpc('getLatestBlockhash', [
+            { commitment: 'confirmed' }
+          ]);
+          const blockhash = latestResult?.value?.blockhash;
+          if (!blockhash) throw new Error('Missing Solana recentBlockhash');
+
           const solSweep = this.engine.prepareSolanaSweep({
             fromPubkey: vaultAddrs.sol.address,
             toPubkey: destination.sol.trim(),
             lamports: liveLamports,
             memo: sweepMemo,
-            recentBlockhash: latest.blockhash
+            recentBlockhash: blockhash
           });
 
-          const outcome = await this.account.functionCall({
-            contractId: this.contractId,
-            methodName: 'request_sweep_signature',
-            args: {
+          const outcome = await this.callContract(
+            'request_sweep_signature',
+            {
               vault_owner: vaultOwner,
               chain: 'SOL',
               payload_hex: solSweep.rawPayloadHex,
               target_epoch: epoch,
               is_eddsa: true
             },
-            gas: '280000000000000',
-            attachedDeposit: '0'
-          });
+            '280000000000000',
+            '0'
+          );
 
           const nearTxHash = outcome.transaction.hash;
           const mpcSignature = this.extractMpcSignatureFromOutcome(outcome);
@@ -610,10 +641,14 @@ class AegisRelayerService {
             mpcSignature
           );
 
-          const rpcSig = await solConn.sendRawTransaction(Buffer.from(signedSol.txHex, 'hex'), {
-            skipPreflight: false,
-            preflightCommitment: 'confirmed'
-          });
+          const rpcSig = await this.solanaRpc('sendTransaction', [
+            Buffer.from(signedSol.txHex, 'hex').toString('base64'),
+            {
+              encoding: 'base64',
+              skipPreflight: false,
+              preflightCommitment: 'confirmed'
+            }
+          ]);
           const solSig = rpcSig || signedSol.signatureBase58;
           console.log(`   🚀 Solana Tx broadcasted to Devnet: ${solSig}`);
 
