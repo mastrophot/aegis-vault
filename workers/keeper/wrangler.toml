@@ -10,8 +10,10 @@ minify = true
 [alias]
 "js-sha256" = "./shims/js-sha256.js"
 
-[triggers]
-crons = ["* * * * *"]
+# Uncomment `[triggers]` on a claimed Cloudflare account to enable 1-minute autonomous cron
+# (`scheduled()` handler is already exported in `index.js`; GitHub Actions cron runs 24/7 in parallel):
+# [triggers]
+# crons = ["* * * * *"]
 
 [vars]
 NEAR_NETWORK = "testnet"
