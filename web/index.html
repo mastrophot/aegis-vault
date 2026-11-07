@@ -772,25 +772,25 @@
           </div>
         </div>
 
-        <!-- Evacuated Policy Banner (Shown when vault is in Evacuated state) -->
+        <!-- Evacuated / Inherited / Expired Policy Banner -->
         <div id="evacuatedPolicyBanner" class="hidden p-4 rounded-xl bg-red-950/25 border border-red-500/35 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-white">
           <div class="flex items-center gap-3">
-            <div class="w-8 h-8 rounded-lg bg-red-500/20 flex items-center justify-center text-red-400 shrink-0 font-bold">
-              <svg class="w-4 h-4 text-red-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+            <div id="evacuatedBannerIconBox" class="w-8 h-8 rounded-lg bg-red-500/20 flex items-center justify-center text-red-400 shrink-0 font-bold">
+              <svg id="evacuatedBannerIcon" class="w-4 h-4 text-red-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
             </div>
             <div>
-              <div class="font-bold text-red-400 flex items-center gap-2">
-                <span>Bunker Evacuated · Protection Inactive</span>
-                <span class="text-[10px] font-mono bg-red-500/20 text-red-300 border border-red-500/40 px-2 py-0.5 rounded-full font-bold">KEYS BURNED</span>
+              <div id="evacuatedBannerHeader" class="font-bold text-red-400 flex flex-wrap items-center gap-2">
+                <span id="evacuatedBannerTitle">Bunker Evacuated · Protection Inactive</span>
+                <span id="evacuatedBannerBadge" class="text-[10px] font-mono bg-red-500/20 text-red-300 border border-red-500/40 px-2 py-0.5 rounded-full font-bold">KEYS BURNED</span>
               </div>
               <div id="evacuatedPolicySummary" class="text-white/80 text-[11px] mt-0.5 font-mono">
-                <!-- Egress destinations used during evacuation -->
+                <!-- Egress status summary -->
               </div>
             </div>
           </div>
-          <div class="flex items-center gap-2 text-xs font-mono text-red-400 self-start sm:self-auto">
-            <span class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
-            <span class="font-bold">Vault Burned</span>
+          <div id="evacuatedBannerRight" class="flex items-center gap-2 text-xs font-mono text-red-400 self-start sm:self-auto shrink-0">
+            <span id="evacuatedBannerDot" class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
+            <span id="evacuatedBannerRightText" class="font-bold">Vault Burned</span>
           </div>
         </div>
 
@@ -1701,16 +1701,74 @@
       return !!(hasBackup || hasHeirs);
     }
 
+    function maskAddressForDisplay(addr) {
+      const s = String(addr || '').trim();
+      if (!s || s === 'Not configured') return 'Not configured';
+      if (s.endsWith('.testnet') || s.endsWith('.near')) {
+        const dotIdx = s.indexOf('.');
+        const prefix = s.slice(0, dotIdx);
+        const suffix = s.slice(dotIdx);
+        if (prefix.length <= 4) return `${prefix.slice(0, 2)}•••${suffix}`;
+        return `${prefix.slice(0, 4)}•••${suffix}`;
+      }
+      if (s.length <= 12) return `${s.slice(0, 4)}•••`;
+      return `${s.slice(0, 6)}•••${s.slice(-4)}`;
+    }
+
+    function isHeartbeatExpired(info = lastFetchedVaultInfo) {
+      const currentSigner = localStorage.getItem('aegis_signer_account');
+      if (!currentSigner || !info) return false;
+      if (info.state === 'Evacuated' || info.state === 'Inheritance') return true;
+      if (info.state === 'Active' && hasConfiguredDestinations(info)) {
+        if (typeof remainingSeconds === 'number' && remainingSeconds <= 0) return true;
+        if (info.last_ping_ns) {
+          try {
+            const hbExpiryMs = Number(
+              (BigInt(info.last_ping_ns) + BigInt(info.heartbeat_interval_ns || '0')) / 1000000n
+            );
+            if (Date.now() >= hbExpiryMs) return true;
+          } catch (_) {}
+        }
+      }
+      return false;
+    }
+
+    function isGracePeriodExpired(info = lastFetchedVaultInfo) {
+      const currentSigner = localStorage.getItem('aegis_signer_account');
+      if (!currentSigner || !info) return false;
+      if (info.state === 'Evacuated' || info.state === 'Inheritance') return true;
+      if (info.state === 'Active' && hasConfiguredDestinations(info) && info.last_ping_ns) {
+        try {
+          const fullExpiryMs = Number(
+            (BigInt(info.last_ping_ns) +
+              BigInt(info.heartbeat_interval_ns || '0') +
+              BigInt(info.challenge_period_ns || '0')) / 1000000n
+          );
+          if (Date.now() >= fullExpiryMs) return true;
+        } catch (_) {}
+      }
+      return false;
+    }
+
     function isVaultEvacuatedOrBurned() {
       const currentSigner = localStorage.getItem('aegis_signer_account');
       if (!currentSigner || !lastFetchedVaultInfo) return false;
       return lastFetchedVaultInfo.state === 'Evacuated' || lastFetchedVaultInfo.state === 'Inheritance';
     }
 
+    function isAddressDisplayLocked(info = lastFetchedVaultInfo) {
+      return isVaultEvacuatedOrBurned() || isHeartbeatExpired(info) || isGracePeriodExpired(info);
+    }
+
+    function isInheritanceState(info = lastFetchedVaultInfo) {
+      if (!info) return false;
+      return info.state === 'Inheritance' || (info.state === 'Active' && isHeartbeatExpired(info));
+    }
+
     function shouldShowUnconfiguredBanner(info = lastFetchedVaultInfo) {
       const currentSigner = localStorage.getItem('aegis_signer_account');
       if (!currentSigner) return false;
-      if (isVaultEvacuatedOrBurned()) return false;
+      if (isAddressDisplayLocked(info)) return false;
       if (hasConfiguredDestinations(info)) return false;
       if (info && info.pending_policy) return false;
       if (userHasInteractedWithInputs || isEditing) return false;
@@ -2000,29 +2058,58 @@
       const unconfiguredBanner = document.getElementById('unconfiguredBanner');
       // 3. Sync destinations directly from on-chain storage
       let hasActiveAddresses = false;
-      const isEvacuated = info && (info.state === 'Evacuated' || info.state === 'Inheritance');
+      const isEvacuated = Boolean(info && (info.state === 'Evacuated' || info.state === 'Inheritance'));
+      const isGraceExp = isGracePeriodExpired(info);
+      const isHbExp = isHeartbeatExpired(info);
+      const isAddrLocked = isEvacuated || isGraceExp || isHbExp;
 
-      if (isEvacuated) {
-        // Vault is evacuated/burned: NEVER populate or display old addresses in inputs
+      if (isAddrLocked) {
+        // Vault is evacuated, inherited, or timer expired: NEVER populate or display addresses in inputs
+        const defaultPlaceholders = {
+          panicNearAddr: 'e.g. coldvault.testnet',
+          panicBtcAddr: 'e.g. tb1q...',
+          panicEvmAddr: 'e.g. 0x...',
+          panicSolAddr: 'e.g. Base58 Solana address',
+          heirNearAddr: 'e.g. family.testnet',
+          heirBtcAddr: 'e.g. tb1q...',
+          heirEvmAddr: 'e.g. 0x...',
+          heirSolAddr: 'e.g. Base58 Solana address',
+          heirFinalMemo: 'Write final instructions or message for your family...'
+        };
         inputIds.forEach(id => {
           const el = document.getElementById(id);
           if (el) {
             el.value = '';
             el.disabled = true;
+            el.placeholder = (isEvacuated || isGraceExp)
+              ? '🔒 Hidden — Bunker epoch closed (Rotate bunker to set new addresses)'
+              : '🔒 Hidden during Grace Buffer — Check-in to unlock';
+            el.dataset.defaultPlaceholder = el.dataset.defaultPlaceholder || defaultPlaceholders[id] || '';
           }
         });
+        const passEl = document.getElementById('heirMemoPassphrase');
+        if (passEl) passEl.value = '';
+        const e2eeBadge = document.getElementById('e2eeArmedStatus');
+        if (e2eeBadge) e2eeBadge.classList.add('hidden');
+        if ((isEvacuated || isGraceExp) && signerAccount) {
+          localStorage.removeItem('aegis_addresses_' + signerAccount);
+        }
       } else if (info.state === 'Unconfigured') {
         inputIds.forEach(id => {
           const el = document.getElementById(id);
           if (el) {
             el.disabled = false;
+            if (el.dataset.defaultPlaceholder) el.placeholder = el.dataset.defaultPlaceholder;
             if (!userHasInteractedWithInputs && !el.value) el.value = '';
           }
         });
       } else {
         inputIds.forEach(id => {
           const el = document.getElementById(id);
-          if (el) el.disabled = false;
+          if (el) {
+            el.disabled = false;
+            if (el.dataset.defaultPlaceholder) el.placeholder = el.dataset.defaultPlaceholder;
+          }
         });
         if (info.backup) {
           const pNear = document.getElementById('panicNearAddr');
@@ -2088,42 +2175,109 @@
       const badge = document.getElementById('addressStatusBadge');
       const dot = document.getElementById('addressStatusDot');
 
-      if (isEvacuated) {
-        const isInheritance = info && info.state === 'Inheritance';
+      if (isAddrLocked) {
+        const isInheritance = Boolean(info && (info.state === 'Inheritance' || (info.state === 'Active' && isGraceExp)));
+        const isGraceOnly = Boolean(!isEvacuated && !isGraceExp && isHbExp);
         const isEpochSwept = Boolean(info && info.is_epoch_swept);
         if (activeBanner) activeBanner.classList.add('hidden');
+        if (activeSummary) activeSummary.innerHTML = '';
         if (unconfiguredBanner) unconfiguredBanner.classList.add('hidden');
         if (evacuatedBanner) {
           evacuatedBanner.classList.remove('hidden');
-          if (evacuatedSummary) {
-            evacuatedSummary.innerHTML = isInheritance
-              ? (isEpochSwept
-                  ? 'All bunker assets autonomously transferred to designated family heirs. Active epoch keys permanently closed. Click <strong>Activate Clean Bunker</strong> to advance to next epoch.'
-                  : 'Autonomous inheritance triggered. Cloud Keeper sweep is in progress. Once sweep completes, click <strong>Activate Clean Bunker</strong> to advance to next epoch.')
-              : (isEpochSwept
-                  ? 'All bunker assets swept. Active epoch keys permanently burned. Click <strong>Activate Clean Bunker</strong> to advance to next epoch.'
-                  : 'Emergency panic confirmed on-chain. Cloud Keeper multichain sweep is in progress. Click <strong>Activate Clean Bunker</strong> once sweep completes.');
+          const bTitle = document.getElementById('evacuatedBannerTitle');
+          const bBadge = document.getElementById('evacuatedBannerBadge');
+          const bHeader = document.getElementById('evacuatedBannerHeader');
+          const bRight = document.getElementById('evacuatedBannerRight');
+          const bRightText = document.getElementById('evacuatedBannerRightText');
+          const bDot = document.getElementById('evacuatedBannerDot');
+          const bIconBox = document.getElementById('evacuatedBannerIconBox');
+          const bIcon = document.getElementById('evacuatedBannerIcon');
+
+          if (isGraceOnly) {
+            evacuatedBanner.className = 'p-4 rounded-xl bg-amber-950/25 border border-amber-500/35 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-white';
+            if (bHeader) bHeader.className = 'font-bold text-amber-400 flex flex-wrap items-center gap-2';
+            if (bTitle) bTitle.innerText = 'Heartbeat Expired · Grace Buffer Active';
+            if (bBadge) {
+              bBadge.innerText = 'ADDRESSES HIDDEN';
+              bBadge.className = 'text-[10px] font-mono bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded-full font-bold';
+            }
+            if (bRight) bRight.className = 'flex items-center gap-2 text-xs font-mono text-amber-400 self-start sm:self-auto shrink-0';
+            if (bDot) bDot.className = 'w-2 h-2 rounded-full bg-amber-400 animate-pulse';
+            if (bRightText) bRightText.innerText = 'Grace Window';
+            if (bIconBox) bIconBox.className = 'w-8 h-8 rounded-lg bg-amber-500/20 flex items-center justify-center text-amber-400 shrink-0 font-bold';
+            if (bIcon) bIcon.setAttribute('class', 'w-4 h-4 text-amber-400');
+            if (evacuatedSummary) {
+              evacuatedSummary.innerHTML = 'Heartbeat timer expired. All deposit and destination addresses are locked and hidden during the Grace Buffer. Click <strong>I\'M ALIVE (Recover & Reset)</strong> to restore active status.';
+            }
+          } else if (isInheritance) {
+            evacuatedBanner.className = 'p-4 rounded-xl bg-purple-950/25 border border-purple-500/35 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-white';
+            if (bHeader) bHeader.className = 'font-bold text-purple-300 flex flex-wrap items-center gap-2';
+            if (bTitle) bTitle.innerText = 'Bunker Inherited · Epoch Closed';
+            if (bBadge) {
+              bBadge.innerText = 'EPOCH CLOSED';
+              bBadge.className = 'text-[10px] font-mono bg-purple-500/20 text-purple-200 border border-purple-500/40 px-2 py-0.5 rounded-full font-bold';
+            }
+            if (bRight) bRight.className = 'flex items-center gap-2 text-xs font-mono text-purple-300 self-start sm:self-auto shrink-0';
+            if (bDot) bDot.className = 'w-2 h-2 rounded-full bg-purple-400 animate-pulse';
+            if (bRightText) bRightText.innerText = isEpochSwept ? 'Transferred to Heirs' : 'Sweep in Progress';
+            if (bIconBox) bIconBox.className = 'w-8 h-8 rounded-lg bg-purple-500/20 flex items-center justify-center text-purple-300 shrink-0 font-bold';
+            if (bIcon) bIcon.setAttribute('class', 'w-4 h-4 text-purple-300');
+            if (evacuatedSummary) {
+              evacuatedSummary.innerHTML = isEpochSwept
+                ? 'All bunker assets autonomously transferred to designated family heirs. Destination and deposit addresses are permanently hidden. Click <strong>Activate Clean Bunker</strong> to advance to next epoch.'
+                : 'Autonomous inheritance triggered. Cloud Keeper sweep is in progress and all addresses are hidden. Once sweep completes, click <strong>Activate Clean Bunker</strong> to advance to next epoch.';
+            }
+          } else {
+            evacuatedBanner.className = 'p-4 rounded-xl bg-red-950/25 border border-red-500/35 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-white';
+            if (bHeader) bHeader.className = 'font-bold text-red-400 flex flex-wrap items-center gap-2';
+            if (bTitle) bTitle.innerText = 'Bunker Evacuated · Protection Inactive';
+            if (bBadge) {
+              bBadge.innerText = 'KEYS BURNED';
+              bBadge.className = 'text-[10px] font-mono bg-red-500/20 text-red-300 border border-red-500/40 px-2 py-0.5 rounded-full font-bold';
+            }
+            if (bRight) bRight.className = 'flex items-center gap-2 text-xs font-mono text-red-400 self-start sm:self-auto shrink-0';
+            if (bDot) bDot.className = 'w-2 h-2 rounded-full bg-red-500 animate-pulse';
+            if (bRightText) bRightText.innerText = 'Vault Burned';
+            if (bIconBox) bIconBox.className = 'w-8 h-8 rounded-lg bg-red-500/20 flex items-center justify-center text-red-400 shrink-0 font-bold';
+            if (bIcon) bIcon.setAttribute('class', 'w-4 h-4 text-red-400');
+            if (evacuatedSummary) {
+              evacuatedSummary.innerHTML = isEpochSwept
+                ? 'All bunker assets swept. Active epoch keys permanently burned and addresses hidden. Click <strong>Activate Clean Bunker</strong> to advance to next epoch.'
+                : 'Emergency panic confirmed on-chain. Cloud Keeper multichain sweep is in progress. Click <strong>Activate Clean Bunker</strong> once sweep completes.';
+            }
           }
         }
         if (tabRescue) {
-          tabRescue.innerHTML = isInheritance
-            ? `1. Rescue & Inheritance <span class="ml-1.5 px-2 py-0.5 text-[10px] bg-purple-950/60 text-purple-300 border border-purple-500/40 rounded-full font-bold">INHERITED</span>`
-            : `1. Rescue & Inheritance <span class="ml-1.5 px-2 py-0.5 text-[10px] bg-red-950/60 text-red-400 border border-red-500/40 rounded-full font-bold">EVACUATED</span>`;
+          tabRescue.innerHTML = isGraceOnly
+            ? `1. Rescue & Inheritance <span class="ml-1.5 px-2 py-0.5 text-[10px] bg-amber-950/60 text-amber-300 border border-amber-500/40 rounded-full font-bold">GRACE</span>`
+            : (isInheritance
+                ? `1. Rescue & Inheritance <span class="ml-1.5 px-2 py-0.5 text-[10px] bg-purple-950/60 text-purple-300 border border-purple-500/40 rounded-full font-bold">INHERITED</span>`
+                : `1. Rescue & Inheritance <span class="ml-1.5 px-2 py-0.5 text-[10px] bg-red-950/60 text-red-400 border border-red-500/40 rounded-full font-bold">EVACUATED</span>`);
         }
         if (badge) {
-          badge.innerText = isInheritance
-            ? (isEpochSwept ? 'Inherited (Transferred to Heirs)' : 'Inheritance (Sweep in Progress)')
-            : (isEpochSwept ? 'Evacuated (Keys Burned)' : 'Evacuating (Sweep in Progress)');
-          badge.className = isInheritance ? 'text-purple-400 font-mono font-bold' : 'text-red-400 font-mono font-bold';
+          badge.innerText = isGraceOnly
+            ? 'Grace Buffer (Addresses Locked)'
+            : (isInheritance
+                ? (isEpochSwept ? 'Inherited (Transferred to Heirs)' : 'Inheritance (Sweep in Progress)')
+                : (isEpochSwept ? 'Evacuated (Keys Burned)' : 'Evacuating (Sweep in Progress)'));
+          badge.className = isGraceOnly
+            ? 'text-amber-400 font-mono font-bold'
+            : (isInheritance ? 'text-purple-400 font-mono font-bold' : 'text-red-400 font-mono font-bold');
         }
-        if (dot) dot.className = isInheritance ? 'w-2.5 h-2.5 rounded-full bg-purple-500 animate-pulse' : 'w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse';
+        if (dot) {
+          dot.className = isGraceOnly
+            ? 'w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse'
+            : (isInheritance ? 'w-2.5 h-2.5 rounded-full bg-purple-500 animate-pulse' : 'w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse');
+        }
 
-        // Auto-open monitor modal on first detection
-        const sweepNotifKey = `aegis_notified_sweep_${signerAccount}_${info.epoch}_${info.state}`;
-        if (!sessionStorage.getItem(sweepNotifKey)) {
-          sessionStorage.setItem(sweepNotifKey, '1');
-          showToast(isInheritance ? '⚖️ INHERITANCE EXECUTED: Assets transferred to heirs!' : '🚨 VAULT EVACUATED: Emergency sweep confirmed.', !isInheritance);
-          openEvacMonitor();
+        // Auto-open monitor modal on first detection of on-chain Evacuated / Inheritance state
+        if (isEvacuated) {
+          const sweepNotifKey = `aegis_notified_sweep_${signerAccount}_${info.epoch}_${info.state}`;
+          if (!sessionStorage.getItem(sweepNotifKey)) {
+            sessionStorage.setItem(sweepNotifKey, '1');
+            showToast(isInheritance ? '⚖️ INHERITANCE EXECUTED: Assets transferred to heirs!' : '🚨 VAULT EVACUATED: Emergency sweep confirmed.', !isInheritance);
+            openEvacMonitor();
+          }
         }
       } else if (hasActiveAddresses) {
         if (evacuatedBanner) evacuatedBanner.classList.add('hidden');
@@ -3251,7 +3405,7 @@
         chains.forEach(c => {
           if (c.addrEl) {
             c.addrEl.innerText = 'Connect wallet to reveal address';
-            c.addrEl.className = 'font-mono text-xs sm:text-[13px] leading-relaxed text-[#8C929D] break-all select-none font-medium';
+            c.addrEl.className = 'font-mono text-xs sm:text-[13px] leading-relaxed text-[#8C929D] break-words select-none font-medium';
             c.addrEl.dataset.full = '';
           }
           if (c.actionsEl) {
@@ -3268,11 +3422,17 @@
         return;
       }
 
-      const isBurned = isVaultEvacuatedOrBurned();
+      const isBurned = isVaultEvacuatedOrBurned() || isGracePeriodExpired(lastFetchedVaultInfo);
 
-      // 2. Guard 1: Evacuated or Burned bunker (Keys exposed/evacuated - NEVER show deposit addresses!)
+      // 2. Guard 1: Evacuated, Inherited, or Grace-Expired bunker (NEVER show deposit addresses!)
       if (isBurned) {
-        const isInheritance = lastFetchedVaultInfo && lastFetchedVaultInfo.state === 'Inheritance';
+        if (typeof closeQr === 'function') closeQr();
+        const isInheritance = Boolean(
+          lastFetchedVaultInfo && (
+            lastFetchedVaultInfo.state === 'Inheritance' ||
+            (lastFetchedVaultInfo.state === 'Active' && isGracePeriodExpired(lastFetchedVaultInfo))
+          )
+        );
         const isEpochSwept = Boolean(lastFetchedVaultInfo && lastFetchedVaultInfo.is_epoch_swept);
         const burnedMsg = isInheritance
           ? `Epoch ${currentEpochIndex} Inherited · Deposits Disabled`
@@ -3281,8 +3441,8 @@
           if (c.addrEl) {
             c.addrEl.innerText = burnedMsg;
             c.addrEl.className = isInheritance
-              ? 'font-mono text-xs leading-relaxed text-purple-400 break-all select-none font-bold'
-              : 'font-mono text-xs leading-relaxed text-red-400 break-all select-none font-bold';
+              ? 'font-mono text-xs leading-relaxed text-purple-400 break-words select-none font-bold'
+              : 'font-mono text-xs leading-relaxed text-red-400 break-words select-none font-bold';
             c.addrEl.dataset.full = '';
           }
           if (c.actionsEl) {
@@ -3329,6 +3489,34 @@
         return;
       }
 
+      // 2b. Guard 2: Heartbeat Expired during Grace Buffer (Lock & hide deposit addresses immediately)
+      if (isHeartbeatExpired(lastFetchedVaultInfo)) {
+        if (typeof closeQr === 'function') closeQr();
+        if (banner) banner.classList.add('hidden');
+        if (unarmedBanner) unarmedBanner.classList.add('hidden');
+        if (pill) {
+          pill.innerText = `Epoch ${currentEpochIndex} · Grace Buffer (Deposits Locked)`;
+          pill.className = 'text-[11px] font-mono font-bold text-amber-300 bg-amber-950/40 border border-amber-500/30 px-2.5 py-0.5 rounded-full whitespace-nowrap';
+        }
+        chains.forEach(c => {
+          if (c.addrEl) {
+            c.addrEl.innerText = 'Heartbeat Expired · Deposits Locked (Grace Buffer)';
+            c.addrEl.className = 'font-mono text-xs leading-relaxed text-amber-400 break-words select-none font-bold';
+            c.addrEl.dataset.full = '';
+          }
+          if (c.actionsEl) {
+            c.actionsEl.innerHTML = `
+              <div class="col-span-2 py-2.5 px-3 rounded-xl bg-amber-950/30 border border-amber-500/25 text-amber-300 text-center text-xs font-mono flex items-center justify-center gap-1.5 select-none">
+                <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+                <span>Locked · Check-in to Unlock</span>
+              </div>
+            `;
+          }
+        });
+        checkUnallocatedFunds();
+        return;
+      }
+
       // 3. Vault is Active / Configurable
       if (banner) banner.classList.add('hidden');
 
@@ -3345,7 +3533,7 @@
         chains.forEach(c => {
           if (c.addrEl) {
             c.addrEl.innerText = 'Bunker Unarmed · Configure Egress First';
-            c.addrEl.className = 'font-mono text-xs leading-relaxed text-amber-400/80 break-all select-none font-semibold';
+            c.addrEl.className = 'font-mono text-xs leading-relaxed text-amber-400/80 break-words select-none font-semibold';
             c.addrEl.dataset.full = '';
           }
           if (c.actionsEl) {
@@ -3405,7 +3593,7 @@
         if (!c.hasEgress) {
           if (c.addrEl) {
             c.addrEl.innerText = 'Egress Incomplete · Set in Tab 1';
-            c.addrEl.className = 'font-mono text-xs leading-relaxed text-amber-400/80 break-all select-none font-semibold';
+            c.addrEl.className = 'font-mono text-xs leading-relaxed text-amber-400/80 break-words select-none font-semibold';
             c.addrEl.dataset.full = '';
           }
           if (c.actionsEl) {
@@ -3443,8 +3631,8 @@
         syncBadge.innerText = 'Connect Wallet to Sync';
         return;
       }
-      if (isVaultEvacuatedOrBurned()) {
-        syncBadge.innerText = 'Evacuated · Live Synced';
+      if (isVaultEvacuatedOrBurned() || isGracePeriodExpired()) {
+        syncBadge.innerText = lastFetchedVaultInfo?.is_epoch_swept ? 'Epoch Swept · Closed' : 'Sweep Active · Synced';
         return;
       }
       if (!lastBalancesSyncedTimestamp) {
@@ -3494,8 +3682,14 @@
       // Automatically refresh the connected wallet balance in header
       fetchAccountNearBalance(currentSigner);
 
-      // If vault is unconfigured / unarmed, zero out balances immediately
-      if (!lastFetchedVaultInfo || lastFetchedVaultInfo.state === 'Unconfigured' || !hasConfiguredDestinations()) {
+      // If vault is unconfigured / unarmed, or if epoch is already swept after evacuation/inheritance, zero out balances immediately
+      const cacheKey = `aegis_balance_cache_${currentSigner}`;
+      if (
+        !lastFetchedVaultInfo ||
+        lastFetchedVaultInfo.state === 'Unconfigured' ||
+        !hasConfiguredDestinations() ||
+        ((isVaultEvacuatedOrBurned() || isGracePeriodExpired()) && lastFetchedVaultInfo.is_epoch_swept)
+      ) {
         if (btcBalEl) btcBalEl.innerHTML = '0.0000 <span class="text-sm font-normal text-[#8C929D]">BTC</span>';
         if (btcUsdEl) btcUsdEl.innerText = '≈ 0.00 USD';
         if (evmBalEl) evmBalEl.innerHTML = '0.0000 <span class="text-sm font-normal text-[#8C929D]">ETH</span>';
@@ -3504,18 +3698,23 @@
         if (solUsdEl) solUsdEl.innerText = '≈ 0.00 USD';
         if (nearBalEl) nearBalEl.innerHTML = '0.0000 <span class="text-sm font-normal text-[#8C929D]">NEAR</span>';
         if (nearUsdEl) nearUsdEl.innerText = '≈ 0.00 USD';
-        if (syncBadge) syncBadge.innerText = 'Vault Unarmed';
-        if (syncDot) syncDot.className = 'w-2 h-2 rounded-full bg-white/20';
+        if (lastFetchedVaultInfo?.is_epoch_swept) {
+          localStorage.removeItem(cacheKey);
+          if (syncBadge) syncBadge.innerText = 'Epoch Swept · Closed';
+          if (syncDot) syncDot.className = 'w-2 h-2 rounded-full bg-purple-400';
+        } else {
+          if (syncBadge) syncBadge.innerText = 'Vault Unarmed';
+          if (syncDot) syncDot.className = 'w-2 h-2 rounded-full bg-white/20';
+        }
         checkUnallocatedFunds();
         return;
       }
 
       // Check 30-second cache scoped to current account
-      const cacheKey = `aegis_balance_cache_${currentSigner}`;
       const cached = JSON.parse(localStorage.getItem(cacheKey) || 'null');
       const now = Date.now();
       const currentVaultState = lastFetchedVaultInfo?.state || 'Active';
-      const isEvac = isVaultEvacuatedOrBurned();
+      const isEvac = isAddressDisplayLocked();
 
       // Bypass cache if: forced, vault is evacuated/burned, or state changed since cache was saved
       if (!force && !isEvac && cached && cached.contractId === CONTRACT_ID && cached.state === currentVaultState && (now - cached.timestamp < CACHE_TTL_MS)) {
@@ -3862,16 +4061,17 @@
           return;
         }
 
-        if (info && (info.state === 'Evacuated' || info.state === 'Inheritance')) {
-          const isInheritance = info.state === 'Inheritance';
+        if (isAddressDisplayLocked(info)) {
+          const isInheritance = isInheritanceState(info);
+          const isGraceOnly = Boolean(info && info.state === 'Active' && !isGracePeriodExpired(info) && isHeartbeatExpired(info));
           btn.disabled = true;
           btn.innerHTML = `
-            <span class="flex items-center gap-1.5 ${isInheritance ? 'text-purple-400' : 'text-red-400'}">
-              <svg class="w-3.5 h-3.5 ${isInheritance ? 'text-purple-400' : 'text-red-400'} shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
-              <span>${isInheritance ? 'Inheritance Finalized (Inactive)' : 'Bunker Evacuated (Inactive)'}</span>
+            <span class="flex items-center gap-1.5 ${isGraceOnly ? 'text-amber-400' : (isInheritance ? 'text-purple-400' : 'text-red-400')}">
+              <svg class="w-3.5 h-3.5 ${isGraceOnly ? 'text-amber-400' : (isInheritance ? 'text-purple-400' : 'text-red-400')} shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+              <span>${isGraceOnly ? 'Heartbeat Expired (Check-in First)' : (isInheritance ? 'Inheritance Finalized (Inactive)' : 'Bunker Evacuated (Inactive)')}</span>
             </span>
           `;
-          btn.className = `save-policy-btn ${isInheritance ? 'bg-purple-950/30 border border-purple-500/30 text-purple-400' : 'bg-red-950/30 border border-red-500/30 text-red-400'} font-bold py-2 px-5 rounded-xl text-xs cursor-not-allowed opacity-80 whitespace-nowrap`;
+          btn.className = `save-policy-btn ${isGraceOnly ? 'bg-amber-950/30 border border-amber-500/30 text-amber-400' : (isInheritance ? 'bg-purple-950/30 border border-purple-500/30 text-purple-400' : 'bg-red-950/30 border border-red-500/30 text-red-400')} font-bold py-2 px-5 rounded-xl text-xs cursor-not-allowed opacity-80 whitespace-nowrap`;
           return;
         }
 
@@ -4306,9 +4506,28 @@
     }
 
     if (countdownInterval) clearInterval(countdownInterval);
+    let _wasHbExpired = false;
+    let _wasGraceExpired = false;
+    let _lastExpiryRpcPollMs = 0;
     countdownInterval = setInterval(() => {
       if (hasConfiguredDestinations() && lastFetchedVaultInfo && lastFetchedVaultInfo.state === 'Active') {
         if (remainingSeconds > 0) remainingSeconds--;
+      }
+      const nowHbExpired = isHeartbeatExpired(lastFetchedVaultInfo);
+      const nowGraceExpired = isGracePeriodExpired(lastFetchedVaultInfo);
+      if (nowHbExpired !== _wasHbExpired || nowGraceExpired !== _wasGraceExpired) {
+        _wasHbExpired = nowHbExpired;
+        _wasGraceExpired = nowGraceExpired;
+        renderBunkerAddresses();
+        syncUIWithOnChainState(lastFetchedVaultInfo, localStorage.getItem('aegis_signer_account'));
+        loadSavedAddresses();
+        updateSaveButtonState(lastFetchedVaultInfo);
+      }
+      if (nowGraceExpired && lastFetchedVaultInfo && lastFetchedVaultInfo.state === 'Active') {
+        if (Date.now() - _lastExpiryRpcPollMs > 4000) {
+          _lastExpiryRpcPollMs = Date.now();
+          fetchLiveContractState();
+        }
       }
       updateCountdownDisplay();
     }, 1000);
@@ -4345,8 +4564,8 @@
         showToast('Connect wallet first', true);
         return;
       }
-      if (isVaultEvacuatedOrBurned()) {
-        showToast('🛑 Deposit rejected: This bunker epoch was evacuated and keys are burned. Activate clean bunker first.', true);
+      if (isAddressDisplayLocked()) {
+        showToast('🛑 Deposit rejected: Bunker epoch is expired or closed. Check-in or activate a clean bunker first.', true);
         return;
       }
       const chainId = elemId.replace('Address', '').toLowerCase();
@@ -4359,7 +4578,7 @@
       }
       const el = document.getElementById(elemId);
       const text = el ? (el.dataset.full || el.innerText) : '';
-      if (!text || text.includes('Bunker Unarmed') || text.includes('Epoch Burned') || text.includes('Connect wallet') || text.includes('Deriving') || text.includes('Egress Incomplete')) {
+      if (!text || text.includes('Bunker Unarmed') || text.includes('Epoch ') || text.includes('Heartbeat Expired') || text.includes('Connect wallet') || text.includes('Deriving') || text.includes('Egress Incomplete')) {
         showToast('No active deposit address available', true);
         return;
       }
@@ -4377,6 +4596,13 @@
       if (isVaultEvacuatedOrBurned()) {
         rotateBunkerEpoch();
         return;
+      }
+      if (isGracePeriodExpired(lastFetchedVaultInfo)) {
+        const refreshed = await fetchLiveContractState();
+        if (refreshed && (refreshed.state === 'Evacuated' || refreshed.state === 'Inheritance')) {
+          rotateBunkerEpoch();
+          return;
+        }
       }
       if (!hasConfiguredDestinations() || (lastFetchedVaultInfo && lastFetchedVaultInfo.state === 'Unconfigured')) {
         const destSection = document.getElementById('panel-rescue') || document.getElementById('tab-rescue');
@@ -4411,7 +4637,10 @@
       if (panel) panel.classList.remove('hidden');
 
       if (name === 'vault') {
-        fetchLiveBalances(isVaultEvacuatedOrBurned());
+        renderBunkerAddresses();
+        fetchLiveBalances(isAddressDisplayLocked());
+      } else if (name === 'rescue') {
+        loadSavedAddresses();
       }
     }
 
@@ -4421,11 +4650,11 @@
         showToast('Connect wallet first', true);
         return;
       }
-      if (isVaultEvacuatedOrBurned()) {
-        showToast('🛑 QR Code disabled: This bunker epoch is burned.', true);
+      if (isAddressDisplayLocked()) {
+        showToast('🛑 QR Code disabled: Bunker epoch is expired or closed.', true);
         return;
       }
-      if (!address || address.includes('Bunker Unarmed') || address.includes('Epoch Burned') || address.includes('Connect wallet') || address.includes('Deriving') || address.includes('Egress Incomplete')) {
+      if (!address || address.includes('Bunker Unarmed') || address.includes('Epoch ') || address.includes('Heartbeat Expired') || address.includes('Connect wallet') || address.includes('Deriving') || address.includes('Egress Incomplete')) {
         showToast('⚠️ QR Code locked: Configure Panic and Heir destinations in Tab 1 first.', true);
         switchTab('rescue');
         return;
@@ -4638,19 +4867,31 @@
         }
       }
 
-      // Also update banner in evacuated state if leftover funds exist
-      const isEvacuated = lastFetchedVaultInfo && (lastFetchedVaultInfo.state === 'Evacuated' || lastFetchedVaultInfo.state === 'Inheritance');
+      // Also update banner in evacuated/inherited state if leftover funds exist
+      const isEvacuated = Boolean(lastFetchedVaultInfo && (lastFetchedVaultInfo.state === 'Evacuated' || lastFetchedVaultInfo.state === 'Inheritance' || isGracePeriodExpired(lastFetchedVaultInfo)));
       const burnedHeader = document.querySelector('#bunkerBurnedBanner h4');
       const burnedText = document.querySelector('#bunkerBurnedBanner p');
       if (isEvacuated && burnedHeader && burnedText) {
+        const isInheritance = isInheritanceState(lastFetchedVaultInfo);
+        const isEpochSwept = Boolean(lastFetchedVaultInfo && lastFetchedVaultInfo.is_epoch_swept);
         if (unallocated.length > 0) {
           burnedHeader.innerText = '⚠️ Evacuation Incomplete — Leftover Assets in Bunker!';
           burnedHeader.className = 'text-sm font-extrabold text-amber-200';
           burnedText.innerHTML = `Active epoch keys were evacuated, but <strong>${unallocated.join(', ')}</strong> were left behind because destination addresses were missing! Enter addresses in Tab 1 to rescue remaining funds before activating the next bunker.`;
         } else {
-          burnedHeader.innerText = 'Epoch Exhausted — Path Rotation Required';
-          burnedHeader.className = 'text-sm font-extrabold text-red-200';
-          burnedText.innerText = 'Active epoch keys were exposed on-chain during evacuation. Activate the next bunker to derive fresh uncompromised addresses.';
+          burnedHeader.innerText = isInheritance
+            ? 'Inheritance Finalized — Path Rotation Required'
+            : 'Epoch Exhausted — Path Rotation Required';
+          burnedHeader.className = isInheritance
+            ? 'text-sm font-extrabold text-purple-200'
+            : 'text-sm font-extrabold text-red-200';
+          burnedText.innerText = isInheritance
+            ? (isEpochSwept
+                ? 'Active vault assets were autonomously transferred to designated heirs. Deposits are permanently disabled for this epoch. Activate the next clean bunker to derive fresh uncompromised addresses.'
+                : 'Autonomous inheritance triggered. Cloud Keeper sweep is in progress. Activate the next clean bunker to derive fresh uncompromised addresses.')
+            : (isEpochSwept
+                ? 'Active epoch keys were exposed on-chain during evacuation. Activate the next bunker to derive fresh uncompromised addresses.'
+                : 'Emergency evacuation triggered; Cloud Keeper sweep is in progress. Activate the next bunker to derive fresh uncompromised addresses.');
         }
       }
 
@@ -4854,10 +5095,10 @@
       const evmEl = document.getElementById('monitorEvmTarget');
       const solEl = document.getElementById('monitorSolTarget');
       const nearEl = document.getElementById('monitorNearTarget');
-      if (btcEl) btcEl.innerText = btcTarget;
-      if (evmEl) evmEl.innerText = evmTarget;
-      if (solEl) solEl.innerText = solTarget;
-      if (nearEl) nearEl.innerText = nearTarget;
+      if (btcEl) btcEl.innerText = maskAddressForDisplay(btcTarget);
+      if (evmEl) evmEl.innerText = maskAddressForDisplay(evmTarget);
+      if (solEl) solEl.innerText = maskAddressForDisplay(solTarget);
+      if (nearEl) nearEl.innerText = maskAddressForDisplay(nearTarget);
 
       const btcBal = document.getElementById('btcBalanceText')?.innerText || '0.0000 BTC';
       const evmBal = document.getElementById('evmBalanceText')?.innerText || '0.0000 ETH';
@@ -4893,7 +5134,7 @@
           const statusEl = document.getElementById('monitorBtcStatus');
           const linkEl = document.getElementById('monitorBtcLink');
           if (statusEl && s.status) setMonitorBadgeStyle(statusEl, s.status);
-          if (s.target && btcEl) btcEl.innerText = s.target;
+          if (s.target && btcEl) btcEl.innerText = maskAddressForDisplay(s.target);
           if (s.amount && document.getElementById('monitorBtcBal')) document.getElementById('monitorBtcBal').innerText = s.amount;
           if (linkEl && s.explorer) {
             const safeExp = sanitizeExplorerUrl(s.explorer);
@@ -4910,7 +5151,7 @@
           const statusBadge = document.getElementById('evmTxStatusBadge');
           const linkEl = document.getElementById('monitorEvmLink');
           if (statusBadge && s.status) setMonitorBadgeStyle(statusBadge, s.status);
-          if (s.target && evmEl) evmEl.innerText = s.target;
+          if (s.target && evmEl) evmEl.innerText = maskAddressForDisplay(s.target);
           if (s.amount && document.getElementById('monitorEvmBal')) document.getElementById('monitorEvmBal').innerText = s.amount;
           if (linkEl && s.explorer) {
             const safeExp = sanitizeExplorerUrl(s.explorer);
@@ -4927,7 +5168,7 @@
           const statusEl = document.getElementById('monitorSolStatus');
           const linkEl = document.getElementById('monitorSolLink');
           if (statusEl && s.status) setMonitorBadgeStyle(statusEl, s.status);
-          if (s.target && solEl) solEl.innerText = s.target;
+          if (s.target && solEl) solEl.innerText = maskAddressForDisplay(s.target);
           if (s.amount && document.getElementById('monitorSolBal')) document.getElementById('monitorSolBal').innerText = s.amount;
           if (linkEl && s.explorer) {
             const safeExp = sanitizeExplorerUrl(s.explorer);
@@ -4944,7 +5185,7 @@
           const statusEl = document.getElementById('monitorNearStatus');
           const linkEl = document.getElementById('monitorNearLink');
           if (statusEl && s.status) setMonitorBadgeStyle(statusEl, s.status);
-          if (s.target && nearEl) nearEl.innerText = s.target;
+          if (s.target && nearEl) nearEl.innerText = maskAddressForDisplay(s.target);
           if (s.amount && document.getElementById('monitorNearBal')) document.getElementById('monitorNearBal').innerText = s.amount;
           if (linkEl && s.explorer) {
             const safeExp = sanitizeExplorerUrl(s.explorer);
@@ -5176,21 +5417,44 @@
         return;
       }
 
-      if (isVaultEvacuatedOrBurned()) {
+      if (isAddressDisplayLocked(lastFetchedVaultInfo)) {
+        const isClosed = isVaultEvacuatedOrBurned() || isGracePeriodExpired(lastFetchedVaultInfo);
+        if (isClosed) {
+          localStorage.removeItem('aegis_addresses_' + currentSigner);
+        }
         inputIds.forEach(id => {
           const el = document.getElementById(id);
           if (el) {
             el.value = '';
             el.disabled = true;
+            el.placeholder = isClosed
+              ? '🔒 Hidden — Bunker epoch closed (Rotate bunker to set new addresses)'
+              : '🔒 Hidden during Grace Buffer — Check-in to unlock';
           }
         });
+        const passEl = document.getElementById('heirMemoPassphrase');
+        if (passEl) passEl.value = '';
+        const e2eeBadge = document.getElementById('e2eeArmedStatus');
+        if (e2eeBadge) e2eeBadge.classList.add('hidden');
+        const activeBanner = document.getElementById('activePolicyBanner');
+        if (activeBanner) activeBanner.classList.add('hidden');
+        const activeSummary = document.getElementById('activePolicySummary');
+        if (activeSummary) activeSummary.innerHTML = '';
+        const unconfigBanner = document.getElementById('unconfiguredBanner');
+        if (unconfigBanner) {
+          unconfigBanner.classList.add('hidden');
+          unconfigBanner.classList.remove('flex');
+        }
         return;
       }
 
       // Ensure all inputs are enabled when vault is active or unconfigured
       inputIds.forEach(id => {
         const el = document.getElementById(id);
-        if (el) el.disabled = false;
+        if (el) {
+          el.disabled = false;
+          if (el.dataset.defaultPlaceholder) el.placeholder = el.dataset.defaultPlaceholder;
+        }
       });
 
       // If user has on-chain destinations in lastFetchedVaultInfo, populate from them!
