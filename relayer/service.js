@@ -155,25 +155,20 @@ class AegisRelayerService {
   async ensureSignerNonceAndBlock(forceResync = false) {
     const pubKeyStr = this._signerKeyPair.getPublicKey().toString();
     const blockStale = Date.now() - this._blockFetchedAt > 60_000;
-    if (forceResync || this._nextNonce === null) {
-      const [keyInfo, block] = await Promise.all([
-        this.nearRpc('query', {
-          request_type: 'view_access_key',
-          finality: 'final',
-          account_id: this.relayerAccountId,
-          public_key: pubKeyStr
-        }),
-        this.nearRpc('block', { finality: 'final' })
-      ]);
+    if (forceResync || this._nextNonce === null || blockStale) {
+      const keyInfo = await this.nearRpc('query', {
+        request_type: 'view_access_key',
+        finality: 'final',
+        account_id: this.relayerAccountId,
+        public_key: pubKeyStr
+      });
       if (keyInfo && keyInfo.error) {
         throw new Error(`Access key query failed for ${this.relayerAccountId}: ${keyInfo.error}`);
       }
-      this._nextNonce = BigInt(keyInfo.nonce || 0);
-      this._recentBlockHash = nearAPI.utils.serialize.base_decode(block.header.hash);
-      this._blockFetchedAt = Date.now();
-    } else if (blockStale) {
-      const block = await this.nearRpc('block', { finality: 'final' });
-      this._recentBlockHash = nearAPI.utils.serialize.base_decode(block.header.hash);
+      if (forceResync || this._nextNonce === null) {
+        this._nextNonce = BigInt(keyInfo.nonce || 0);
+      }
+      this._recentBlockHash = nearAPI.utils.serialize.base_decode(keyInfo.block_hash);
       this._blockFetchedAt = Date.now();
     }
   }
@@ -259,7 +254,7 @@ class AegisRelayerService {
     throw lastErr || new Error('All Solana Devnet RPC endpoints failed');
   }
 
-  async callContract(methodName, args = {}, gas = '100000000000000', attachedDeposit = '0') {
+  async callContractActions(actionsSpec = []) {
     await this.init({ requireSigner: true });
     let lastErr;
     for (let attempt = 0; attempt < 3; attempt++) {
@@ -269,18 +264,20 @@ class AegisRelayerService {
         this._nextNonce += 1n;
         const txNonce = this._nextNonce;
         const pubKey = this._signerKeyPair.getPublicKey();
-        const action = nearAPI.transactions.functionCall(
-          methodName,
-          args,
-          BigInt(gas),
-          BigInt(attachedDeposit)
+        const actions = actionsSpec.map(spec =>
+          nearAPI.transactions.functionCall(
+            spec.methodName,
+            spec.args || {},
+            BigInt(spec.gas || '100000000000000'),
+            BigInt(spec.attachedDeposit || '0')
+          )
         );
         const tx = nearAPI.transactions.createTransaction(
           this.relayerAccountId,
           pubKey,
           this.contractId,
           txNonce,
-          [action],
+          actions,
           this._recentBlockHash
         );
         const encodedTx = tx.encode();
@@ -341,6 +338,10 @@ class AegisRelayerService {
       }
     }
     throw lastErr;
+  }
+
+  async callContract(methodName, args = {}, gas = '100000000000000', attachedDeposit = '0') {
+    return this.callContractActions([{ methodName, args, gas, attachedDeposit }]);
   }
 
   async viewContract(methodName, args = {}) {
@@ -464,11 +465,11 @@ class AegisRelayerService {
   /**
    * Execute Multichain Panic / Inheritance Sweep
    */
-  async sweepVault(vaultOwner) {
+  async sweepVault(vaultOwner, options = {}) {
     await this.init({ requireSigner: true });
     console.log(`\n🚨 [Aegis Relayer] Executing multichain sweep for ${vaultOwner}...`);
 
-    const vault = await this.getVaultInfo(vaultOwner);
+    const vault = options.prefetchedVault || (await this.getVaultInfo(vaultOwner));
     if (!vault) {
       console.error(`❌ Vault not found for ${vaultOwner}`);
       return null;
@@ -852,8 +853,8 @@ class AegisRelayerService {
     if (destination.near && destination.near.trim().length > 2) {
       const destNear = destination.near.trim();
       console.log(`\n[NEAR Sweep] Checking implicit & isolated NEAR deposits -> ${destNear}...`);
-      let totalSweptYocto = 0n;
-      let nearSweepTx = null;
+      let totalSweptYocto = options.preSweptNear ? BigInt(options.preSweptNear.amountYocto) : 0n;
+      let nearSweepTx = options.preSweptNear ? options.preSweptNear.txHash : null;
       let nearMpcTx = null;
 
       try {
@@ -1162,19 +1163,48 @@ class AegisRelayerService {
     for (const v of actionable) {
       const state = typeof v.state === 'string' ? v.state : Object.keys(v.state)[0];
       const acc = v.owner;
+      const prefetchedVault = await this.getVaultInfo(acc);
+      if (!prefetchedVault) continue;
+      let preSweptNear = null;
+
       if (state === 'Active' || state === 'Claiming') {
         console.log(`⏱️  [Autonomous Inheritance] Triggering trigger_push_inheritance for ${acc}...`);
         try {
-          await this.callContract('trigger_push_inheritance', { vault_owner: acc }, '100000000000000', '0');
-          console.log(`✅ Push inheritance triggered on-chain for ${acc}!`);
-          // Wait 1.8s so all load-balanced NEAR RPC nodes observe the new Inheritance state
-          await new Promise(r => setTimeout(r, 1800));
+          const isolatedDeposit = BigInt(prefetchedVault.near_deposit_yocto || '0');
+          const hasHeirNear = Boolean(prefetchedVault.heirs?.near && prefetchedVault.heirs.near.trim().length > 2);
+          const batchActions = [
+            {
+              methodName: 'trigger_push_inheritance',
+              args: { vault_owner: acc },
+              gas: '80000000000000',
+              attachedDeposit: '0'
+            }
+          ];
+          if (isolatedDeposit > 0n && hasHeirNear) {
+            batchActions.push({
+              methodName: 'sweep_near',
+              args: { vault_owner: acc },
+              gas: '100000000000000',
+              attachedDeposit: '0'
+            });
+          }
+          const pushOut = await this.callContractActions(batchActions);
+          console.log(`✅ Push inheritance triggered on-chain for ${acc}! Tx: ${pushOut.transaction.hash}`);
+          prefetchedVault.state = 'Inheritance';
+          prefetchedVault.is_epoch_swept = false;
+          if (isolatedDeposit > 0n && hasHeirNear) {
+            preSweptNear = {
+              txHash: pushOut.transaction.hash,
+              amountYocto: isolatedDeposit.toString()
+            };
+            prefetchedVault.near_deposit_yocto = '0';
+          }
         } catch (err) {
           console.warn(`[trigger_push_inheritance] error for ${acc}:`, err.message);
           continue;
         }
       }
-      const report = await this.sweepVault(acc);
+      const report = await this.sweepVault(acc, { prefetchedVault, preSweptNear });
       processed.push({
         owner: acc,
         epoch: v.epoch,
