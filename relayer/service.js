@@ -123,6 +123,24 @@ class AegisRelayerService {
   }
 
   /**
+   * Fetch all actionable vaults from smart contract in a single RPC query
+   */
+  async getActionableVaults() {
+    await this.init();
+    try {
+      const vaults = await this.account.viewFunction({
+        contractId: this.contractId,
+        methodName: 'get_actionable_vaults',
+        args: {}
+      });
+      return vaults || [];
+    } catch (err) {
+      console.warn(`[Aegis Relayer] get_actionable_vaults error:`, err.message);
+      return [];
+    }
+  }
+
+  /**
    * Execute Multichain Panic / Inheritance Sweep
    */
   async sweepVault(vaultOwner) {
@@ -190,68 +208,88 @@ class AegisRelayerService {
     if (destination.evm && destination.evm.trim().length === 42) {
       console.log(`\n[EVM Sweep] Preparing sweep to ${destination.evm}...`);
       try {
-        const evmSweep = await this.engine.prepareEvmSweep({
-          fromAddress: vaultAddrs.evm.address,
-          toAddress: destination.evm.trim(),
-          valueWei: ethers.parseEther('0.1'), // 0.1 ETH
-          nonce: 0,
-          chainId: 11155111, // Sepolia
-          memo: sweepMemo
-        });
-
-        console.log(`   • Calling request_sweep_signature on ${this.contractId} with raw EVM payload...`);
-        const outcome = await this.account.functionCall({
-          contractId: this.contractId,
-          methodName: 'request_sweep_signature',
-          args: {
-            vault_owner: vaultOwner,
-            chain: 'EVM',
-            payload_hex: evmSweep.unsignedTxHex,
-            target_epoch: epoch,
-            is_eddsa: false
-          },
-          gas: '280000000000000', // 280 TGas
-          attachedDeposit: '50000000000000000000000' // 0.05 NEAR for v1.signer
-        });
-
-        const nearTxHash = outcome.transaction.hash;
-        console.log(`   ✅ NEAR MPC Signature Request Confirmed! Tx: ${nearTxHash}`);
-
-        // Extract signature result from execution outcome
-        let mpcSignature = null;
-        for (const out of outcome.receipts_outcome) {
-          if (out.outcome.status.SuccessValue) {
-            const raw = Buffer.from(out.outcome.status.SuccessValue, 'base64').toString('utf8');
-            try { mpcSignature = JSON.parse(raw); } catch (e) {}
+        let liveWei = 0n;
+        try {
+          if (this.evmProvider) {
+            liveWei = await this.evmProvider.getBalance(vaultAddrs.evm.address);
+            console.log(`   • EVM Bunker Balance: ${ethers.formatEther(liveWei)} ETH (${liveWei} wei)`);
           }
+        } catch (evmBalErr) {
+          console.warn(`   ⚠️ Could not fetch EVM balance: ${evmBalErr.message}`);
         }
 
-        let signedEvmTx = null;
-        let evmHash = null;
-        if (mpcSignature) {
-          signedEvmTx = this.engine.assembleSignedEvmTx(evmSweep.rawTx, mpcSignature);
-          evmHash = ethers.keccak256(signedEvmTx.signedTx);
-          console.log(`   ✅ EVM Transaction Assembled! TxHash: ${evmHash}`);
-          try {
-            const provider = new ethers.JsonRpcProvider('https://ethereum-sepolia-rpc.publicnode.com');
-            await provider.broadcastTransaction(signedEvmTx.signedTx);
-            console.log(`   🚀 EVM Transaction Broadcasted to Sepolia!`);
-          } catch (broadcastErr) {
-            console.warn(`   ⚠️ EVM Broadcast Notice: ${broadcastErr.message.slice(0, 80)}`);
-          }
+        if (liveWei === 0n) {
+          console.log(`   ℹ️  EVM bunker has zero balance. Skipping MPC sweep call (0 gas burned).`);
+          telemetryRecord.sweeps.evm = {
+            status: 'Skipped (Zero Balance)',
+            chain: 'Ethereum / Base (Sepolia)',
+            target: destination.evm,
+            amount: '0.0000 ETH'
+          };
         } else {
-          evmHash = evmSweep.txHash;
-        }
+          const evmSweep = await this.engine.prepareEvmSweep({
+            fromAddress: vaultAddrs.evm.address,
+            toAddress: destination.evm.trim(),
+            valueWei: liveWei > ethers.parseEther('0.001') ? (liveWei - ethers.parseEther('0.0005')) : liveWei,
+            nonce: 0,
+            chainId: 11155111, // Sepolia
+            memo: sweepMemo
+          });
 
-        telemetryRecord.sweeps.evm = {
-          status: 'Broadcasted',
-          chain: 'Ethereum / Base (Sepolia)',
-          target: destination.evm,
-          amount: '0.1000 ETH',
-          tx_hash: evmHash,
-          explorer: `https://sepolia.etherscan.io/tx/${evmHash}`,
-          near_mpc_tx: `https://testnet.nearblocks.io/tx/${nearTxHash}`
-        };
+          console.log(`   • Calling request_sweep_signature on ${this.contractId} with raw EVM payload...`);
+          const outcome = await this.account.functionCall({
+            contractId: this.contractId,
+            methodName: 'request_sweep_signature',
+            args: {
+              vault_owner: vaultOwner,
+              chain: 'EVM',
+              payload_hex: evmSweep.unsignedTxHex,
+              target_epoch: epoch,
+              is_eddsa: false
+            },
+            gas: '280000000000000', // 280 TGas
+            attachedDeposit: '50000000000000000000000' // 0.05 NEAR for v1.signer
+          });
+
+          const nearTxHash = outcome.transaction.hash;
+          console.log(`   ✅ NEAR MPC Signature Request Confirmed! Tx: ${nearTxHash}`);
+
+          // Extract signature result from execution outcome
+          let mpcSignature = null;
+          for (const out of outcome.receipts_outcome) {
+            if (out.outcome.status.SuccessValue) {
+              const raw = Buffer.from(out.outcome.status.SuccessValue, 'base64').toString('utf8');
+              try { mpcSignature = JSON.parse(raw); } catch (e) {}
+            }
+          }
+
+          let signedEvmTx = null;
+          let evmHash = null;
+          if (mpcSignature) {
+            signedEvmTx = this.engine.assembleSignedEvmTx(evmSweep.rawTx, mpcSignature);
+            evmHash = ethers.keccak256(signedEvmTx.signedTx);
+            console.log(`   ✅ EVM Transaction Assembled! TxHash: ${evmHash}`);
+            try {
+              const provider = new ethers.JsonRpcProvider('https://ethereum-sepolia-rpc.publicnode.com');
+              await provider.broadcastTransaction(signedEvmTx.signedTx);
+              console.log(`   🚀 EVM Transaction Broadcasted to Sepolia!`);
+            } catch (broadcastErr) {
+              console.warn(`   ⚠️ EVM Broadcast Notice: ${broadcastErr.message.slice(0, 80)}`);
+            }
+          } else {
+            evmHash = evmSweep.txHash;
+          }
+
+          telemetryRecord.sweeps.evm = {
+            status: 'Broadcasted',
+            chain: 'Ethereum / Base (Sepolia)',
+            target: destination.evm,
+            amount: `${ethers.formatEther(liveWei)} ETH`,
+            tx_hash: evmHash,
+            explorer: `https://sepolia.etherscan.io/tx/${evmHash}`,
+            near_mpc_tx: `https://testnet.nearblocks.io/tx/${nearTxHash}`
+          };
+        }
       } catch (err) {
         console.error(`   ❌ EVM Sweep Error:`, err.message);
         telemetryRecord.sweeps.evm = {
@@ -266,74 +304,94 @@ class AegisRelayerService {
     if (destination.btc && destination.btc.trim().length > 10) {
       console.log(`\n[Bitcoin Sweep] Preparing SegWit sweep to ${destination.btc}...`);
       try {
-        const mockUtxo = [{ txid: 'a'.repeat(64), vout: 0, value: 5000000 }]; // 0.05 BTC
-        const btcSweep = this.engine.prepareBtcSweep({
-          utxos: mockUtxo,
-          fromAddress: vaultAddrs.btc.address,
-          toAddress: destination.btc.trim(),
-          feeSatsOverride: 2500,
-          network: bitcoin.networks.testnet
-        });
-
-        console.log(`   • Calling request_sweep_signature for Bitcoin sighash...`);
-        const outcome = await this.account.functionCall({
-          contractId: this.contractId,
-          methodName: 'request_sweep_signature',
-          args: {
-            vault_owner: vaultOwner,
-            chain: 'BTC',
-            payload_hex: btcSweep.sighashes[0].sighashHex,
-            target_epoch: epoch,
-            is_eddsa: false
-          },
-          gas: '280000000000000',
-          attachedDeposit: '50000000000000000000000'
-        });
-
-        const nearTxHash = outcome.transaction.hash;
-        console.log(`   ✅ NEAR MPC Signature Request Confirmed! Tx: ${nearTxHash}`);
-
-        let mpcSignature = null;
-        for (const out of outcome.receipts_outcome) {
-          if (out.outcome.status.SuccessValue) {
-            const raw = Buffer.from(out.outcome.status.SuccessValue, 'base64').toString('utf8');
-            try { mpcSignature = JSON.parse(raw); } catch (e) {}
+        let liveUtxos = [];
+        try {
+          const mempoolRes = await fetch(`https://mempool.space/testnet/api/address/${vaultAddrs.btc.address}/utxo`);
+          if (mempoolRes.ok) {
+            liveUtxos = await mempoolRes.json();
           }
+        } catch (btcBalErr) {
+          console.warn(`   ⚠️ Could not fetch BTC UTXOs: ${btcBalErr.message}`);
         }
 
-        let btcTxId = 'btc_' + nearTxHash.slice(0, 16);
-        if (mpcSignature) {
-          const r = mpcSignature.big_r?.affine_point?.slice(2) || mpcSignature.r;
-          const s = mpcSignature.s?.scalar || mpcSignature.s;
-          const finalized = this.engine.finalizeBtcSweepPsbt(btcSweep.psbtHex, [{
-            r: Buffer.from(r, 'hex'),
-            s: Buffer.from(s, 'hex'),
-            publicKey: Buffer.from(vaultAddrs.btc.publicKey, 'hex')
-          }]);
-          btcTxId = finalized.txId;
-          console.log(`   ✅ Bitcoin PSBT Finalized! TxId: ${btcTxId}`);
-          try {
-            const mempoolRes = await fetch('https://mempool.space/testnet/api/tx', {
-              method: 'POST',
-              body: finalized.txHex
-            });
-            if (mempoolRes.ok) {
-              console.log(`   🚀 Bitcoin Tx broadcasted to Mempool Testnet: ${btcTxId}`);
+        if (!liveUtxos || liveUtxos.length === 0) {
+          console.log(`   ℹ️  Bitcoin bunker has zero balance (0 UTXOs). Skipping MPC sweep call (0 gas burned).`);
+          telemetryRecord.sweeps.btc = {
+            status: 'Skipped (Zero Balance)',
+            chain: 'Bitcoin Native SegWit',
+            target: destination.btc,
+            amount: '0.00000000 BTC'
+          };
+        } else {
+          const totalSats = liveUtxos.reduce((sum, u) => sum + (u.value || 0), 0);
+          const btcSweep = this.engine.prepareBtcSweep({
+            utxos: liveUtxos,
+            fromAddress: vaultAddrs.btc.address,
+            toAddress: destination.btc.trim(),
+            feeSatsOverride: 2500,
+            network: bitcoin.networks.testnet
+          });
+
+          console.log(`   • Calling request_sweep_signature for Bitcoin sighash...`);
+          const outcome = await this.account.functionCall({
+            contractId: this.contractId,
+            methodName: 'request_sweep_signature',
+            args: {
+              vault_owner: vaultOwner,
+              chain: 'BTC',
+              payload_hex: btcSweep.sighashes[0].sighashHex,
+              target_epoch: epoch,
+              is_eddsa: false
+            },
+            gas: '280000000000000',
+            attachedDeposit: '50000000000000000000000'
+          });
+
+          const nearTxHash = outcome.transaction.hash;
+          console.log(`   ✅ NEAR MPC Signature Request Confirmed! Tx: ${nearTxHash}`);
+
+          let mpcSignature = null;
+          for (const out of outcome.receipts_outcome) {
+            if (out.outcome.status.SuccessValue) {
+              const raw = Buffer.from(out.outcome.status.SuccessValue, 'base64').toString('utf8');
+              try { mpcSignature = JSON.parse(raw); } catch (e) {}
             }
-          } catch (bErr) {
-            console.warn(`   ⚠️ Bitcoin Broadcast Notice: ${bErr.message.slice(0, 80)}`);
           }
-        }
 
-        telemetryRecord.sweeps.btc = {
-          status: 'Mined (Testnet)',
-          chain: 'Bitcoin Native SegWit',
-          target: destination.btc,
-          amount: '0.0499 BTC',
-          tx_id: btcTxId,
-          explorer: `https://mempool.space/testnet/tx/${btcTxId}`,
-          near_mpc_tx: `https://testnet.nearblocks.io/tx/${nearTxHash}`
-        };
+          let btcTxId = 'btc_' + nearTxHash.slice(0, 16);
+          if (mpcSignature) {
+            const r = mpcSignature.big_r?.affine_point?.slice(2) || mpcSignature.r;
+            const s = mpcSignature.s?.scalar || mpcSignature.s;
+            const finalized = this.engine.finalizeBtcSweepPsbt(btcSweep.psbtHex, [{
+              r: Buffer.from(r, 'hex'),
+              s: Buffer.from(s, 'hex'),
+              publicKey: Buffer.from(vaultAddrs.btc.publicKey, 'hex')
+            }]);
+            btcTxId = finalized.txId;
+            console.log(`   ✅ Bitcoin PSBT Finalized! TxId: ${btcTxId}`);
+            try {
+              const mempoolBroadcast = await fetch('https://mempool.space/testnet/api/tx', {
+                method: 'POST',
+                body: finalized.txHex
+              });
+              if (mempoolBroadcast.ok) {
+                console.log(`   🚀 Bitcoin Tx broadcasted to Mempool Testnet: ${btcTxId}`);
+              }
+            } catch (bErr) {
+              console.warn(`   ⚠️ Bitcoin Broadcast Notice: ${bErr.message.slice(0, 80)}`);
+            }
+          }
+
+          telemetryRecord.sweeps.btc = {
+            status: 'Mined (Testnet)',
+            chain: 'Bitcoin Native SegWit',
+            target: destination.btc,
+            amount: `${(totalSats / 1e8).toFixed(8)} BTC`,
+            tx_id: btcTxId,
+            explorer: `https://mempool.space/testnet/tx/${btcTxId}`,
+            near_mpc_tx: `https://testnet.nearblocks.io/tx/${nearTxHash}`
+          };
+        }
       } catch (err) {
         console.error(`   ❌ Bitcoin Sweep Error:`, err.message);
         telemetryRecord.sweeps.btc = {
@@ -784,9 +842,9 @@ class AegisRelayerService {
         } else if (state === 'Active' && info.last_ping_ns) {
           const nowNs = BigInt(info.current_time_ns || (Date.now() * 1000000));
           const lastNs = BigInt(info.last_ping_ns);
-          const durNs = BigInt(info.inactivity_period_ns);
-          const graceNs = BigInt(info.grace_period_ns || 0);
-          if (nowNs >= (lastNs + durNs + graceNs)) {
+          const durNs = BigInt(info.heartbeat_interval_ns || 0);
+          const graceNs = BigInt(info.challenge_period_ns || 0);
+          if (durNs > 0n && nowNs >= (lastNs + durNs + graceNs)) {
             console.log(`   🚨 ${acc} has expired! Triggering push inheritance on-chain...`);
             await this.account.functionCall({
               contractId: this.contractId,
@@ -804,6 +862,42 @@ class AegisRelayerService {
     }
     console.log(`✅ [Aegis Relayer] Single-pass execution complete.`);
   }
+
+  /**
+   * Production-grade stateless sweep cycle using get_actionable_vaults:
+   * Single RPC query -> 0 wasted gas on healthy vaults -> automated trigger + sweep
+   */
+  async sweepAllActionable() {
+    await this.init();
+    console.log(`🔍 [Aegis Relayer] Executing sweep-all via get_actionable_vaults on ${this.contractId}...`);
+    let actionable = await this.getActionableVaults();
+    if (!actionable || actionable.length === 0) {
+      console.log('✅ 0 actionable vaults found. All bunkers healthy & armed. 0 gas burned.');
+      return;
+    }
+    console.log(`🚨 Found ${actionable.length} actionable vault(s): ${actionable.map(v => v.owner).join(', ')}`);
+    for (const v of actionable) {
+      const state = typeof v.state === 'string' ? v.state : Object.keys(v.state)[0];
+      const acc = v.owner;
+      if (state === 'Active') {
+        console.log(`⏱️ [Autonomous Inheritance] Inactivity window expired for ${acc}! Triggering trigger_push_inheritance on-chain...`);
+        try {
+          await this.account.functionCall({
+            contractId: this.contractId,
+            methodName: 'trigger_push_inheritance',
+            args: { vault_owner: acc },
+            gas: '100000000000000',
+            attachedDeposit: '0'
+          });
+          console.log(`✅ Push inheritance triggered on-chain for ${acc}!`);
+        } catch (err) {
+          console.warn(`[trigger_push_inheritance] notice for ${acc}:`, err.message);
+        }
+      }
+      await this.sweepVault(acc);
+    }
+    console.log('✅ [Aegis Relayer] sweep-all execution cycle finished.');
+  }
 }
 
 // CLI Execution
@@ -818,6 +912,13 @@ if (require.main === module) {
       console.log('Result:', res);
       process.exit(res.success ? 0 : 1);
     });
+  } else if (args.includes('--sweep-all')) {
+    service.sweepAllActionable().then(() => {
+      process.exit(0);
+    }).catch(err => {
+      console.error('Sweep-all failed:', err);
+      process.exit(1);
+    });
   } else if (args.includes('--sweep')) {
     const idx = args.indexOf('--sweep');
     const target = args[idx + 1] || 'newapp9955.testnet';
@@ -829,7 +930,7 @@ if (require.main === module) {
       process.exit(1);
     });
   } else if (args.includes('--once')) {
-    service.runSinglePass().then(() => {
+    service.sweepAllActionable().then(() => {
       process.exit(0);
     }).catch(err => {
       console.error('Single-pass failed:', err);

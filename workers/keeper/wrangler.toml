@@ -1,0 +1,11 @@
+name = "aegis-keeper"
+main = "index.js"
+compatibility_date = "2024-04-01"
+
+[triggers]
+crons = ["* * * * *"]
+
+[vars]
+NEAR_RPC_URL = "https://rpc.testnet.near.org"
+CONTRACT_ID = "aegis.okgoogleok.testnet"
+SOLANA_RPC_URL = "https://api.devnet.solana.com"

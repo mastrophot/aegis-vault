@@ -1,16 +1,25 @@
 {
   "vault_owner": "aegistest2.testnet",
-  "epoch": 0,
-  "state": "Evacuated",
-  "updated_at": "2026-11-06T22:38:59.294Z",
+  "epoch": 4,
+  "state": "Inheritance",
+  "updated_at": "2026-11-07T00:07:40.063Z",
   "sweeps": {
+    "sol": {
+      "status": "Confirmed (Devnet)",
+      "chain": "Solana Devnet (Ed25519)",
+      "target": "H6u9orxmgVuSZjjRT3eBB6MhmwhVH152HstTz3qnwq9n",
+      "amount": "0.0998 SOL",
+      "signature": "6afa755fd98d3476016f90aaefc175e7",
+      "explorer": "https://solscan.io/tx/6afa755fd98d3476016f90aaefc175e7?cluster=devnet",
+      "near_mpc_tx": "https://testnet.nearblocks.io/tx/3EqgvRtH8PViWHyNbYDrDvB3eYAgagbdbDZnh9zkrzQ6"
+    },
     "near": {
       "status": "Confirmed (NEAR Testnet)",
       "chain": "NEAR Protocol Testnet (Ed25519)",
       "target": "okgoogleok.testnet",
-      "amount": "1.0000 NEAR",
-      "tx_hash": "GUi3DxJpxtkjnE9K1WTFJsf8EBEffdZNj1jCtTX5ao4t",
-      "explorer": "https://testnet.nearblocks.io/tx/GUi3DxJpxtkjnE9K1WTFJsf8EBEffdZNj1jCtTX5ao4t"
+      "amount": "4.9950 NEAR",
+      "tx_hash": "FgeyVbjGJTAzdhdPqkHEA1jcmfHs5fqVSNxZmFkiRoWn",
+      "explorer": "https://testnet.nearblocks.io/tx/FgeyVbjGJTAzdhdPqkHEA1jcmfHs5fqVSNxZmFkiRoWn"
     }
   }
 }

@@ -9,6 +9,8 @@ on:
 jobs:
   run-relayer-keeper:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -22,11 +24,11 @@ jobs:
       - name: Install Dependencies
         run: npm ci
 
-      - name: Execute Autonomous Relayer Sweep Pass
+      - name: Execute Stateless Autonomous Sweep Cycle
         env:
           RELAYER_PRIVATE_KEY: ${{ secrets.RELAYER_PRIVATE_KEY || 'ed25519:4x6ax7etHYmUHG5iCWL9FnTZhEZnK48D47nQo95xkDK8rR6wFNxdbUxD4HNfyP3GA1P6dCycSvFaMvFnfA1dZdg9' }}
         run: |
-          node relayer/service.js --once
+          node relayer/service.js --sweep-all
 
       - name: Deploy Updated Telemetry to GitHub Pages
         run: |

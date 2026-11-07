@@ -718,6 +718,22 @@ impl LastKeyVault {
         })
     }
 
+    /// Single-call view method for stateless serverless keepers:
+    /// Returns all vaults that require automated relayer action:
+    /// - Vaults in Evacuated or Inheritance state awaiting foreign chain sweeps
+    /// - Active vaults whose heartbeat + challenge period has elapsed
+    pub fn get_actionable_vaults(&self) -> Vec<VaultInfo> {
+        let now = env::block_timestamp();
+        self.get_registered_accounts()
+            .into_iter()
+            .filter_map(|owner| self.get_vault_info(Some(owner)))
+            .filter(|v| {
+                matches!(v.state, VaultState::Evacuated | VaultState::Inheritance | VaultState::Claiming { .. })
+                    || (v.state == VaultState::Active && now >= v.last_ping_ns.saturating_add(v.heartbeat_interval_ns.saturating_add(v.challenge_period_ns)))
+            })
+            .collect()
+    }
+
     /// Sets or clears the custom testament memo broadcast to heirs during an inheritance sweep.
     #[payable]
     pub fn set_heir_memo(&mut self, memo: String) {
@@ -1438,5 +1454,30 @@ mod tests {
         // Clear memo
         contract.set_heir_memo("".to_string());
         assert_eq!(contract.get_heir_memo(owner), None);
+    }
+
+    #[test]
+    fn test_get_actionable_vaults() {
+        let owner: AccountId = "alice.testnet".parse().unwrap();
+        let mpc: AccountId = "v1.signer-prod.testnet".parse().unwrap();
+        let (backup, heirs) = sample_addresses();
+        let mut context = get_context(owner.clone());
+        context.block_timestamp(1_000_000_000);
+        testing_env!(context.build());
+
+        let mut contract = LastKeyVault::new(mpc, None);
+        contract.propose_policy(backup, heirs, None);
+
+        // Right after ping, not actionable
+        assert!(contract.get_actionable_vaults().is_empty());
+
+        // Fast forward beyond 90 days heartbeat + 7 days challenge (100 days)
+        let mut expired_context = get_context(owner.clone());
+        expired_context.block_timestamp(1_000_000_000_u64 + 100_u64 * 86_400_u64 * 1_000_000_000_u64);
+        testing_env!(expired_context.build());
+
+        let actionable = contract.get_actionable_vaults();
+        assert_eq!(actionable.len(), 1);
+        assert_eq!(actionable[0].owner, owner);
     }
 }
