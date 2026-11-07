@@ -672,6 +672,8 @@ impl LastKeyVault {
         backup: ChainAddresses,
         heirs: ChainAddresses,
         memo: Option<String>,
+        heartbeat_interval_ns: Option<U64>,
+        challenge_period_ns: Option<U64>,
     ) {
         let caller = env::predecessor_account_id();
         Self::internal_capture_signer_pubkey(&caller);
@@ -682,6 +684,19 @@ impl LastKeyVault {
         );
         backup.validate();
         heirs.validate();
+
+        if let Some(hb) = heartbeat_interval_ns {
+            require!(
+                hb.0 >= 15_000_000_000,
+                "Heartbeat interval must be at least 15 seconds"
+            );
+        }
+        if let Some(cp) = challenge_period_ns {
+            require!(
+                cp.0 >= 15_000_000_000,
+                "Challenge period must be at least 15 seconds"
+            );
+        }
 
         let attached = env::attached_deposit().as_yoctonear();
         if attached > 1 {
@@ -712,8 +727,12 @@ impl LastKeyVault {
             let new_vault = UserVault {
                 state: VaultState::Active,
                 last_ping_ns: env::block_timestamp(),
-                heartbeat_interval_ns: DEFAULT_HEARTBEAT_INTERVAL_NS,
-                challenge_period_ns: DEFAULT_CHALLENGE_PERIOD_NS,
+                heartbeat_interval_ns: heartbeat_interval_ns
+                    .map(|v| v.0)
+                    .unwrap_or(DEFAULT_HEARTBEAT_INTERVAL_NS),
+                challenge_period_ns: challenge_period_ns
+                    .map(|v| v.0)
+                    .unwrap_or(DEFAULT_CHALLENGE_PERIOD_NS),
                 policy_timelock_ns: DEFAULT_POLICY_TIMELOCK_NS,
                 backup,
                 heirs,
@@ -738,6 +757,13 @@ impl LastKeyVault {
             vault.state == VaultState::Active || vault.state == VaultState::Unconfigured,
             "Can only update policy in Active or Unconfigured state"
         );
+
+        if let Some(hb) = heartbeat_interval_ns {
+            vault.heartbeat_interval_ns = hb.0;
+        }
+        if let Some(cp) = challenge_period_ns {
+            vault.challenge_period_ns = cp.0;
+        }
 
         let is_initial_setup = vault.state == VaultState::Unconfigured
             || (vault.backup.is_empty() && vault.heirs.is_empty());
@@ -820,7 +846,10 @@ impl LastKeyVault {
         let now = env::block_timestamp();
         let vault = self.vaults.get_mut(&caller).expect("No vault found for account");
         Self::internal_sync_elapsed_policy(vault, now);
-        require!(vault.state == VaultState::Active, "Can only update intervals in Active state");
+        require!(
+            vault.state == VaultState::Active || vault.state == VaultState::Unconfigured,
+            "Can only update intervals in Active or Unconfigured state"
+        );
         let new_hb = heartbeat_interval_ns
             .map(|v| v.0)
             .unwrap_or(vault.heartbeat_interval_ns);
@@ -2369,13 +2398,13 @@ mod tests {
         testing_env!(context.build());
 
         let mut contract = LastKeyVault::new(mpc, None);
-        contract.propose_policy(backup.clone(), heirs.clone(), None);
+        contract.propose_policy(backup.clone(), heirs.clone(), None, None, None);
 
         testing_env!(context
             .predecessor_account_id(bob.clone())
             .signer_account_id(bob.clone())
             .build());
-        contract.propose_policy(backup.clone(), heirs.clone(), None);
+        contract.propose_policy(backup.clone(), heirs.clone(), None, None, None);
 
         testing_env!(context
             .predecessor_account_id(alice.clone())
@@ -2415,7 +2444,7 @@ mod tests {
         let challenge_ns = 7 * 24 * 3600 * 1_000_000_000;
 
         let mut contract = LastKeyVault::new(mpc, None);
-        contract.propose_policy(backup, heirs, None);
+        contract.propose_policy(backup, heirs, None, None, None);
 
         testing_env!(context
             .predecessor_account_id(anyone_caller.clone())
@@ -2581,7 +2610,7 @@ mod tests {
         testing_env!(context.build());
 
         let mut contract = LastKeyVault::new(mpc, Some(keeper.clone()));
-        contract.propose_policy(backup.clone(), heirs.clone(), Some("enc:x25519:ciphertext".to_string()));
+        contract.propose_policy(backup.clone(), heirs.clone(), Some("enc:x25519:ciphertext".to_string()), None, None);
 
         let info = contract.get_vault_info(Some(alice.clone())).unwrap();
         assert_eq!(info.gas_escrow_yocto, NearToken::from_millinear(250).as_yoctonear().to_string());
@@ -2598,7 +2627,7 @@ mod tests {
             .signer_account_id(bob.clone())
             .attached_deposit(NearToken::from_near(2))
             .build());
-        contract.propose_policy(backup.clone(), heirs, None);
+        contract.propose_policy(backup.clone(), heirs, None, None, None);
         contract.deposit_near_vault(None);
 
         // Alice triggers panic
@@ -2681,7 +2710,7 @@ mod tests {
         testing_env!(context.build());
 
         let mut contract = LastKeyVault::new(mpc, Some(keeper.clone()));
-        contract.propose_policy(backup, heirs, None);
+        contract.propose_policy(backup, heirs, None, None, None);
 
         // Owner registers her Ed25519 pubkey
         testing_env!(context
@@ -2745,7 +2774,7 @@ mod tests {
 
         let mut contract = LastKeyVault::new(mpc, None);
         let long_e2ee = format!("enc:x25519:{}", "A".repeat(420));
-        contract.propose_policy(backup, heirs, Some(long_e2ee.clone()));
+        contract.propose_policy(backup, heirs, Some(long_e2ee.clone()), None, None);
         assert_eq!(contract.get_heir_memo(owner.clone()), Some(long_e2ee));
 
         // Over 1024 bytes panics
@@ -2768,7 +2797,7 @@ mod tests {
         testing_env!(context.block_timestamp(t0).build());
 
         let mut contract = LastKeyVault::new(mpc, Some(keeper));
-        contract.propose_policy(backup.clone(), heirs.clone(), None);
+        contract.propose_policy(backup.clone(), heirs.clone(), None, None, None);
 
         // 1. `[C2]` Attempting `reset_my_vault()` on an armed vault MUST panic (prevents 72h timelock bypass)
         assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -2779,7 +2808,7 @@ mod tests {
         // 2. Proposing a modified destination arms a 72h `PendingPolicy`
         let mut new_heirs = heirs.clone();
         new_heirs.near = Some("new_heir.testnet".parse().unwrap());
-        contract.propose_policy(backup.clone(), new_heirs.clone(), None);
+        contract.propose_policy(backup.clone(), new_heirs.clone(), None, None, None);
         assert!(contract.get_vault_info(Some(alice.clone())).unwrap().pending_policy.is_some());
 
         // 3. `[C3]` If owner becomes inactive for `heartbeat + grace` (>72h), `trigger_push_inheritance`
@@ -7347,29 +7376,37 @@ if (typeof window !== "undefined") {
         MAX_SECONDS = Number(BigInt(info.heartbeat_interval_ns) / 1000000000n);
         updateCountdownDisplay();
 
-        // Sync dropdowns with real on-chain values
-        const totalHbNs = BigInt(info.heartbeat_interval_ns);
-        const inactSelect = document.getElementById('inactivitySelect');
-        if (inactSelect) {
-          if (totalHbNs <= 120000000000n) {
-            inactSelect.value = 'demo_120s';
-          } else {
-            const inactDays = Math.round(Number(totalHbNs / 86400000000000n));
-            if ([30, 90, 180, 365].includes(inactDays)) inactSelect.value = inactDays.toString();
+        // Sync dropdowns with real on-chain values (unless user is actively editing)
+        if (!userHasInteractedWithInputs && !isEditing) {
+          const totalHbNs = BigInt(info.heartbeat_interval_ns);
+          const inactSelect = document.getElementById('inactivitySelect');
+          if (inactSelect) {
+            if (totalHbNs <= 120000000000n) {
+              inactSelect.value = 'demo_120s';
+              localStorage.setItem('aegis_inactivity_days', 'demo_120s');
+            } else {
+              const inactDays = Math.round(Number(totalHbNs / 86400000000000n));
+              if ([30, 90, 180, 365].includes(inactDays)) {
+                inactSelect.value = inactDays.toString();
+                localStorage.setItem('aegis_inactivity_days', inactDays.toString());
+              }
+            }
           }
-        }
 
-        const totalCpNs = BigInt(info.challenge_period_ns || 604800000000000n);
-        const graceSelect = document.getElementById('graceSelect');
-        const modalGrace = document.getElementById('modalGraceSelect');
-        if (totalCpNs <= 30000000000n) {
-          if (graceSelect) graceSelect.value = 'demo_30s';
-          if (modalGrace) modalGrace.value = 'demo_30s';
-        } else {
-          const graceDays = Math.round(Number(totalCpNs / 86400000000000n));
-          if ([3, 7, 14, 30].includes(graceDays)) {
-            if (graceSelect) graceSelect.value = graceDays.toString();
-            if (modalGrace) modalGrace.value = graceDays.toString();
+          const totalCpNs = BigInt(info.challenge_period_ns || 604800000000000n);
+          const graceSelect = document.getElementById('graceSelect');
+          const modalGrace = document.getElementById('modalGraceSelect');
+          if (totalCpNs <= 30000000000n) {
+            if (graceSelect) graceSelect.value = 'demo_30s';
+            if (modalGrace) modalGrace.value = 'demo_30s';
+            localStorage.setItem('aegis_grace_days', 'demo_30s');
+          } else {
+            const graceDays = Math.round(Number(totalCpNs / 86400000000000n));
+            if ([3, 7, 14, 30].includes(graceDays)) {
+              if (graceSelect) graceSelect.value = graceDays.toString();
+              if (modalGrace) modalGrace.value = graceDays.toString();
+              localStorage.setItem('aegis_grace_days', graceDays.toString());
+            }
           }
         }
       } else {
@@ -9211,7 +9248,7 @@ if (typeof window !== "undefined") {
       const hasOnChain = !!(onChainBackupNear || onChainBackupBtc || onChainBackupEvm || onChainBackupSol ||
                             onChainHeirNear || onChainHeirBtc || onChainHeirEvm || onChainHeirSol);
 
-      const isMatching = hasOnChain &&
+      const addressesMatch = hasOnChain &&
                          (pNear === onChainBackupNear) &&
                          (pBtc === onChainBackupBtc) &&
                          (pEvm === onChainBackupEvm) &&
@@ -9220,6 +9257,19 @@ if (typeof window !== "undefined") {
                          (hBtc === onChainHeirBtc) &&
                          (hEvm === onChainHeirEvm) &&
                          (hSol === onChainHeirSol);
+
+      const inactPref = document.getElementById('inactivitySelect')?.value || localStorage.getItem('aegis_inactivity_days') || '90';
+      const gracePref = document.getElementById('graceSelect')?.value || localStorage.getItem('aegis_grace_days') || '7';
+      const selectedHbNs = inactPref === 'demo_120s'
+        ? 120000000000n
+        : BigInt(parseInt(inactPref, 10) || 90) * 86400n * 1000000000n;
+      const selectedCpNs = gracePref === 'demo_30s'
+        ? 30000000000n
+        : BigInt(parseInt(gracePref, 10) || 7) * 86400n * 1000000000n;
+      const onChainHbNs = info?.heartbeat_interval_ns ? BigInt(info.heartbeat_interval_ns) : selectedHbNs;
+      const onChainCpNs = info?.challenge_period_ns ? BigInt(info.challenge_period_ns) : selectedCpNs;
+      const timersMatch = (selectedHbNs === onChainHbNs) && (selectedCpNs === onChainCpNs);
+      const isMatching = addressesMatch && timersMatch;
 
       saveBtns.forEach(btn => {
         if (!localStorage.getItem('aegis_signer_account')) {
@@ -9252,7 +9302,7 @@ if (typeof window !== "undefined") {
           `;
           btn.className = 'save-policy-btn bg-nearGreen/15 hover:bg-nearGreen/25 text-nearGreen border border-nearGreen/40 font-bold py-2 px-5 rounded-xl text-xs transition active:scale-98 whitespace-nowrap cursor-pointer';
         } else {
-          const isReplacingExisting = hasOnChain && !isMatching;
+          const isReplacingExisting = hasOnChain && !addressesMatch;
           if (isReplacingExisting) {
             btn.innerHTML = `Save Policy (72h Cooldown)`;
             btn.className = 'save-policy-btn bg-amber-400 hover:bg-amber-300 text-black font-extrabold py-2 px-5 rounded-xl text-xs transition shadow-sm active:scale-98 whitespace-nowrap cursor-pointer';
@@ -9297,6 +9347,7 @@ if (typeof window !== "undefined") {
     function changeInactivityPeriod(val) {
       let hbNs;
       let cpNs = null;
+      isEditing = true;
       if (val === 'demo_120s') {
         MAX_SECONDS = 120;
         remainingSeconds = 120;
@@ -9308,25 +9359,26 @@ if (typeof window !== "undefined") {
         const sel2 = document.getElementById('modalGraceSelect');
         if (sel1) sel1.value = 'demo_30s';
         if (sel2) sel2.value = 'demo_30s';
-        showToast('⚡ Judge Demo Mode: 2m Heartbeat + 30s Grace Window Activated!');
       } else {
         inactivityDays = parseInt(val);
         MAX_SECONDS = inactivityDays * 24 * 3600;
         remainingSeconds = MAX_SECONDS;
         hbNs = (BigInt(val) * 86400n * 1000000000n).toString();
         localStorage.setItem('aegis_inactivity_days', val);
-        showToast(`Broadcasting check-in timer update (${val} days) to NEAR...`);
       }
       updateCountdownDisplay();
-      if (!lastFetchedVaultInfo || lastFetchedVaultInfo.state === 'Unconfigured') {
+      updateSaveButtonState(lastFetchedVaultInfo);
+      if (!lastFetchedVaultInfo || lastFetchedVaultInfo.state === 'Unconfigured' || !hasConfiguredDestinations(lastFetchedVaultInfo)) {
         showToast(`Timer set to ${val === 'demo_120s' ? '2m' : val + ' days'}. Will be armed on-chain once you save policy.`);
         return;
       }
+      showToast(`Broadcasting check-in timer update (${val === 'demo_120s' ? '2m' : val + ' days'}) to NEAR...`);
       dispatchNearTransaction('update_intervals', { heartbeat_interval_ns: hbNs, challenge_period_ns: cpNs });
     }
 
     function changeGracePeriod(val) {
       let cpNs;
+      isEditing = true;
       const sel1 = document.getElementById('graceSelect');
       const sel2 = document.getElementById('modalGraceSelect');
       if (sel1) sel1.value = val;
@@ -9335,17 +9387,17 @@ if (typeof window !== "undefined") {
       if (val === 'demo_30s') {
         cpNs = '30000000000'; // 30 seconds
         localStorage.setItem('aegis_grace_days', 'demo_30s');
-        showToast('⚡ Judge Demo Mode: 30s Grace Window Activated!');
       } else {
         graceDays = parseInt(val);
         cpNs = (BigInt(val) * 86400n * 1000000000n).toString();
         localStorage.setItem('aegis_grace_days', val);
-        showToast(`Broadcasting grace period update (${val} days) to NEAR...`);
       }
-      if (!lastFetchedVaultInfo || lastFetchedVaultInfo.state === 'Unconfigured') {
+      updateSaveButtonState(lastFetchedVaultInfo);
+      if (!lastFetchedVaultInfo || lastFetchedVaultInfo.state === 'Unconfigured' || !hasConfiguredDestinations(lastFetchedVaultInfo)) {
         showToast(`Grace window set to ${val === 'demo_30s' ? '30s' : val + ' days'}. Will be armed on-chain once you save policy.`);
         return;
       }
+      showToast(`Broadcasting grace period update (${val === 'demo_30s' ? '30s' : val + ' days'}) to NEAR...`);
       dispatchNearTransaction('update_intervals', { heartbeat_interval_ns: null, challenge_period_ns: cpNs });
     }
 
@@ -10674,6 +10726,15 @@ if (typeof window !== "undefined") {
         encryptedOrNullMemo = '';
       }
 
+      const inactPref = document.getElementById('inactivitySelect')?.value || localStorage.getItem('aegis_inactivity_days') || '90';
+      const gracePref = document.getElementById('graceSelect')?.value || localStorage.getItem('aegis_grace_days') || '7';
+      const selectedHbNs = inactPref === 'demo_120s'
+        ? '120000000000'
+        : (BigInt(parseInt(inactPref, 10) || 90) * 86400n * 1000000000n).toString();
+      const selectedCpNs = gracePref === 'demo_30s'
+        ? '30000000000'
+        : (BigInt(parseInt(gracePref, 10) || 7) * 86400n * 1000000000n).toString();
+
       const policyPayload = {
         backup: {
           btc: data.panicBtcAddr || '',
@@ -10687,7 +10748,9 @@ if (typeof window !== "undefined") {
           sol: data.heirSolAddr || '',
           near: data.heirNearAddr ? data.heirNearAddr : null
         },
-        memo: encryptedOrNullMemo
+        memo: encryptedOrNullMemo,
+        heartbeat_interval_ns: selectedHbNs,
+        challenge_period_ns: selectedCpNs
       };
 
       // Never store raw plaintext testament in localStorage
@@ -10701,15 +10764,7 @@ if (typeof window !== "undefined") {
         userHasInteractedWithInputs = false;
         isEditing = false;
         if (res !== undefined) {
-          const inactPref = localStorage.getItem('aegis_inactivity_days');
-          const gracePref = localStorage.getItem('aegis_grace_days');
-          if (inactPref === 'demo_120s' || gracePref === 'demo_30s') {
-            dispatchNearTransaction('update_intervals', {
-              heartbeat_interval_ns: inactPref === 'demo_120s' ? '120000000000' : null,
-              challenge_period_ns: '30000000000'
-            });
-          }
-          showToast('Policy armed on-chain! Opening Safe Bunker Deposits...');
+          showToast('Policy & timers armed on-chain! Opening Safe Bunker Deposits...');
           setTimeout(() => switchTab('vault'), 700);
         }
       }).catch(err => {

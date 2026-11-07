@@ -617,6 +617,8 @@ impl LastKeyVault {
         backup: ChainAddresses,
         heirs: ChainAddresses,
         memo: Option<String>,
+        heartbeat_interval_ns: Option<U64>,
+        challenge_period_ns: Option<U64>,
     ) {
         let caller = env::predecessor_account_id();
         Self::internal_capture_signer_pubkey(&caller);
@@ -627,6 +629,19 @@ impl LastKeyVault {
         );
         backup.validate();
         heirs.validate();
+
+        if let Some(hb) = heartbeat_interval_ns {
+            require!(
+                hb.0 >= 15_000_000_000,
+                "Heartbeat interval must be at least 15 seconds"
+            );
+        }
+        if let Some(cp) = challenge_period_ns {
+            require!(
+                cp.0 >= 15_000_000_000,
+                "Challenge period must be at least 15 seconds"
+            );
+        }
 
         let attached = env::attached_deposit().as_yoctonear();
         if attached > 1 {
@@ -657,8 +672,12 @@ impl LastKeyVault {
             let new_vault = UserVault {
                 state: VaultState::Active,
                 last_ping_ns: env::block_timestamp(),
-                heartbeat_interval_ns: DEFAULT_HEARTBEAT_INTERVAL_NS,
-                challenge_period_ns: DEFAULT_CHALLENGE_PERIOD_NS,
+                heartbeat_interval_ns: heartbeat_interval_ns
+                    .map(|v| v.0)
+                    .unwrap_or(DEFAULT_HEARTBEAT_INTERVAL_NS),
+                challenge_period_ns: challenge_period_ns
+                    .map(|v| v.0)
+                    .unwrap_or(DEFAULT_CHALLENGE_PERIOD_NS),
                 policy_timelock_ns: DEFAULT_POLICY_TIMELOCK_NS,
                 backup,
                 heirs,
@@ -683,6 +702,13 @@ impl LastKeyVault {
             vault.state == VaultState::Active || vault.state == VaultState::Unconfigured,
             "Can only update policy in Active or Unconfigured state"
         );
+
+        if let Some(hb) = heartbeat_interval_ns {
+            vault.heartbeat_interval_ns = hb.0;
+        }
+        if let Some(cp) = challenge_period_ns {
+            vault.challenge_period_ns = cp.0;
+        }
 
         let is_initial_setup = vault.state == VaultState::Unconfigured
             || (vault.backup.is_empty() && vault.heirs.is_empty());
@@ -765,7 +791,10 @@ impl LastKeyVault {
         let now = env::block_timestamp();
         let vault = self.vaults.get_mut(&caller).expect("No vault found for account");
         Self::internal_sync_elapsed_policy(vault, now);
-        require!(vault.state == VaultState::Active, "Can only update intervals in Active state");
+        require!(
+            vault.state == VaultState::Active || vault.state == VaultState::Unconfigured,
+            "Can only update intervals in Active or Unconfigured state"
+        );
         let new_hb = heartbeat_interval_ns
             .map(|v| v.0)
             .unwrap_or(vault.heartbeat_interval_ns);
@@ -2314,13 +2343,13 @@ mod tests {
         testing_env!(context.build());
 
         let mut contract = LastKeyVault::new(mpc, None);
-        contract.propose_policy(backup.clone(), heirs.clone(), None);
+        contract.propose_policy(backup.clone(), heirs.clone(), None, None, None);
 
         testing_env!(context
             .predecessor_account_id(bob.clone())
             .signer_account_id(bob.clone())
             .build());
-        contract.propose_policy(backup.clone(), heirs.clone(), None);
+        contract.propose_policy(backup.clone(), heirs.clone(), None, None, None);
 
         testing_env!(context
             .predecessor_account_id(alice.clone())
@@ -2360,7 +2389,7 @@ mod tests {
         let challenge_ns = 7 * 24 * 3600 * 1_000_000_000;
 
         let mut contract = LastKeyVault::new(mpc, None);
-        contract.propose_policy(backup, heirs, None);
+        contract.propose_policy(backup, heirs, None, None, None);
 
         testing_env!(context
             .predecessor_account_id(anyone_caller.clone())
@@ -2526,7 +2555,7 @@ mod tests {
         testing_env!(context.build());
 
         let mut contract = LastKeyVault::new(mpc, Some(keeper.clone()));
-        contract.propose_policy(backup.clone(), heirs.clone(), Some("enc:x25519:ciphertext".to_string()));
+        contract.propose_policy(backup.clone(), heirs.clone(), Some("enc:x25519:ciphertext".to_string()), None, None);
 
         let info = contract.get_vault_info(Some(alice.clone())).unwrap();
         assert_eq!(info.gas_escrow_yocto, NearToken::from_millinear(250).as_yoctonear().to_string());
@@ -2543,7 +2572,7 @@ mod tests {
             .signer_account_id(bob.clone())
             .attached_deposit(NearToken::from_near(2))
             .build());
-        contract.propose_policy(backup.clone(), heirs, None);
+        contract.propose_policy(backup.clone(), heirs, None, None, None);
         contract.deposit_near_vault(None);
 
         // Alice triggers panic
@@ -2626,7 +2655,7 @@ mod tests {
         testing_env!(context.build());
 
         let mut contract = LastKeyVault::new(mpc, Some(keeper.clone()));
-        contract.propose_policy(backup, heirs, None);
+        contract.propose_policy(backup, heirs, None, None, None);
 
         // Owner registers her Ed25519 pubkey
         testing_env!(context
@@ -2690,7 +2719,7 @@ mod tests {
 
         let mut contract = LastKeyVault::new(mpc, None);
         let long_e2ee = format!("enc:x25519:{}", "A".repeat(420));
-        contract.propose_policy(backup, heirs, Some(long_e2ee.clone()));
+        contract.propose_policy(backup, heirs, Some(long_e2ee.clone()), None, None);
         assert_eq!(contract.get_heir_memo(owner.clone()), Some(long_e2ee));
 
         // Over 1024 bytes panics
@@ -2713,7 +2742,7 @@ mod tests {
         testing_env!(context.block_timestamp(t0).build());
 
         let mut contract = LastKeyVault::new(mpc, Some(keeper));
-        contract.propose_policy(backup.clone(), heirs.clone(), None);
+        contract.propose_policy(backup.clone(), heirs.clone(), None, None, None);
 
         // 1. `[C2]` Attempting `reset_my_vault()` on an armed vault MUST panic (prevents 72h timelock bypass)
         assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -2724,7 +2753,7 @@ mod tests {
         // 2. Proposing a modified destination arms a 72h `PendingPolicy`
         let mut new_heirs = heirs.clone();
         new_heirs.near = Some("new_heir.testnet".parse().unwrap());
-        contract.propose_policy(backup.clone(), new_heirs.clone(), None);
+        contract.propose_policy(backup.clone(), new_heirs.clone(), None, None, None);
         assert!(contract.get_vault_info(Some(alice.clone())).unwrap().pending_policy.is_some());
 
         // 3. `[C3]` If owner becomes inactive for `heartbeat + grace` (>72h), `trigger_push_inheritance`
