@@ -586,7 +586,7 @@
                     <span class="px-3 py-2.5 text-xs font-mono font-bold text-nearGreen bg-white/[0.03] border-r border-white/[0.06] shrink-0">
                       NOTE
                     </span>
-                    <input type="text" id="heirFinalMemo" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" oninput="updateMemoByteCounter(this.value)" placeholder="Optional note sent with inheritance transfer..." class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none">
+                    <input type="text" id="heirFinalMemo" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" oninput="updateMemoByteCounter(this.value)" placeholder="e.g. Optional note for your family..." class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none">
                   </div>
                 </div>
               </div>
@@ -1745,7 +1745,7 @@
           heirBtcAddr: 'e.g. tb1q...',
           heirEvmAddr: 'e.g. 0x...',
           heirSolAddr: 'e.g. Base58 Solana address',
-          heirFinalMemo: 'Write final instructions or message for your family...'
+          heirFinalMemo: 'e.g. Optional note for your family...'
         };
         inputIds.forEach(id => {
           const el = document.getElementById(id);
@@ -5184,7 +5184,7 @@
           descBody.innerHTML = 'Transmitted as raw UTF-8 text inside Ethereum <code>Input Data (UTF-8)</code> and Solana <code>Instruction #2 (Memo Program v2)</code>. Readable directly on Etherscan &amp; Solscan without decryption (do not put raw seed phrases in Public mode).';
         }
         if (memoInput && !memoInput.value) {
-          memoInput.placeholder = 'e.g. Family inheritance message (visible directly on Etherscan & Solscan)...';
+          memoInput.placeholder = 'e.g. Optional note for your family...';
         }
       } else {
         if (e2eeBtn) e2eeBtn.className = 'px-2 py-0.5 rounded-full bg-nearGreen text-nearBlack transition cursor-pointer';
@@ -5196,7 +5196,7 @@
           descBody.innerHTML = 'Encrypted locally in your browser before touching NEAR RPC. Stored as <code>enc:x25519:...</code> or <code>enc:aes256:...</code> in EVM Calldata &amp; Solana SPL Memo; decryptable offline only by your heir. Switch to <strong>📄 Public Text</strong> to make raw words readable directly on Etherscan &amp; Solscan.';
         }
         if (memoInput && !memoInput.value && !(lastFetchedVaultInfo?.heir_memo?.startsWith('enc:'))) {
-          memoInput.placeholder = 'e.g. Hardware wallet PIN & family vault instructions...';
+          memoInput.placeholder = 'e.g. Optional note for your family...';
         }
       }
     }
