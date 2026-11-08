@@ -5935,7 +5935,7 @@ if (typeof window !== "undefined") {
   </script>
   <!-- NEAR Wallet Selector Official Styles & Standalone Bundle -->
   <link rel="stylesheet" href="./wallet-selector-modal.css">
-  <script src="./wallet-bundle.js" defer></script>
+  <script src="./wallet-bundle.js?v=20261108_4" defer></script>
   
   <script>
     tailwind.config = {
@@ -9012,6 +9012,7 @@ if (typeof window !== "undefined") {
               if (res) {
                 localStorage.setItem(cacheKey, JSON.stringify(res));
                 renderBunkerAddresses();
+                fetchLiveBalances(true);
               }
             }).catch(e => console.warn('Dynamic MPC derivation notice:', e.message));
         }
@@ -9049,7 +9050,7 @@ if (typeof window !== "undefined") {
       checkUnallocatedFunds();
     }
 
-    const CACHE_TTL_MS = 30 * 1000; // 30-second cache interval for responsive sync
+    const CACHE_TTL_MS = 10 * 1000; // 10-second cache interval for responsive sync
     let lastBalancesSyncedTimestamp = 0;
 
     function updateLiveSyncTimer() {
@@ -9189,8 +9190,8 @@ if (typeof window !== "undefined") {
         near: document.getElementById('nearAddress')?.dataset?.full || ''
       };
 
-      // In Evacuated state, addresses are masked in UI, but we check burned addresses for leftover funds
-      if (isVaultEvacuatedOrBurned() && (!curr.btc || !curr.evm)) {
+      // Fallback to derived address cache whenever DOM dataset is not yet populated or masked
+      if (!curr.btc || curr.btc.includes('Deriving') || !curr.evm || curr.evm.includes('Deriving')) {
         const derivedKey = `aegis_derived_${currentSigner}_${currentEpochIndex}`;
         let cachedAddr = null;
         try { cachedAddr = JSON.parse(localStorage.getItem(derivedKey)); } catch(e) {}
@@ -9199,10 +9200,10 @@ if (typeof window !== "undefined") {
         }
         if (cachedAddr) {
           curr = {
-            btc: cachedAddr.btc || '',
-            evm: cachedAddr.evm || '',
-            sol: cachedAddr.sol || '',
-            near: (cachedAddr.near && cachedAddr.near !== CONTRACT_ID) ? cachedAddr.near : ''
+            btc: cachedAddr.btc || curr.btc || '',
+            evm: cachedAddr.evm || curr.evm || '',
+            sol: cachedAddr.sol || curr.sol || '',
+            near: (cachedAddr.near && cachedAddr.near !== CONTRACT_ID) ? cachedAddr.near : (curr.near || '')
           };
         }
       }
@@ -9326,20 +9327,22 @@ if (typeof window !== "undefined") {
         if (btcUsdEl) btcUsdEl.innerText = `≈ 0.00 USD`;
       }
 
-      // Save to cache scoped to account & vault state
-      localStorage.setItem(`aegis_balance_cache_${currentSigner}`, JSON.stringify({
-        contractId: CONTRACT_ID,
-        state: lastFetchedVaultInfo?.state || 'Active',
-        timestamp: Date.now(),
-        btcBal: btcBalEl ? btcBalEl.innerHTML : '0.0000 <span class="text-sm font-normal text-[#8C929D]">BTC</span>',
-        btcUsd: btcUsdEl ? btcUsdEl.innerText : '≈ 0.00 USD',
-        evmBal: evmBalEl ? evmBalEl.innerHTML : '0.0000 <span class="text-sm font-normal text-[#8C929D]">ETH</span>',
-        evmUsd: evmUsdEl ? evmUsdEl.innerText : '≈ 0.00 USD',
-        solBal: solBalEl ? solBalEl.innerHTML : '0.0000 <span class="text-sm font-normal text-[#8C929D]">SOL</span>',
-        solUsd: solUsdEl ? solUsdEl.innerText : '≈ 0.00 USD',
-        nearBal: nearBalEl ? nearBalEl.innerHTML : '0.0000 <span class="text-sm font-normal text-[#8C929D]">NEAR</span>',
-        nearUsd: nearUsdEl ? nearUsdEl.innerText : '≈ 0.00 USD'
-      }));
+      // Only cache when derived addresses were actually resolved (never cache 0.0000 while still deriving)
+      if (curr.btc && !curr.btc.includes('Deriving') && curr.evm && !curr.evm.includes('Deriving')) {
+        localStorage.setItem(`aegis_balance_cache_${currentSigner}`, JSON.stringify({
+          contractId: CONTRACT_ID,
+          state: lastFetchedVaultInfo?.state || 'Active',
+          timestamp: Date.now(),
+          btcBal: btcBalEl ? btcBalEl.innerHTML : '0.0000 <span class="text-sm font-normal text-[#8C929D]">BTC</span>',
+          btcUsd: btcUsdEl ? btcUsdEl.innerText : '≈ 0.00 USD',
+          evmBal: evmBalEl ? evmBalEl.innerHTML : '0.0000 <span class="text-sm font-normal text-[#8C929D]">ETH</span>',
+          evmUsd: evmUsdEl ? evmUsdEl.innerText : '≈ 0.00 USD',
+          solBal: solBalEl ? solBalEl.innerHTML : '0.0000 <span class="text-sm font-normal text-[#8C929D]">SOL</span>',
+          solUsd: solUsdEl ? solUsdEl.innerText : '≈ 0.00 USD',
+          nearBal: nearBalEl ? nearBalEl.innerHTML : '0.0000 <span class="text-sm font-normal text-[#8C929D]">NEAR</span>',
+          nearUsd: nearUsdEl ? nearUsdEl.innerText : '≈ 0.00 USD'
+        }));
+      }
 
       // Update monitor elements if active
       if (document.getElementById('monitorBtcBal') && btcBalEl) document.getElementById('monitorBtcBal').innerText = btcBalEl.innerText;
@@ -10158,10 +10161,12 @@ if (typeof window !== "undefined") {
     });
     updateCountdownDisplay();
 
-    // Auto-refresh balances once every hour
+    // Auto-refresh live balances every 12 seconds so 0-conf BTC and L1 deposits appear quickly
     setInterval(() => {
-      fetchLiveBalances(true);
-    }, CACHE_TTL_MS);
+      if (!document.hidden && localStorage.getItem('aegis_signer_account')) {
+        fetchLiveBalances(false);
+      }
+    }, 12000);
 
     function showToast(msg, isRed = false) {
       const toast = document.getElementById('toast');
