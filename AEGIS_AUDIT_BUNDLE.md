@@ -7324,19 +7324,8 @@ if (typeof window !== "undefined") {
       return info.state === 'Inheritance' || (info.state === 'Active' && isHeartbeatExpired(info));
     }
 
-    function shouldShowUnconfiguredBanner(info = lastFetchedVaultInfo) {
-      const currentSigner = localStorage.getItem('aegis_signer_account');
-      if (!currentSigner) return false;
-      if (isAddressDisplayLocked(info)) return false;
-      if (hasConfiguredDestinations(info)) return false;
-      if (info && info.pending_policy) return false;
-      if (userHasInteractedWithInputs || isEditing) return false;
-      const hasAnyInput = inputIds.some(id => {
-        const el = document.getElementById(id);
-        return el && el.value && el.value.trim().length > 0;
-      });
-      if (hasAnyInput) return false;
-      return true;
+    function shouldShowUnconfiguredBanner() {
+      return false;
     }
 
     // Live On-Chain State Fetcher via NEAR JSON-RPC (FastNEAR with Failover)
@@ -9413,7 +9402,7 @@ if (typeof window !== "undefined") {
           const evacBanner = document.getElementById('evacuatedPolicyBanner');
           if (evacBanner) evacBanner.classList.add('hidden');
           const unconfigBanner = document.getElementById('unconfiguredBanner');
-          if (unconfigBanner) unconfigBanner.classList.remove('hidden');
+          if (unconfigBanner) unconfigBanner.classList.add('hidden');
 
           remainingSeconds = 0;
           clearAllAddresses();
@@ -11501,7 +11490,7 @@ if (typeof window !== "undefined") {
       const evacBanner = document.getElementById('evacuatedPolicyBanner');
       if (evacBanner) evacBanner.classList.add('hidden');
       const unconfigBanner = document.getElementById('unconfiguredBanner');
-      if (unconfigBanner) unconfigBanner.classList.remove('hidden');
+      if (unconfigBanner) unconfigBanner.classList.add('hidden');
       localStorage.removeItem('aegis_addresses');
       localStorage.removeItem('aegis_pending_addresses');
       localStorage.removeItem('aegis_cooldown_started');
