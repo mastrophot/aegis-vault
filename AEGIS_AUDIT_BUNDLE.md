@@ -6071,12 +6071,12 @@ if (typeof window !== "undefined") {
   <!-- Main Content Space -->
   <main class="max-w-7xl mx-auto w-full px-4 sm:px-8 py-8 sm:py-10 space-y-8 flex-1">
 
-    <!-- Hero Operational HUD (NEAR Brand Architecture) -->
-    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-      
-      <!-- Card 1: Dead-Man's Switch Countdown & Heartbeat (Left, Compact) -->
-      <div class="lg:col-span-5 near-card p-6 sm:p-7 flex flex-col justify-center gap-6">
-        <div class="space-y-4">
+    <!-- Hero Operational HUD (Clean & Compact) -->
+    <div class="near-card p-6 sm:p-7">
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
+        
+        <!-- Left: Dead-Man's Switch Countdown & Heartbeat -->
+        <div class="lg:col-span-7 space-y-4">
           <div class="flex items-center justify-between flex-wrap gap-2">
             <div class="flex items-center gap-2.5">
               <span id="heartbeatPulseDot" class="w-2.5 h-2.5 rounded-full bg-yellow-400"></span>
@@ -6084,9 +6084,14 @@ if (typeof window !== "undefined") {
                 Dead-Man's Switch Heartbeat
               </span>
             </div>
-            <span id="heartbeatTag" class="text-xs font-mono font-medium text-yellow-400/90 bg-yellow-950/30 px-3 py-1 rounded-full border border-yellow-500/30">
-              Vault Inactive · Connect Wallet
-            </span>
+            <div class="flex items-center gap-2 flex-wrap">
+              <span id="bunkerEpochPill" class="text-[11px] font-mono font-bold text-nearGreen bg-nearGreenMuted border border-nearGreen/30 px-2.5 py-0.5 rounded-full whitespace-nowrap">
+                Derivation Path: aegis/v0 (Active)
+              </span>
+              <span id="heartbeatTag" class="text-xs font-mono font-medium text-yellow-400/90 bg-yellow-950/30 px-3 py-1 rounded-full border border-yellow-500/30">
+                Vault Inactive · Connect Wallet
+              </span>
+            </div>
           </div>
 
           <div>
@@ -6098,9 +6103,9 @@ if (typeof window !== "undefined") {
             </div>
           </div>
 
-          <!-- Progress Bar in Minimalist Line -->
+          <!-- Progress Bar -->
           <div class="space-y-1.5">
-            <div class="w-full bg-white/[0.08] rounded-full h-1 overflow-hidden">
+            <div class="w-full bg-white/[0.08] rounded-full h-1.5 overflow-hidden">
               <div id="timerBar" class="bg-white/40 h-full w-full transition-all duration-1000 ease-out"></div>
             </div>
             <div class="flex justify-between text-xs text-textGray font-mono">
@@ -6121,25 +6126,15 @@ if (typeof window !== "undefined") {
           </div>
         </div>
 
-        <!-- Controls: Ping alive & Config -->
-        <div class="flex flex-col gap-3.5 pt-4 border-t border-nearBorder">
+        <!-- Right: Check-in Button & Timer Selectors -->
+        <div class="lg:col-span-5 flex flex-col gap-4 lg:pl-6 lg:border-l border-white/[0.08]">
           <button id="pingMainBtn" onclick="handlePingMainBtnClick()" class="w-full bg-purple-600 hover:bg-purple-500 text-white font-extrabold py-3.5 px-6 near-pill-btn text-sm sm:text-base tracking-wide transition shadow-sm active:scale-98 flex items-center justify-center gap-2">
             <svg id="pingMainBtnIcon" class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L14.4 7.2L20 8L16 12L17 17.6L12 15L7 17.6L8 12L4 8L9.6 7.2L12 2Z"/></svg>
             <span id="pingMainBtnText">Connect Wallet to Arm Vault</span>
           </button>
           <div id="onchainPingOption" class="hidden"></div>
-          
-          <!-- Heartbeat & Grace Policy Schedule Configuration Block -->
-          <div class="mt-3 p-3.5 rounded-2xl bg-white/[0.03] border border-white/[0.08] space-y-3">
-            <div class="flex items-center justify-between text-xs">
-              <div class="flex items-center gap-1.5 text-white font-bold">
-                <svg class="w-3.5 h-3.5 text-nearGreen" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                <span>Trigger Schedule & Safety Buffer</span>
-              </div>
-              <span class="text-[10px] font-mono text-[#8C929D] bg-white/[0.04] px-2 py-0.5 rounded-full border border-white/[0.06]">Autonomous Policy</span>
-            </div>
 
-            <!-- Two Selectors with Labels -->
+          <div class="p-3.5 rounded-2xl bg-white/[0.03] border border-white/[0.08] space-y-2.5">
             <div class="grid grid-cols-2 gap-2.5">
               <div class="space-y-1">
                 <label class="block text-[10px] font-semibold text-[#8C929D] uppercase tracking-wider pl-1">1. Check-in Timer</label>
@@ -6168,82 +6163,10 @@ if (typeof window !== "undefined") {
                 </div>
               </div>
             </div>
-
-            <!-- Clear Explanations -->
-            <div class="p-2.5 rounded-xl bg-black/40 border border-white/[0.05] space-y-1.5 text-[11px] leading-relaxed text-[#8C929D]">
-              <div class="flex items-start gap-1.5">
-                <span class="text-nearGreen font-bold shrink-0">•</span>
-                <span><strong class="text-white">Check-in:</strong> Inactivity interval before heartbeat expires. Owner pings or sends any on-chain tx to renew.</span>
-              </div>
-              <div class="flex items-start gap-1.5">
-                <span class="text-amber-400 font-bold shrink-0">•</span>
-                <span><strong class="text-white">Grace Window:</strong> Emergency buffer after expiration. Fires urgent Telegram/Email alerts before assets are autonomously swept to heirs.</span>
-              </div>
-              <div class="flex items-start gap-1.5">
-                <span class="text-sky-400 font-bold shrink-0">•</span>
-                <span><strong class="text-white">72h Cooldown:</strong> Shortening intervals or changing destinations triggers an on-chain delay to block acceleration attacks.</span>
-              </div>
-            </div>
           </div>
         </div>
+
       </div>
-
-      <!-- Card 2: Service Description & Multichain Dead-Man's Switch Overview (Right, Expanded) -->
-      <div class="lg:col-span-7 near-card p-6 sm:p-7 flex flex-col justify-between gap-5">
-        <div class="space-y-4">
-          <div class="flex items-center justify-between gap-3 flex-wrap">
-            <div class="flex items-center gap-2.5">
-              <span class="w-2 h-2 rounded-full bg-nearGreen"></span>
-              <span class="text-xs sm:text-sm font-mono font-bold uppercase tracking-wider text-nearGreen">
-                Autonomous Vault Service
-              </span>
-            </div>
-            <div class="flex items-center gap-2 min-w-0 max-w-full">
-              <span id="bunkerEpochPill" class="text-xs font-mono font-bold text-nearGreen bg-nearGreenMuted border border-nearGreen/30 px-3 py-1 rounded-full whitespace-nowrap max-w-full truncate">
-                Derivation Path: aegis/v0 (Active)
-              </span>
-              <span class="text-xs font-mono font-semibold text-textMuted bg-white/[0.04] border border-white/[0.08] px-3 py-1 rounded-full whitespace-nowrap shrink-0">
-                100% Non-Custodial
-              </span>
-            </div>
-          </div>
-
-          <!-- Big Typographic Service Overview -->
-          <div class="space-y-2">
-            <h2 class="text-xl sm:text-2xl md:text-[26px] font-bold text-white tracking-tight leading-snug">
-              Autonomous Dead-Man's Switch & Multichain Inheritance
-            </h2>
-            <p class="text-sm sm:text-base text-[#C5CAD3] leading-relaxed">
-              Non-custodial automated asset recovery and inheritance contract for <span class="text-white font-semibold">Bitcoin, EVM, and Solana</span>. If heartbeat interval expires, threshold signatures autonomously sweep assets to designated family or backup addresses — without sharing seed phrases or relying on third parties.
-            </p>
-          </div>
-
-          <!-- Feature Highlights Grid -->
-          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
-            <div class="p-3.5 sm:p-4 rounded-xl bg-white/[0.03] border border-white/[0.06]">
-              <div class="text-xs font-mono uppercase text-nearGreen font-bold tracking-wider">Self-Funded Egress</div>
-              <div class="text-xs sm:text-[13px] text-[#A6B0C3] mt-1.5 leading-relaxed">L1 fees deducted directly from swept assets. 0.00 USD platform fee.</div>
-            </div>
-            <div class="p-3.5 sm:p-4 rounded-xl bg-white/[0.03] border border-white/[0.06]">
-              <div class="text-xs font-mono uppercase text-nearGreen font-bold tracking-wider">72h Policy Timelock</div>
-              <div class="text-xs sm:text-[13px] text-[#A6B0C3] mt-1.5 leading-relaxed">Destination address updates require a 72-hour delay before activation.</div>
-            </div>
-            <div class="p-3.5 sm:p-4 rounded-xl bg-white/[0.03] border border-white/[0.06]">
-              <div class="text-xs font-mono uppercase text-nearGreen font-bold tracking-wider">Chain Signatures</div>
-              <div class="text-xs sm:text-[13px] text-[#A6B0C3] mt-1.5 leading-relaxed">Native L1 transfers signed via decentralized NEAR MPC network.</div>
-            </div>
-          </div>
-        </div>
-
-        <div class="pt-4 border-t border-white/[0.08] text-xs font-mono text-[#A6B0C3] flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-          <span class="flex items-center gap-2">
-            <span class="w-1.5 h-1.5 rounded-full bg-nearGreen shrink-0"></span>
-            <span class="truncate">Deterministic Path Rotation (aegis/v0 → v1)</span>
-          </span>
-          <span class="text-[#8E99AD] shrink-0 whitespace-nowrap">0.00 USD Platform Fee · 100% Free</span>
-        </div>
-      </div>
-
     </div>
 
     <!-- SECTION 1: Recovery Destinations & Beneficiaries -->
@@ -6409,42 +6332,6 @@ if (typeof window !== "undefined") {
                 </div>
               </div>
             </div>
-
-            <!-- Panic Execution Guard Configuration Card -->
-            <div class="mt-5 p-4 rounded-xl bg-white/[0.03] border border-white/[0.08] flex-1 flex flex-col justify-between">
-              <div class="flex items-center justify-between gap-3 h-7 shrink-0">
-                <div class="flex items-center gap-2">
-                  <span id="panicGuardStatusDot" class="w-2.5 h-2.5 rounded-full bg-nearGreen"></span>
-                  <span class="text-xs sm:text-sm font-bold text-white font-mono uppercase tracking-wider">Panic Trigger Guard</span>
-                </div>
-                <label class="relative inline-flex items-center cursor-pointer shrink-0">
-                  <input type="checkbox" id="panicArmTabToggle" onchange="toggleInstantPanic(this.checked)" class="sr-only peer">
-                  <div class="w-11 h-6 bg-white/[0.1] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-600"></div>
-                </label>
-              </div>
-
-              <div class="flex-1 flex flex-col justify-between gap-2.5 mt-3 text-xs leading-relaxed">
-                <div id="panicModeSafeDesc" class="flex-1 p-2.5 rounded-lg bg-white/[0.02] border border-nearGreen/30 text-white transition flex flex-col justify-center">
-                  <div class="font-bold text-nearGreen flex items-center gap-1.5">
-                    <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                    <span>Mode 1: Safety Buffer (Default — 3s Hold Required)</span>
-                  </div>
-                  <p class="text-[#B0B9C9] text-[11px] mt-1 leading-snug">
-                    Pressing <em>EMERGENCY PANIC</em> opens a confirmation modal requiring a <strong>3-second continuous hold</strong>. Eliminates accidental triggers.
-                  </p>
-                </div>
-
-                <div id="panicModeArmedDesc" class="flex-1 p-2.5 rounded-lg bg-white/[0.02] border border-white/[0.06] text-[#8C929D] opacity-60 transition flex flex-col justify-center">
-                  <div class="font-bold text-red-400 flex items-center gap-1.5">
-                    <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" /></svg>
-                    <span>Mode 2: 1-Click Panic Armed (Instant Execution)</span>
-                  </div>
-                  <p class="text-[#8C929D] text-[11px] mt-1 leading-snug">
-                    Confirmation modal is bypassed. Top navigation button arms in red: <strong>⚡ 1-CLICK PANIC</strong>. Clicking immediately signs and evacuates all assets.
-                  </p>
-                </div>
-              </div>
-            </div>
           </div>
 
           <!-- Right Column: Family Push Inheritance (Heirs) -->
@@ -6523,57 +6410,19 @@ if (typeof window !== "undefined") {
                     <input type="text" id="heirSolAddr" value="" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="e.g. Solana Base58 Address..." class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none">
                   </div>
                 </div>
-              </div>
-            </div>
 
-            <!-- On-Chain Digital Testament & Sealed Box Card -->
-            <div class="mt-5 p-4 rounded-xl bg-white/[0.03] border border-white/[0.08] flex-1 flex flex-col justify-between">
-              <div class="flex items-center justify-between gap-2 flex-wrap shrink-0">
-                <div class="flex items-center gap-2">
-                  <span class="w-2.5 h-2.5 rounded-full bg-nearGreen"></span>
-                  <span class="text-xs sm:text-sm font-bold text-white font-mono uppercase tracking-wider">Digital Testament</span>
-                </div>
-                <div class="flex items-center gap-1.5 flex-wrap">
-                  <div class="inline-flex rounded-full bg-white/[0.04] border border-white/10 p-0.5 text-[10px] font-mono font-bold">
-                    <button type="button" id="testamentModeE2eeBtn" onclick="setTestamentMode('e2ee')" class="px-2 py-0.5 rounded-full bg-nearGreen text-nearBlack transition cursor-pointer">
-                      🔒 E2EE Sealed
-                    </button>
-                    <button type="button" id="testamentModePlainBtn" onclick="setTestamentMode('plaintext')" class="px-2 py-0.5 rounded-full text-[#8C929D] hover:text-white transition cursor-pointer">
-                      📄 Public Text
-                    </button>
+                <!-- Optional Note to Heirs -->
+                <div class="space-y-1.5 pt-2 border-t border-white/[0.06]">
+                  <div class="flex items-center justify-between text-xs">
+                    <label class="text-[#8C929D] font-mono text-[11px] uppercase font-semibold">Message to Heirs (Optional)</label>
+                    <span id="memoByteCount" class="text-[10px] text-nearGreen font-mono font-bold">0 / 240 B</span>
                   </div>
-                  <button type="button" onclick="openDecryptModal()" class="text-[10px] font-mono font-bold text-white bg-white/[0.06] hover:bg-white/[0.12] border border-white/15 px-2.5 py-0.5 rounded-full transition cursor-pointer">
-                    🔓 Decrypt
-                  </button>
-                </div>
-              </div>
-
-              <div class="flex-1 flex flex-col justify-between gap-2.5 mt-3 text-xs leading-relaxed">
-                <!-- Subcard 1: Input + Optional Passphrase -->
-                <div class="flex-1 p-2.5 rounded-lg bg-white/[0.02] border border-nearGreen/30 text-white transition flex flex-col justify-center space-y-1.5">
-                  <div class="flex items-center justify-between font-bold text-nearGreen">
-                    <div class="flex items-center gap-1.5">
-                      <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" /></svg>
-                      <span id="testamentInputModeLabel">Private Note to Heirs (Zero Plaintext On-Chain)</span>
-                    </div>
-                    <span id="memoByteCount" class="font-mono text-nearGreen text-xs font-bold">0 / 240 B</span>
+                  <div class="flex items-center rounded-xl bg-white/[0.02] border border-white/[0.08] focus-within:border-nearGreen transition overflow-hidden">
+                    <span class="px-3 py-2.5 text-xs font-mono font-bold text-nearGreen bg-white/[0.03] border-r border-white/[0.06] shrink-0">
+                      NOTE
+                    </span>
+                    <input type="text" id="heirFinalMemo" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" oninput="updateMemoByteCounter(this.value)" placeholder="Optional note sent with inheritance transfer..." class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none">
                   </div>
-                  <input type="text" id="heirFinalMemo" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" oninput="updateMemoByteCounter(this.value)" placeholder="e.g. Hardware wallet PIN & family vault instructions..." class="w-full bg-transparent pt-0.5 text-xs sm:text-[13px] font-mono text-white placeholder:text-[#585E6A] outline-none">
-                  <div id="heirMemoPassphraseRow" class="flex items-center gap-2 pt-1 border-t border-white/[0.06]">
-                    <input type="password" id="heirMemoPassphrase" autocomplete="new-password" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly data-lpignore="true" data-1p-ignore="true" placeholder="Optional passphrase (blank = Heir SOL key)" class="w-full bg-transparent text-[11px] font-mono text-white placeholder:text-[#585E6A] outline-none">
-                    <span id="e2eeArmedStatus" class="hidden text-[10px] font-mono text-nearGreen whitespace-nowrap font-bold">🔒 Sealed</span>
-                  </div>
-                </div>
-
-                <!-- Subcard 2: Cryptographic Guarantee / Explorer Visibility -->
-                <div class="flex-1 p-2.5 rounded-lg bg-white/[0.02] border border-white/[0.06] text-[#8C929D] transition flex flex-col justify-center">
-                  <div class="font-bold text-nearGreen flex items-center gap-1.5">
-                    <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" /></svg>
-                    <span id="testamentDescTitle">Client-Side X25519 / AES-256-GCM Sealed Box</span>
-                  </div>
-                  <p id="testamentDescBody" class="text-[#8C929D] text-[11px] mt-1 leading-snug">
-                    Encrypted locally in your browser before touching NEAR RPC. Stored as <code>enc:x25519:...</code> or <code>enc:aes256:...</code> in EVM Calldata &amp; Solana SPL Memo; decryptable offline only by your heir. Switch to <strong>📄 Public Text</strong> to make raw words readable directly on Etherscan &amp; Solscan.
-                  </p>
                 </div>
               </div>
             </div>
@@ -6594,13 +6443,6 @@ if (typeof window !== "undefined") {
               <p class="text-xs text-[#8C929D]">
                 Fund redirection to arbitrary addresses is rejected by smart contract logic.
               </p>
-              <div class="flex flex-wrap items-center gap-2 pt-1 text-[11px] font-mono">
-                <span class="text-[#8C929D]">Keeper Gas Escrow:</span>
-                <span id="gasEscrowBalanceText" class="text-nearGreen font-bold">Sponsor Pool Ready</span>
-                <button type="button" onclick="topUpGasEscrow()" class="px-2 py-0.5 rounded-md bg-white/[0.05] hover:bg-white/[0.1] border border-white/10 text-nearGreen text-[10px] font-bold transition cursor-pointer">
-                  +0.25 NEAR Escrow
-                </button>
-              </div>
             </div>
 
             <div class="flex items-center gap-3">
@@ -6930,178 +6772,6 @@ if (typeof window !== "undefined") {
 
       </div>
 
-    </section>
-
-    <!-- SECTION 3: Emergency Alerts & Notifications -->
-    <section id="panel-alerts" class="tab-panel space-y-6 pt-6 border-t border-white/[0.08]">
-      <div class="space-y-6">
-        
-        <!-- Header row -->
-        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/[0.08] pb-5">
-          <div>
-            <div class="flex items-center gap-2.5 flex-wrap">
-              <span class="w-2.5 h-2.5 rounded-full bg-nearGreen radar-pulse"></span>
-              <h3 class="text-base sm:text-lg font-bold text-white tracking-tight">Automated Relayer Alerts</h3>
-              <span class="text-[10px] font-mono font-bold text-amber-300 bg-amber-950/40 border border-amber-500/30 px-2.5 py-0.5 rounded-full">Optional Off-Chain Webhook Preview</span>
-            </div>
-            <p class="text-xs sm:text-sm text-[#8C929D] mt-1">
-              Optional off-chain notification targets prior to heartbeat expiry. Core Dead-Man's Switch & MPC sweeps execute 100% autonomously on-chain without relying on Telegram or email delivery.
-            </p>
-          </div>
-          <div id="tgStatusBadge" class="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/[0.04] border border-white/[0.08] text-xs font-mono text-[#DFE3E8] whitespace-nowrap shrink-0 self-start sm:self-center">
-            <span class="w-2 h-2 rounded-full bg-nearGreen radar-pulse shrink-0"></span>
-            <span>Relayer Bot: <strong class="text-nearGreen">Active</strong></span>
-          </div>
-        </div>
-
-        <!-- Heartbeat Escalation Timeline (Sleek Connected Workflow) -->
-        <div class="rounded-2xl bg-[#0B0D12] border border-white/[0.08] p-6 space-y-5">
-          <div class="flex items-center justify-between">
-            <h4 class="text-sm font-bold text-white tracking-tight">Heartbeat Escalation Sequence</h4>
-            <span class="text-[10px] font-mono text-[#8C929D] uppercase tracking-wider">Automated Workflow</span>
-          </div>
-
-          <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-            
-            <!-- Step 1 -->
-            <div class="p-4 rounded-xl bg-white/[0.02] border border-white/[0.06] space-y-2">
-              <div class="flex items-center justify-between">
-                <span class="text-xs font-mono font-bold text-nearGreen">T - 14 Days</span>
-                <span class="w-2 h-2 rounded-full bg-nearGreen"></span>
-              </div>
-              <div class="text-sm font-bold text-white">First Pulse</div>
-              <p class="text-xs text-[#B0B9C9] leading-relaxed">
-                Gentle check-in reminder dispatched via Telegram bot and email.
-              </p>
-            </div>
-
-            <!-- Step 2 -->
-            <div class="p-4 rounded-xl bg-white/[0.02] border border-white/[0.06] space-y-2">
-              <div class="flex items-center justify-between">
-                <span class="text-xs font-mono font-bold text-amber-300">T - 3 Days</span>
-                <span class="w-2 h-2 rounded-full bg-amber-400"></span>
-              </div>
-              <div class="text-sm font-bold text-white">Urgent Escalation</div>
-              <p class="text-xs text-[#B0B9C9] leading-relaxed">
-                High-priority notification. Action required to prevent grace transition.
-              </p>
-            </div>
-
-            <!-- Step 3 -->
-            <div class="p-4 rounded-xl bg-white/[0.02] border border-white/[0.06] space-y-2">
-              <div class="flex items-center justify-between">
-                <span class="text-xs font-mono font-bold text-red-400">T - 0 (Grace)</span>
-                <span class="w-2 h-2 rounded-full bg-red-400 animate-pulse"></span>
-              </div>
-              <div class="text-sm font-bold text-white">Final Safety Window</div>
-              <p class="text-xs text-[#B0B9C9] leading-relaxed">
-                7-day emergency window with daily alerts before irreversible sweep.
-              </p>
-            </div>
-
-            <!-- Step 4 -->
-            <div class="p-4 rounded-xl bg-white/[0.02] border border-white/[0.06] space-y-2">
-              <div class="flex items-center justify-between">
-                <span class="text-xs font-mono font-bold text-white">Execution</span>
-                <span class="w-2 h-2 rounded-full bg-white"></span>
-              </div>
-              <div class="text-sm font-bold text-white">Autonomous Transfer</div>
-              <p class="text-xs text-[#B0B9C9] leading-relaxed">
-                Push inheritance executes on-chain and dispatches receipt confirmation.
-              </p>
-            </div>
-
-          </div>
-        </div>
-
-        <!-- 2 Notification Channel Cards (Telegram + Email) -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-
-          <!-- Telegram Channel Card -->
-          <div class="rounded-2xl bg-[#0B0D12] border border-white/[0.08] hover:border-white/[0.14] p-6 space-y-5 transition-all flex flex-col justify-between">
-            <div class="space-y-4">
-              <div class="flex items-start justify-between">
-                <div class="flex items-center gap-3">
-                  <div class="w-10 h-10 rounded-xl bg-[#229ED9]/10 text-[#229ED9] flex items-center justify-center font-bold">
-                    <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69a.2.2 0 00-.05-.18c-.06-.05-.14-.03-.21-.02-.09.02-1.49.95-4.22 2.79-.4.27-.76.41-1.08.4-.36-.01-1.04-.2-1.55-.37-.63-.2-1.12-.31-1.08-.66.02-.18.27-.36.75-.55 2.93-1.28 4.88-2.12 5.86-2.54 2.79-1.19 3.37-1.4 3.75-1.4.08 0 .27.02.39.12.1.08.13.19.14.27-.01.06.01.24 0 .37z"/></svg>
-                  </div>
-                  <div>
-                    <h4 class="text-sm font-bold text-white">Telegram Bot Alerts</h4>
-                    <span class="text-xs text-[#A6B0C3]">Direct push messages to your handle</span>
-                  </div>
-                </div>
-                <span class="text-[10px] font-mono text-nearGreen bg-nearGreenMuted border border-nearGreen/30 px-2 py-0.5 rounded-full">
-                  Primary
-                </span>
-              </div>
-
-              <div class="space-y-1.5">
-                <label class="block text-xs font-mono uppercase text-[#A6B0C3] font-semibold">Your Telegram Username / Chat ID</label>
-                <div class="flex items-center rounded-xl bg-white/[0.02] border border-white/[0.08] focus-within:border-nearGreen transition overflow-hidden">
-                  <span class="px-3.5 py-2.5 text-xs font-mono font-bold text-[#A6B0C3] bg-white/[0.03] border-r border-white/[0.06]">
-                    @
-                  </span>
-                  <input id="tgUsernameInput" type="text" value="" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#6E788C] outline-none" placeholder="username or Chat ID">
-                </div>
-              </div>
-            </div>
-
-            <div class="pt-3 border-t border-white/[0.06] flex items-center justify-between text-xs">
-              <span class="text-[#8C929D]">Test delivery:</span>
-              <button onclick="sendTestAlert()" class="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-white font-mono text-xs border border-white/[0.08] transition flex items-center gap-1.5">
-                <span>Send Test Ping</span>
-              </button>
-            </div>
-          </div>
-
-          <!-- Email Channel Card -->
-          <div class="rounded-2xl bg-[#0B0D12] border border-white/[0.08] hover:border-white/[0.14] p-6 space-y-5 transition-all flex flex-col justify-between">
-            <div class="space-y-4">
-              <div class="flex items-start justify-between">
-                <div class="flex items-center gap-3">
-                  <div class="w-10 h-10 rounded-xl bg-purple-500/10 text-purple-400 flex items-center justify-center font-bold">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" /></svg>
-                  </div>
-                  <div>
-                    <h4 class="text-sm font-bold text-white">Failover Email Alerts</h4>
-                    <span class="text-xs text-[#8C929D]">Secondary channel if Telegram is muted</span>
-                  </div>
-                </div>
-                <span class="text-[10px] font-mono text-[#8C929D] bg-white/[0.04] px-2 py-0.5 rounded-full">
-                  Failover
-                </span>
-              </div>
-
-              <div class="space-y-1.5">
-                <label class="block text-xs font-mono uppercase text-[#8C929D] font-semibold">Your Backup Email Address</label>
-                <div class="flex items-center rounded-xl bg-white/[0.02] border border-white/[0.08] focus-within:border-nearGreen transition overflow-hidden">
-                  <span class="px-3.5 py-2.5 text-xs text-[#8C929D] bg-white/[0.03] border-r border-white/[0.06]">
-                    ✉
-                  </span>
-                  <input id="emailAlertInput" type="text" value="" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none" placeholder="your-email@domain.com">
-                </div>
-              </div>
-            </div>
-
-            <div class="pt-3 border-t border-white/[0.06] flex items-center justify-between text-xs">
-              <span class="text-[#8C929D]">Failover status:</span>
-              <span class="text-nearGreen font-mono font-medium">Standby & Armed</span>
-            </div>
-          </div>
-
-        </div>
-
-        <!-- Notification Action Footer -->
-        <div class="rounded-2xl bg-[#0B0D12] border border-white/[0.08] p-5 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div class="text-xs text-[#8C929D] text-center sm:text-left">
-            Notifications are dispatched autonomously via NEAR MPC off-chain relayer nodes without third-party tracking.
-          </div>
-          <button onclick="saveAlertSettings()" class="bg-nearGreen hover:bg-nearGreenHover text-nearBlack font-extrabold py-3 px-8 rounded-xl text-xs sm:text-sm transition shadow-near-glow active:scale-98 whitespace-nowrap w-full sm:w-auto">
-            Save Alert Preferences
-          </button>
-        </div>
-
-      </div>
     </section>
 
   </main>
@@ -11322,10 +10992,10 @@ if (typeof window !== "undefined") {
 
     // Destination Policies & 72h Timelock
 
-    window.testamentMode = localStorage.getItem('aegis_testament_mode') === 'plaintext' ? 'plaintext' : 'e2ee';
+    window.testamentMode = 'plaintext';
 
     function setTestamentMode(mode, persist = true) {
-      window.testamentMode = mode === 'plaintext' ? 'plaintext' : 'e2ee';
+      window.testamentMode = 'plaintext';
       if (persist) {
         localStorage.setItem('aegis_testament_mode', window.testamentMode);
         isEditing = true;
