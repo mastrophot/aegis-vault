@@ -7020,47 +7020,9 @@ if (typeof window !== "undefined") {
         </button>
       </div>
 
-      <!-- NEAR Wallet Type Filter Tabs -->
-      <div class="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
-        <button onclick="filterWalletNetwork('all')" id="tabNetAll" class="network-tab-btn px-3.5 py-1.5 rounded-full text-xs font-mono font-bold transition flex items-center gap-1.5 bg-[#00F5D4]/20 text-[#00F5D4] border border-[#00F5D4]/40 cursor-pointer">
-          <span>🌐 All NEAR Wallets (7)</span>
-        </button>
-        <button onclick="filterWalletNetwork('web')" id="tabNetWeb" class="network-tab-btn px-3.5 py-1.5 rounded-full text-xs font-mono font-bold transition flex items-center gap-1.5 bg-white/[0.04] text-[#8E99AD] hover:text-white border border-white/[0.08] cursor-pointer">
-          <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
-          <span>⚡ Web &amp; Mobile (Zero Install)</span>
-        </button>
-        <button onclick="filterWalletNetwork('ext')" id="tabNetExt" class="network-tab-btn px-3.5 py-1.5 rounded-full text-xs font-mono font-bold transition flex items-center gap-1.5 bg-white/[0.04] text-[#8E99AD] hover:text-white border border-white/[0.08] cursor-pointer">
-          <span class="w-2 h-2 rounded-full bg-cyan-400"></span>
-          <span>🧩 Browser Extensions</span>
-        </button>
-      </div>
-
       <!-- Wallets Grid -->
-      <div id="walletsGrid" class="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[340px] overflow-y-auto pr-1">
+      <div id="walletsGrid" class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
         <!-- Rendered dynamically -->
-      </div>
-
-      <!-- Judge / CLI Testnet KeyPair Fast Login (Zero-Extension Testing) -->
-      <div class="rounded-2xl bg-white/[0.02] border border-white/[0.08] overflow-hidden">
-        <button onclick="toggleDevLogin()" type="button" class="w-full px-4 py-2.5 flex items-center justify-between text-left hover:bg-white/[0.04] transition cursor-pointer">
-          <div class="flex items-center gap-2">
-            <span class="text-xs font-mono font-bold text-[#B8C4D9]">🔑 Judge / CLI Testnet KeyPair Login (`ed25519:...`)</span>
-            <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-purple-500/15 text-purple-300 border border-purple-500/30">Instant RPC Auth</span>
-          </div>
-          <span id="devLoginChevron" class="text-xs text-[#8E99AD] font-mono">▼</span>
-        </button>
-        <div id="devLoginPanel" class="hidden px-4 pb-4 pt-2 border-t border-white/[0.06] space-y-2.5">
-          <p class="text-[11px] text-[#8E99AD] leading-relaxed">
-            For hackathon judges or automated testing: connect directly with any NEAR Testnet account ID and `ed25519:...` private key (verifies `view_access_key` on-chain before signing).
-          </p>
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <input id="devAccountInput" type="text" placeholder="account.testnet" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" class="w-full bg-black/50 border border-white/15 rounded-xl px-3 py-2 text-xs font-mono text-white placeholder-[#6E788C] focus:outline-none focus:border-[#00F5D4]" />
-            <input id="devKeyInput" type="password" placeholder="ed25519:..." autocomplete="new-password" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" class="w-full bg-black/50 border border-white/15 rounded-xl px-3 py-2 text-xs font-mono text-white placeholder-[#6E788C] focus:outline-none focus:border-[#00F5D4]" />
-          </div>
-          <button onclick="connectDevKeyPair()" type="button" class="w-full py-2 px-4 rounded-xl bg-[#00F5D4]/15 hover:bg-[#00F5D4]/25 border border-[#00F5D4]/40 text-[#00F5D4] text-xs font-mono font-bold transition cursor-pointer">
-            Verify On-Chain Key &amp; Connect Account
-          </button>
-        </div>
       </div>
 
       <!-- Currently Connected Wallets Summary inside Modal -->
@@ -7073,9 +7035,9 @@ if (typeof window !== "undefined") {
       </div>
 
       <!-- Footer Info -->
-      <div class="text-[11px] font-mono text-[#6E788C] flex items-center justify-between border-t border-white/[0.06] pt-3.5">
-        <span>Smart contract: <strong class="text-[#A6B0C3]">aegis.okgoogleok.testnet</strong></span>
-        <span class="text-[#00F5D4] font-semibold">Least-Privilege FunctionCall Keys · NEP-413</span>
+      <div class="text-[11px] font-mono text-[#6E788C] flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.06] pt-3.5">
+        <span>Contract: <strong class="text-[#A6B0C3]">aegis.okgoogleok.testnet</strong></span>
+        <span class="text-[#00F5D4] font-semibold">NEP-413 · FunctionCall Access Keys</span>
       </div>
 
     </div>
@@ -8187,80 +8149,59 @@ if (typeof window !== "undefined") {
     let nearConnection = null;
     let nearWallet = null;
 
-    function toggleDevLogin() {
-      const panel = document.getElementById('devLoginPanel');
-      const chevron = document.getElementById('devLoginChevron');
-      if (panel) {
-        const isHidden = panel.classList.toggle('hidden');
-        if (chevron) {
-          chevron.innerText = isHidden ? '▼' : '▲';
-        }
-      }
-    }
-
     // NEAR Protocol Wallet Definitions & Security-Hardened Connectors
     const WALLET_DEFINITIONS = [
       {
         id: 'meteor',
-        network: 'web',
-        alsoExt: true,
         name: 'Meteor Wallet',
-        desc: 'Browser Extension & Web Popup (No Install Needed)',
+        desc: 'Web Popup & Browser Extension',
         chainTag: 'Web + Ext',
         tagColor: 'text-emerald-400 bg-emerald-950/40 border-emerald-500/30',
-        icon: '<svg class="w-6 h-6 text-emerald-400" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L14.4 7.2L20 8L16 12L17 17.6L12 15L7 17.6L8 12L4 8L9.6 7.2L12 2Z"/></svg>',
+        icon: '<svg class="w-5 h-5 text-emerald-400" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L14.4 7.2L20 8L16 12L17 17.6L12 15L7 17.6L8 12L4 8L9.6 7.2L12 2Z"/></svg>',
         isInstalled: () => typeof window !== 'undefined' && Boolean(window.meteorWallet),
         isWebReady: true,
         connect: () => connectNearDirect('meteor')
       },
       {
         id: 'mynearwallet',
-        network: 'web',
-        alsoExt: false,
         name: 'MyNearWallet',
-        desc: 'Official NEAR Testnet Web Wallet (testnet.mynearwallet.com)',
-        chainTag: 'Official Web',
+        desc: 'Official NEAR Testnet Web Wallet',
+        chainTag: 'Web',
         tagColor: 'text-emerald-400 bg-emerald-950/40 border-emerald-500/30',
-        icon: '<svg class="w-6 h-6 text-[#00F5D4]" viewBox="0 0 24 24" fill="currentColor"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-2 14h-2.4l-5.6-8.4V17H7V7h2.4l5.6 8.4V7H17v10z"/></svg>',
+        icon: '<svg class="w-5 h-5 text-[#00F5D4]" viewBox="0 0 24 24" fill="currentColor"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-2 14h-2.4l-5.6-8.4V17H7V7h2.4l5.6 8.4V7H17v10z"/></svg>',
         isInstalled: () => false,
         isWebReady: true,
         connect: () => connectNearDirect('mynearwallet')
       },
       {
         id: 'here',
-        network: 'web',
-        alsoExt: false,
         name: 'HERE / HOT Wallet',
-        desc: 'Mobile QR, Telegram HOT & Web Wallet',
+        desc: 'Mobile QR & Telegram HOT',
         chainTag: 'QR + Web',
         tagColor: 'text-amber-400 bg-amber-950/40 border-amber-500/30',
-        icon: '<svg class="w-6 h-6 text-amber-400" viewBox="0 0 24 24" fill="currentColor"><path d="M4 6h16v12H4z"/></svg>',
+        icon: '<svg class="w-5 h-5 text-amber-400" viewBox="0 0 24 24" fill="currentColor"><path d="M4 6h16v12H4z"/></svg>',
         isInstalled: () => false,
         isWebReady: true,
         connect: () => connectNearDirect('here')
       },
       {
         id: 'bitte',
-        network: 'web',
-        alsoExt: false,
         name: 'Bitte AI Wallet',
-        desc: 'NEAR Passkey & AI Web Wallet (Mintbase)',
-        chainTag: 'Web Passkey',
+        desc: 'NEAR Passkey Web Wallet',
+        chainTag: 'Passkey',
         tagColor: 'text-purple-400 bg-purple-950/40 border-purple-500/30',
-        icon: '<svg class="w-6 h-6 text-purple-400" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3 7h7l-5.5 4.5 2 7L12 16l-6.5 4.5 2-7L2 9h7z"/></svg>',
+        icon: '<svg class="w-5 h-5 text-purple-400" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3 7h7l-5.5 4.5 2 7L12 16l-6.5 4.5 2-7L2 9h7z"/></svg>',
         isInstalled: () => false,
         isWebReady: true,
         connect: () => connectNearDirect('bitte')
       },
       {
         id: 'nightly',
-        network: 'ext',
-        alsoExt: true,
         name: 'Nightly Wallet',
-        desc: 'NEAR & Multichain Browser Extension',
+        desc: 'Multichain Browser Extension',
         chainTag: 'Extension',
         tagColor: 'text-cyan-400 bg-cyan-950/40 border-cyan-500/30',
-        icon: '<svg class="w-6 h-6 text-indigo-400" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10"/></svg>',
+        icon: '<svg class="w-5 h-5 text-indigo-400" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10"/></svg>',
         isInstalled: () => typeof window !== 'undefined' && Boolean(window.nightly?.near),
         isWebReady: false,
         downloadUrl: 'https://nightly.app/download',
@@ -8268,13 +8209,11 @@ if (typeof window !== "undefined") {
       },
       {
         id: 'sender',
-        network: 'ext',
-        alsoExt: true,
         name: 'Sender Wallet',
-        desc: 'Dedicated NEAR Browser Extension',
+        desc: 'NEAR Browser Extension',
         chainTag: 'Extension',
         tagColor: 'text-cyan-400 bg-cyan-950/40 border-cyan-500/30',
-        icon: '<svg class="w-6 h-6 text-cyan-400" viewBox="0 0 24 24" fill="currentColor"><path d="M2 12l20-9-9 20-3-8-8-3z"/></svg>',
+        icon: '<svg class="w-5 h-5 text-cyan-400" viewBox="0 0 24 24" fill="currentColor"><path d="M2 12l20-9-9 20-3-8-8-3z"/></svg>',
         isInstalled: () => typeof window !== 'undefined' && Boolean(window.near && window.near.isSender),
         isWebReady: false,
         downloadUrl: 'https://sender.org',
@@ -8282,13 +8221,11 @@ if (typeof window !== "undefined") {
       },
       {
         id: 'okx_near',
-        network: 'ext',
-        alsoExt: true,
-        name: 'OKX Wallet (NEAR)',
-        desc: 'NEAR Protocol Browser Extension (window.okxwallet.near)',
+        name: 'OKX Wallet',
+        desc: 'NEAR Browser Extension',
         chainTag: 'Extension',
         tagColor: 'text-cyan-400 bg-cyan-950/40 border-cyan-500/30',
-        icon: '<svg class="w-6 h-6 text-white" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>',
+        icon: '<svg class="w-5 h-5 text-white" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>',
         isInstalled: () => typeof window !== 'undefined' && Boolean(window.okxwallet?.near),
         isWebReady: false,
         downloadUrl: 'https://www.okx.com/web3',
@@ -8296,14 +8233,12 @@ if (typeof window !== "undefined") {
       }
     ];
 
-    let currentNetworkFilter = 'all';
-
     function openMultichainWalletModal() {
       localStorage.removeItem('aegis_manual_logout');
       const modal = document.getElementById('multichainWalletModal');
       if (modal) {
         modal.classList.remove('hidden');
-        filterWalletNetwork(currentNetworkFilter || 'all');
+        renderWalletsGrid();
         renderModalConnectedSummary();
       }
     }
@@ -8313,53 +8248,27 @@ if (typeof window !== "undefined") {
       if (modal) modal.classList.add('hidden');
     }
 
-    function filterWalletNetwork(net) {
-      currentNetworkFilter = net;
-      ['all', 'web', 'ext'].forEach(n => {
-        const btn = document.getElementById('tabNet' + n.charAt(0).toUpperCase() + n.slice(1));
-        if (btn) {
-          if (n === net) {
-            btn.className = 'network-tab-btn active px-3.5 py-1.5 rounded-full text-xs font-mono font-bold transition flex items-center gap-1.5 bg-[#00F5D4]/20 text-[#00F5D4] border border-[#00F5D4]/40 cursor-pointer';
-          } else {
-            btn.className = 'network-tab-btn px-3.5 py-1.5 rounded-full text-xs font-mono font-bold transition flex items-center gap-1.5 bg-white/[0.04] text-[#8E99AD] hover:text-white border border-white/[0.08] cursor-pointer';
-          }
-        }
-      });
-      renderWalletsGrid(net);
-    }
-
-    function renderWalletsGrid(filter = 'all') {
+    function renderWalletsGrid() {
       const grid = document.getElementById('walletsGrid');
       if (!grid) return;
 
-      const filtered = WALLET_DEFINITIONS.filter(w => {
-        if (filter === 'all') return true;
-        if (filter === 'web') return w.isWebReady;
-        if (filter === 'ext') return w.alsoExt;
-        return true;
-      });
-      grid.innerHTML = filtered.map(w => {
+      grid.innerHTML = WALLET_DEFINITIONS.map(w => {
         const installed = w.isInstalled();
-        const badgeHtml = installed
-          ? '<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>Installed</span>'
-          : (w.isWebReady
-              ? '<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold bg-[#00F5D4]/15 text-[#00F5D4] border border-[#00F5D4]/30">Zero-Install Ready</span>'
-              : '<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono text-[#8E99AD] bg-white/[0.04] border border-white/[0.08]">Extension</span>');
+        const rightTag = installed
+          ? '<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shrink-0"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>Installed</span>'
+          : `<span class="text-[10px] font-mono px-2 py-0.5 rounded-full border ${w.tagColor} shrink-0">${w.chainTag}</span>`;
         return `
-          <div onclick="selectWalletToConnect('${w.id}')" class="flex items-center justify-between p-3.5 rounded-2xl bg-white/[0.03] hover:bg-white/[0.07] border border-white/[0.08] hover:border-[#00F5D4]/40 transition cursor-pointer group shadow-sm active:scale-98">
-            <div class="flex items-center gap-3">
-              <div class="w-10 h-10 rounded-xl bg-white/[0.04] border border-white/[0.08] flex items-center justify-center shrink-0 group-hover:scale-105 transition">
-                ${w.icon}
-              </div>
-              <div>
-                <div class="flex items-center gap-2 flex-wrap">
-                  <span class="font-bold text-white text-sm tracking-tight group-hover:text-[#00F5D4] transition">${w.name}</span>
-                  ${badgeHtml}
-                </div>
-                <div class="text-[11px] text-[#8E99AD]">${w.desc}</div>
-              </div>
+          <div onclick="selectWalletToConnect('${w.id}')" class="flex items-center gap-3 p-3.5 rounded-2xl bg-white/[0.03] hover:bg-white/[0.07] border border-white/[0.08] hover:border-[#00F5D4]/40 transition cursor-pointer group shadow-sm active:scale-98 min-w-0 overflow-hidden">
+            <div class="w-9 h-9 rounded-xl bg-white/[0.04] border border-white/[0.08] flex items-center justify-center shrink-0 group-hover:scale-105 transition">
+              ${w.icon}
             </div>
-            <span class="text-[10px] font-mono px-2 py-0.5 rounded-full border ${w.tagColor} shrink-0">${w.chainTag}</span>
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center justify-between gap-2">
+                <span class="font-bold text-white text-sm truncate group-hover:text-[#00F5D4] transition">${w.name}</span>
+                ${rightTag}
+              </div>
+              <div class="text-[11px] text-[#8E99AD] truncate mt-0.5">${w.desc}</div>
+            </div>
           </div>
         `;
       }).join('');
@@ -8382,36 +8291,6 @@ if (typeof window !== "undefined") {
         }
       }
       return provider;
-    }
-
-    async function connectDevKeyPair() {
-      const accEl = document.getElementById('devAccountInput');
-      const keyEl = document.getElementById('devKeyInput');
-      const acc = accEl ? accEl.value.trim() : '';
-      const key = keyEl ? keyEl.value.trim() : '';
-      if (!acc || !key) {
-        showToast('Enter both NEAR Testnet Account ID and ed25519:... Private Key', true);
-        return;
-      }
-      try {
-        showToast(`Verifying on-chain access key for ${acc}...`);
-        const provider = await waitForWalletProvider();
-        if (!provider || typeof provider.verifyAndConnectKeyPair !== 'function') {
-          throw new Error('Wallet bundle not ready');
-        }
-        const res = await provider.verifyAndConnectKeyPair(acc, key, CONTRACT_ID);
-        if (keyEl) keyEl.value = '';
-        closeMultichainWalletModal();
-        updateWalletConnectedUI(res.accountId);
-        updateMultichainConnectedUI();
-        fetchAccountNearBalance(res.accountId);
-        fetchLiveContractState();
-        renderBunkerAddresses();
-        showToast(`✅ Connected ${res.accountId} (${res.permission} key verified on-chain)`);
-      } catch (err) {
-        console.error('[Aegis] Dev KeyPair login error:', err);
-        showToast(`Key verification failed: ${err.message}`, true);
-      }
     }
 
     async function connectNearDirect(type) {
