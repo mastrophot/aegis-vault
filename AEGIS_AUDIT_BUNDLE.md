@@ -5359,28 +5359,16 @@ export function detectInstalledWallets() {
   };
 }
 
-export async function disconnectWallet(contractId = "aegis.okgoogleok.testnet") {
-  try {
-    const sel = selector || (await getSelector(contractId));
-    if (sel) {
-      const wallet = await sel.wallet();
-      if (wallet && typeof wallet.signOut === "function") {
-        await wallet.signOut();
-      }
-    }
-  } catch (e) {}
+export async function disconnectWallet() {
+  // Reset in-memory selector & modal instances without triggering an on-chain DeleteKey signature popup
+  selector = null;
+  modal = null;
   if (typeof window !== "undefined") {
-    try {
-      if (window.okxwallet?.near?.signOut) await window.okxwallet.near.signOut();
-    } catch (_) {}
-    try {
-      if (window.meteorWallet?.signOut) await window.meteorWallet.signOut();
-    } catch (_) {}
     localStorage.removeItem("aegis_signer_account");
     localStorage.removeItem("aegis_wallet_type");
     localStorage.removeItem("aegis_testnet_signer_key");
     localStorage.removeItem("aegis_mnw_pending_key");
-    // Clear @near-wallet-selector and wallet session persistence keys
+    // Clear @near-wallet-selector and wallet session persistence keys locally
     const keysToRemove = [];
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i);
@@ -5851,9 +5839,6 @@ if (typeof window !== "undefined") {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Aegis — Multichain MPC Dead-Man's Switch · Built on NEAR Protocol</title>
-  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-  <meta http-equiv="Pragma" content="no-cache">
-  <meta http-equiv="Expires" content="0">
   
   <!-- NEAR Protocol Brand Typography: Manrope & JetBrains Mono -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -5875,7 +5860,7 @@ if (typeof window !== "undefined") {
   </script>
   <!-- NEAR Wallet Selector Official Styles & Standalone Bundle -->
   <link rel="stylesheet" href="./wallet-selector-modal.css">
-  <script src="./wallet-bundle.js"></script>
+  <script src="./wallet-bundle.js" defer></script>
   
   <script>
     tailwind.config = {
@@ -8537,6 +8522,7 @@ if (typeof window !== "undefined") {
         }
       }
       keysToPurge.forEach(k => localStorage.removeItem(k));
+      _selectorSubAttached = false;
       lastFetchedVaultInfo = null;
       updateMultichainConnectedUI();
       updateWalletDisconnectedUI();

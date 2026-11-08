@@ -239,28 +239,16 @@ export function detectInstalledWallets() {
   };
 }
 
-export async function disconnectWallet(contractId = "aegis.okgoogleok.testnet") {
-  try {
-    const sel = selector || (await getSelector(contractId));
-    if (sel) {
-      const wallet = await sel.wallet();
-      if (wallet && typeof wallet.signOut === "function") {
-        await wallet.signOut();
-      }
-    }
-  } catch (e) {}
+export async function disconnectWallet() {
+  // Reset in-memory selector & modal instances without triggering an on-chain DeleteKey signature popup
+  selector = null;
+  modal = null;
   if (typeof window !== "undefined") {
-    try {
-      if (window.okxwallet?.near?.signOut) await window.okxwallet.near.signOut();
-    } catch (_) {}
-    try {
-      if (window.meteorWallet?.signOut) await window.meteorWallet.signOut();
-    } catch (_) {}
     localStorage.removeItem("aegis_signer_account");
     localStorage.removeItem("aegis_wallet_type");
     localStorage.removeItem("aegis_testnet_signer_key");
     localStorage.removeItem("aegis_mnw_pending_key");
-    // Clear @near-wallet-selector and wallet session persistence keys
+    // Clear @near-wallet-selector and wallet session persistence keys locally
     const keysToRemove = [];
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i);
