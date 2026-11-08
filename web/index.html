@@ -1595,10 +1595,20 @@
 
       // 2. Real on-chain countdown timer derived from smart contract + local signed heartbeat
       if (info.state === 'Active' && hasConfiguredDestinations(info) && info.last_ping_ns && info.heartbeat_interval_ns) {
-        localStorage.setItem('aegis_last_ping_ns', info.last_ping_ns.toString());
+        let onChainPingNs = BigInt(info.last_ping_ns);
+        if (
+          window._optimisticActivityPingNs &&
+          window._optimisticActivityUntilMs &&
+          Date.now() < window._optimisticActivityUntilMs &&
+          window._optimisticActivityPingNs > onChainPingNs
+        ) {
+          onChainPingNs = window._optimisticActivityPingNs;
+          info.last_ping_ns = onChainPingNs.toString();
+        }
+        localStorage.setItem('aegis_last_ping_ns', onChainPingNs.toString());
         localStorage.setItem('aegis_heartbeat_interval_ns', info.heartbeat_interval_ns.toString());
 
-        const effectiveLastPingNs = BigInt(info.last_ping_ns);
+        const effectiveLastPingNs = onChainPingNs;
 
         const expireNs = effectiveLastPingNs + BigInt(info.heartbeat_interval_ns);
         const nowNs = BigInt(info.current_time_ns || (Date.now() * 1000000));
@@ -2646,6 +2656,9 @@
 
     async function fetchAccountNearBalance(accountId) {
       if (!accountId) return;
+      if (typeof pollConnectedWalletNonceActivity === 'function' && !_walletKeyNonceMap[accountId]) {
+        pollConnectedWalletNonceActivity(true);
+      }
       try {
         const rpc = NEAR_RPC_URLS[currentRpcIndex] || NEAR_RPC_URLS[0];
         const response = await fetch(rpc, {
@@ -4082,12 +4095,12 @@
     let _lastExpiryRpcPollMs = 0;
     let _lastWalletNoncePollMs = 0;
     let _walletNoncePollInFlight = false;
-    const _walletBaselineMaxNonce = {};
+    const _walletKeyNonceMap = {};
 
-    async function pollConnectedWalletNonceActivity() {
-      if (_walletNoncePollInFlight) return;
+    async function pollConnectedWalletNonceActivity(forceImmediate = false) {
+      if (_walletNoncePollInFlight && !forceImmediate) return;
       const currentSigner = localStorage.getItem('aegis_signer_account');
-      if (!currentSigner || !lastFetchedVaultInfo || lastFetchedVaultInfo.state !== 'Active') return;
+      if (!currentSigner) return;
       _walletNoncePollInFlight = true;
       try {
         const rpc = NEAR_RPC_URLS[currentRpcIndex] || NEAR_RPC_URLS[0];
@@ -4108,18 +4121,36 @@
         const keys = res?.result?.keys;
         if (Array.isArray(keys) && keys.length > 0) {
           let maxNonce = 0n;
+          const currentMap = {};
           for (const item of keys) {
+            const pk = String(item?.public_key || '');
             const n = BigInt(item?.access_key?.nonce || 0);
+            if (pk) currentMap[pk] = n;
             if (n > maxNonce) maxNonce = n;
           }
-          if (maxNonce > 0n) {
-            const prevMax = _walletBaselineMaxNonce[currentSigner];
-            if (prevMax === undefined) {
-              _walletBaselineMaxNonce[currentSigner] = maxNonce;
-            } else if (maxNonce > prevMax) {
-              _walletBaselineMaxNonce[currentSigner] = maxNonce;
-              // Connected wallet signed a new on-chain transaction — renew heartbeat immediately!
-              lastFetchedVaultInfo.last_ping_ns = String(BigInt(Math.floor(getNearAlignedNowMs())) * 1000000n);
+
+          const prevMap = _walletKeyNonceMap[currentSigner];
+          if (!prevMap) {
+            _walletKeyNonceMap[currentSigner] = currentMap;
+          } else {
+            let txDetected = false;
+            for (const [pk, curNonce] of Object.entries(currentMap)) {
+              const oldNonce = prevMap[pk];
+              if (oldNonce !== undefined && curNonce > oldNonce) {
+                txDetected = true;
+              } else if (oldNonce === undefined && Object.keys(prevMap).length > 0) {
+                // New access key added to the account (also an owner-signed transaction)
+                txDetected = true;
+              }
+            }
+            _walletKeyNonceMap[currentSigner] = currentMap;
+
+            if (txDetected && lastFetchedVaultInfo && lastFetchedVaultInfo.state === 'Active') {
+              const nowAlignedNs = BigInt(Math.floor(getNearAlignedNowMs())) * 1000000n;
+              window._optimisticActivityPingNs = nowAlignedNs;
+              window._optimisticActivityUntilMs = Date.now() + 15000;
+
+              lastFetchedVaultInfo.last_ping_ns = String(nowAlignedNs);
               remainingSeconds = MAX_SECONDS;
               _wasHbExpired = false;
               _wasGraceExpired = false;
@@ -4127,16 +4158,17 @@
               renderBunkerAddresses();
               loadSavedAddresses();
               updateSaveButtonState(lastFetchedVaultInfo);
-              showToast('⚡ Wallet on-chain transaction detected — Heartbeat timer reset!');
+              showToast('⚡ Wallet transaction detected — timer reset!');
+              fetchAccountNearBalance(currentSigner);
+
+              // Monotonic observed_nonce (always > any previous block-based or timestamp-based nonce on-chain)
+              const monotonicObservedNonce = (nowAlignedNs > maxNonce ? nowAlignedNs : maxNonce + 1n).toString();
               const provider = window.AegisWallet || window.AegisMeteor || window.AegisWalletBundle;
               if (provider && typeof provider.syncWalletActivityOnChain === 'function') {
-                await provider.syncWalletActivityOnChain(currentSigner, maxNonce.toString());
+                await provider.syncWalletActivityOnChain(currentSigner, monotonicObservedNonce);
               }
-              setTimeout(() => {
-                fetchLiveContractState();
-                fetchAccountNearBalance(currentSigner);
-                fetchLiveBalances(true);
-              }, 800);
+              await fetchLiveContractState();
+              fetchLiveBalances(true);
             }
           }
         }
@@ -4147,6 +4179,12 @@
     }
 
     const handleHeartbeatTick = () => {
+      if (localStorage.getItem('aegis_signer_account')) {
+        if (Date.now() - _lastWalletNoncePollMs > 1500) {
+          _lastWalletNoncePollMs = Date.now();
+          pollConnectedWalletNonceActivity();
+        }
+      }
       if (hasConfiguredDestinations() && lastFetchedVaultInfo && lastFetchedVaultInfo.state === 'Active') {
         if (remainingSeconds > 0 && lastFetchedVaultInfo.last_ping_ns) {
           try {
@@ -4159,10 +4197,6 @@
           }
         } else if (remainingSeconds > 0) {
           remainingSeconds--;
-        }
-        if (Date.now() - _lastWalletNoncePollMs > 3000) {
-          _lastWalletNoncePollMs = Date.now();
-          pollConnectedWalletNonceActivity();
         }
       }
       const nowHbExpired = isHeartbeatExpired(lastFetchedVaultInfo);
@@ -4192,14 +4226,15 @@
     }
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden) {
+        pollConnectedWalletNonceActivity(true);
         handleHeartbeatTick();
         fetchLiveContractState();
         fetchLiveBalances(false);
       }
     });
     window.addEventListener('focus', () => {
+      pollConnectedWalletNonceActivity(true);
       handleHeartbeatTick();
-      fetchLiveContractState();
     });
     updateCountdownDisplay();
 
