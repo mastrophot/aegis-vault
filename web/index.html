@@ -594,12 +594,12 @@
             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div class="space-y-0.5">
                 <div class="text-xs sm:text-sm font-bold text-white flex items-center gap-2">
-                  <span id="addressStatusDot" class="w-2 h-2 rounded-full bg-nearGreen"></span>
+                  <span id="addressStatusDot" class="w-2 h-2 rounded-full bg-[#8E99AD]"></span>
                   <span>Vault Protection:</span>
-                  <span id="addressStatusBadge" class="text-nearGreen font-mono font-bold">Active</span>
+                  <span id="addressStatusBadge" class="text-[#8E99AD] font-mono font-bold">Wallet Not Connected</span>
                 </div>
-                <p class="text-xs text-[#8C929D]">
-                  Your funds can only be sent to the backup or family wallets saved above.
+                <p id="addressStatusDesc" class="text-xs text-[#8C929D]">
+                  Connect your NEAR wallet above to set your backup and family wallets.
                 </p>
               </div>
 
@@ -1577,6 +1577,16 @@
         if (syncBadge) syncBadge.innerText = 'Connect Wallet to Sync';
         if (syncDot) syncDot.className = 'w-2 h-2 rounded-full bg-white/20';
 
+        const badge = document.getElementById('addressStatusBadge');
+        const dot = document.getElementById('addressStatusDot');
+        const desc = document.getElementById('addressStatusDesc');
+        if (badge) {
+          badge.innerText = 'Wallet Not Connected';
+          badge.className = 'text-[#8E99AD] font-mono font-bold';
+        }
+        if (dot) dot.className = 'w-2 h-2 rounded-full bg-[#8E99AD]';
+        if (desc) desc.innerText = 'Connect your NEAR wallet above to set your backup and family wallets.';
+
         updateSaveButtonState(null);
         renderBunkerAddresses();
         updateCountdownDisplay();
@@ -1646,6 +1656,16 @@
         if (nearUsdEl) nearUsdEl.innerText = '≈ 0.00 USD';
         if (syncBadge) syncBadge.innerText = 'Vault Unarmed';
         if (syncDot) syncDot.className = 'w-2 h-2 rounded-full bg-white/20';
+
+        const badge = document.getElementById('addressStatusBadge');
+        const dot = document.getElementById('addressStatusDot');
+        const desc = document.getElementById('addressStatusDesc');
+        if (badge) {
+          badge.innerText = 'Not Set Yet';
+          badge.className = 'text-amber-300 font-mono font-bold';
+        }
+        if (dot) dot.className = 'w-2 h-2 rounded-full bg-amber-400';
+        if (desc) desc.innerText = 'Enter your backup or family wallets above and click Save Policy.';
 
         updateSaveButtonState(lastFetchedVaultInfo);
         renderBunkerAddresses();
@@ -1974,12 +1994,15 @@
         if (tabRescue) {
           tabRescue.innerHTML = `1. Rescue & Inheritance <span class="ml-1.5 px-2 py-0.5 text-[10px] bg-nearGreen text-nearBlack rounded-full font-bold">ARMED</span>`;
         }
+        const desc = document.getElementById('addressStatusDesc');
         if (badge && !info.pending_policy) {
-          badge.innerText = 'Active';
+          badge.innerText = 'Saved & Protected';
           badge.className = 'text-nearGreen font-mono font-bold';
         }
         if (dot && !info.pending_policy) dot.className = 'w-2.5 h-2.5 rounded-full bg-nearGreen shadow-near-glow';
+        if (desc && !info.pending_policy) desc.innerText = 'Your funds can only be sent to the backup or family wallets saved above.';
       } else {
+        const desc = document.getElementById('addressStatusDesc');
         if (activeBanner) activeBanner.classList.add('hidden');
         if (evacuatedBanner) evacuatedBanner.classList.add('hidden');
         if (unconfiguredBanner) {
@@ -1994,17 +2017,11 @@
           badge.className = 'text-amber-300 font-mono font-bold';
         }
         if (dot && !info.pending_policy) dot.className = 'w-2.5 h-2.5 rounded-full bg-amber-400';
+        if (desc && !info.pending_policy) desc.innerText = 'Enter your backup or family wallets above and click Save Policy.';
       }
 
       updateSaveButtonState(info);
       checkUnallocatedFunds();
-
-      // Check current input values if user has typed
-      const anyInputFilled = inputIds.some(id => {
-        const el = document.getElementById(id);
-        return el && el.value && el.value.trim().length > 0;
-      });
-      const isConfigured = hasActiveAddresses || anyInputFilled;
 
       // 4. Real on-chain Timelock & Pending Policy status
       const cooldownAlert = document.getElementById('cooldownAlertBanner');
@@ -2068,11 +2085,15 @@
           if (shouldShowUnconfiguredBanner(lastFetchedVaultInfo)) { unconfiguredBanner.classList.remove('hidden'); unconfiguredBanner.classList.add('flex'); }
           else { unconfiguredBanner.classList.add('hidden'); unconfiguredBanner.classList.remove('flex'); }
         }
+        const desc = document.getElementById('addressStatusDesc');
         if (badge) {
-          badge.innerText = isConfigured ? 'Active' : 'Not Set Yet';
-          badge.className = isConfigured ? 'text-nearGreen font-mono font-bold' : 'text-amber-300 font-mono font-bold';
+          badge.innerText = hasActiveAddresses ? 'Saved & Protected' : 'Not Set Yet';
+          badge.className = hasActiveAddresses ? 'text-nearGreen font-mono font-bold' : 'text-amber-300 font-mono font-bold';
         }
-        if (dot) dot.className = isConfigured ? 'w-2.5 h-2.5 rounded-full bg-nearGreen shadow-near-glow' : 'w-2.5 h-2.5 rounded-full bg-amber-400';
+        if (dot) dot.className = hasActiveAddresses ? 'w-2.5 h-2.5 rounded-full bg-nearGreen shadow-near-glow' : 'w-2.5 h-2.5 rounded-full bg-amber-400';
+        if (desc) desc.innerText = hasActiveAddresses
+          ? 'Your funds can only be sent to the backup or family wallets saved above.'
+          : 'Enter your backup or family wallets above and click Save Policy.';
       }
 
       if (isVaultEvacuatedOrBurned()) {
@@ -5467,7 +5488,16 @@
           if (el) el.value = '';
         });
         const banner = document.getElementById('unconfiguredBanner');
-        if (banner) banner.classList.remove('hidden');
+        if (banner) banner.classList.add('hidden');
+        const badge = document.getElementById('addressStatusBadge');
+        const dot = document.getElementById('addressStatusDot');
+        const desc = document.getElementById('addressStatusDesc');
+        if (badge) {
+          badge.innerText = 'Wallet Not Connected';
+          badge.className = 'text-[#8E99AD] font-mono font-bold';
+        }
+        if (dot) dot.className = 'w-2 h-2 rounded-full bg-[#8E99AD]';
+        if (desc) desc.innerText = 'Connect your NEAR wallet above to set your backup and family wallets.';
         return;
       }
 
@@ -5543,12 +5573,17 @@
             if (el && !el.value) el.value = '';
           });
         }
-        const hasAnyEntered = inputIds.some(id => document.getElementById(id)?.value?.trim());
         const banner = document.getElementById('unconfiguredBanner');
-        if (banner) {
-          if (shouldShowUnconfiguredBanner(lastFetchedVaultInfo)) { banner.classList.remove('hidden'); banner.classList.add('flex'); }
-          else { banner.classList.add('hidden'); banner.classList.remove('flex'); }
+        if (banner) { banner.classList.add('hidden'); banner.classList.remove('flex'); }
+        const badge = document.getElementById('addressStatusBadge');
+        const dot = document.getElementById('addressStatusDot');
+        const desc = document.getElementById('addressStatusDesc');
+        if (badge) {
+          badge.innerText = 'Not Set Yet';
+          badge.className = 'text-amber-300 font-mono font-bold';
         }
+        if (dot) dot.className = 'w-2 h-2 rounded-full bg-amber-400';
+        if (desc) desc.innerText = 'Enter your backup or family wallets above and click Save Policy.';
         return;
       }
 
@@ -5572,6 +5607,7 @@
 
       const badge = document.getElementById('addressStatusBadge');
       const dot = document.getElementById('addressStatusDot');
+      const desc = document.getElementById('addressStatusDesc');
       const cooldownAlert = document.getElementById('cooldownAlertBanner');
 
       // Ensure Save Policy buttons are visible and active
@@ -5583,11 +5619,15 @@
       document.querySelectorAll('.apply-policy-btn').forEach(btn => btn.classList.add('hidden'));
 
       if (cooldownAlert) cooldownAlert.classList.add('hidden');
+      const hasOnChainSaved = hasConfiguredDestinations(lastFetchedVaultInfo);
       if (badge) {
-        badge.innerText = hasAny ? 'Active & Enforced' : 'Unconfigured';
-        badge.className = hasAny ? 'text-nearGreen font-mono font-bold' : 'text-amber-300 font-mono font-bold';
+        badge.innerText = hasOnChainSaved ? 'Saved & Protected' : 'Not Set Yet';
+        badge.className = hasOnChainSaved ? 'text-nearGreen font-mono font-bold' : 'text-amber-300 font-mono font-bold';
       }
-      if (dot) dot.className = hasAny ? 'w-2.5 h-2.5 rounded-full bg-nearGreen shadow-near-glow' : 'w-2.5 h-2.5 rounded-full bg-amber-400';
+      if (dot) dot.className = hasOnChainSaved ? 'w-2.5 h-2.5 rounded-full bg-nearGreen shadow-near-glow' : 'w-2.5 h-2.5 rounded-full bg-amber-400';
+      if (desc) desc.innerText = hasOnChainSaved
+        ? 'Your funds can only be sent to the backup or family wallets saved above.'
+        : 'Enter your backup or family wallets above and click Save Policy.';
     }
 
     function clearAllAddresses() {
