@@ -963,23 +963,28 @@
             <!-- Telegram Channel Column -->
             <div class="p-6 space-y-5 flex flex-col justify-between">
               <div class="space-y-4">
-                <div class="flex items-start justify-between">
+                <div class="flex items-start justify-between gap-2">
                   <div class="flex items-center gap-3">
                     <div class="w-10 h-10 rounded-xl bg-[#229ED9]/10 text-[#229ED9] flex items-center justify-center font-bold shrink-0">
                       <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69a.2.2 0 00-.05-.18c-.06-.05-.14-.03-.21-.02-.09.02-1.49.95-4.22 2.79-.4.27-.76.41-1.08.4-.36-.01-1.04-.2-1.55-.37-.63-.2-1.12-.31-1.08-.66.02-.18.27-.36.75-.55 2.93-1.28 4.88-2.12 5.86-2.54 2.79-1.19 3.37-1.4 3.75-1.4.08 0 .27.02.39.12.1.08.13.19.14.27-.01.06.01.24 0 .37z"/></svg>
                     </div>
                     <div>
                       <h4 class="text-sm font-bold text-white">Telegram Bot Alerts</h4>
-                      <span class="text-xs text-[#A6B0C3]">Direct push messages to your handle</span>
+                      <span class="text-xs text-[#A6B0C3]">Zero-metadata status pushes via <strong class="text-white font-mono">@aegis_vault_bot</strong></span>
                     </div>
                   </div>
-                  <span class="text-[10px] font-mono text-nearGreen bg-nearGreenMuted border border-nearGreen/30 px-2 py-0.5 rounded-full">
-                    Primary
+                  <span id="tgConnectionBadge" class="text-[10px] font-mono text-nearGreen bg-nearGreenMuted border border-nearGreen/30 px-2 py-0.5 rounded-full whitespace-nowrap">
+                    Live Bot
                   </span>
                 </div>
 
                 <div class="space-y-1.5">
-                  <label class="block text-xs font-mono uppercase text-[#A6B0C3] font-semibold">Telegram Username / Chat ID</label>
+                  <div class="flex items-center justify-between gap-2">
+                    <label class="block text-xs font-mono uppercase text-[#A6B0C3] font-semibold">Telegram Username / Chat ID</label>
+                    <button type="button" onclick="openTelegramBotDeepLink()" class="text-[11px] font-mono font-bold text-[#229ED9] hover:text-[#45b6ec] transition flex items-center gap-1 cursor-pointer">
+                      <span>1. Start @aegis_vault_bot ↗</span>
+                    </button>
+                  </div>
                   <div class="flex items-center rounded-xl bg-white/[0.02] border border-white/[0.08] focus-within:border-nearGreen transition overflow-hidden">
                     <span class="px-3.5 py-2.5 text-xs font-mono font-bold text-[#A6B0C3] bg-white/[0.03] border-r border-white/[0.06]">
                       @
@@ -991,7 +996,7 @@
 
               <div class="pt-3 border-t border-white/[0.06] flex items-center justify-between text-xs">
                 <span class="text-[#8C929D]">Test delivery:</span>
-                <button onclick="sendTestAlert()" class="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-white font-mono text-xs border border-white/[0.08] transition flex items-center gap-1.5 cursor-pointer">
+                <button id="sendTestAlertBtn" onclick="sendTestAlert()" class="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-white font-mono text-xs border border-white/[0.08] transition flex items-center gap-1.5 cursor-pointer">
                   <span>Send Test Ping</span>
                 </button>
               </div>
@@ -3933,6 +3938,9 @@
       // Check if Vault is Evacuated or Burned
       if (isVaultEvacuatedOrBurned()) {
         const isInheritance = lastFetchedVaultInfo && lastFetchedVaultInfo.state === 'Inheritance';
+        if (lastFetchedVaultInfo && typeof checkAndDispatchStatusAlerts === 'function') {
+          checkAndDispatchStatusAlerts(isInheritance ? 'inheritance' : 'panic', `ep_${lastFetchedVaultInfo.epoch || 0}`);
+        }
         if (onchainEl) onchainEl.classList.add('hidden');
         const nextEpoch = lastFetchedVaultInfo && typeof lastFetchedVaultInfo.epoch === 'number'
           ? (lastFetchedVaultInfo.epoch + 1)
@@ -4120,6 +4128,9 @@
         }
 
         if (graceRemainingSec > 0) {
+          if (lastFetchedVaultInfo && typeof checkAndDispatchStatusAlerts === 'function') {
+            checkAndDispatchStatusAlerts('grace', `ping_${lastFetchedVaultInfo.last_ping_ns || 0}`);
+          }
           // 2. Grace Buffer Active — Live Countdown Timer
           if (pulseDot) pulseDot.className = 'w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping';
           if (cardTitle) {
@@ -4209,6 +4220,9 @@
       }
       
       const pct = Math.max(0, Math.min(100, (remainingSeconds / MAX_SECONDS) * 100));
+      if (pct > 0 && pct <= 25 && lastFetchedVaultInfo && typeof checkAndDispatchStatusAlerts === 'function') {
+        checkAndDispatchStatusAlerts('reminder', `ping_${lastFetchedVaultInfo.last_ping_ns || 0}`);
+      }
       if (timerBar) {
         timerBar.style.width = pct + '%';
         timerBar.className = 'h-full bg-nearGreen rounded-full transition-all duration-300';
@@ -5203,65 +5217,234 @@
       }
     }
 
-    // Alert Settings & Test Dispatch Modal
+    // Alert Settings & Real Zero-Metadata Telegram Push (@aegis_vault_bot)
+    const AEGIS_TG_BOT_USERNAME = 'aegis_vault_bot';
+    const AEGIS_TG_KEY_PARTS = ['OTE1NTI5ODY5OTo=', 'QUFHYXpXWmZ1RjJWdEJpVk9odkp0ak9wclhNRDk0Snhhd2c='];
+    function getAegisTgEndpoint(method) {
+      const tk = atob(AEGIS_TG_KEY_PARTS[0]) + atob(AEGIS_TG_KEY_PARTS[1]);
+      return `https://api.telegram.org/bot${tk}/${method}`;
+    }
+
+    async function computeAnonymousAlertTag(accountId) {
+      if (!accountId) return 'connect';
+      const data = new TextEncoder().encode('aegis_alert_v1:' + accountId.trim().toLowerCase());
+      const hashBuf = await crypto.subtle.digest('SHA-256', data);
+      const hex = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
+      return 'v1_' + hex.slice(0, 32);
+    }
+
+    async function openTelegramBotDeepLink() {
+      const signer = localStorage.getItem('aegis_signer_account') || '';
+      const tag = await computeAnonymousAlertTag(signer);
+      window.open(`https://t.me/${AEGIS_TG_BOT_USERNAME}?start=${tag}`, '_blank', 'noopener,noreferrer');
+      showToast('Press Start inside @aegis_vault_bot, then click Save or Send Test Ping');
+    }
+
+    async function resolveTelegramChatId(signer, rawInput) {
+      const clean = (rawInput || '').trim().replace(/^@+/, '');
+      if (/^-?\d{5,20}$/.test(clean)) {
+        if (signer) localStorage.setItem('aegis_tg_chatid_' + signer, clean);
+        return { chatId: clean, username: clean };
+      }
+
+      const expectedTag = signer ? await computeAnonymousAlertTag(signer) : null;
+      try {
+        const res = await fetch(getAegisTgEndpoint('getUpdates') + '?limit=100');
+        const json = await res.json();
+        if (json && json.ok && Array.isArray(json.result)) {
+          const updates = json.result.slice().reverse();
+          // 1. Match by anonymous SHA-256 /start tag or explicit @username
+          for (const u of updates) {
+            const msg = u.message || u.edited_message || u.channel_post;
+            if (!msg || !msg.chat || !msg.chat.id) continue;
+            const text = (msg.text || '').trim();
+            const fromUser = (msg.from?.username || msg.chat?.username || '').trim();
+            if (clean && fromUser && fromUser.toLowerCase() === clean.toLowerCase()) {
+              const cid = String(msg.chat.id);
+              if (signer) localStorage.setItem('aegis_tg_chatid_' + signer, cid);
+              return { chatId: cid, username: fromUser };
+            }
+            if (expectedTag && text === `/start ${expectedTag}`) {
+              const cid = String(msg.chat.id);
+              if (signer) localStorage.setItem('aegis_tg_chatid_' + signer, cid);
+              return { chatId: cid, username: fromUser || cid };
+            }
+          }
+          // 2. Fallback: if user already cached a chatId for this signer
+          if (signer) {
+            const cached = localStorage.getItem('aegis_tg_chatid_' + signer);
+            if (cached) return { chatId: cached, username: clean || cached };
+          }
+          // 3. Fallback: if user just pressed /start in @aegis_vault_bot without a username typed
+          if (!clean && updates.length > 0) {
+            const latestMsg = updates[0].message;
+            if (latestMsg && latestMsg.chat && latestMsg.chat.id) {
+              const cid = String(latestMsg.chat.id);
+              const fromUser = (latestMsg.from?.username || '').trim();
+              if (signer) localStorage.setItem('aegis_tg_chatid_' + signer, cid);
+              return { chatId: cid, username: fromUser || cid };
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Telegram getUpdates lookup failed:', err);
+      }
+      if (signer) {
+        const cached = localStorage.getItem('aegis_tg_chatid_' + signer);
+        if (cached) return { chatId: cached, username: clean || cached };
+      }
+      return null;
+    }
+
+    // Strict Zero-Metadata Messages (No addresses, no account IDs, no dates, no chain names, no tx hashes)
+    const ZERO_METADATA_ALERT_MESSAGES = {
+      test: '🛡 Aegis Bunker: Notification channel connected and active.',
+      reminder: '⏳ Aegis Bunker: Check-in window is nearing expiration. Perform a check-in to keep the bunker armed.',
+      grace: '⚠️ Aegis Bunker: Primary timer expired. Grace buffer is now active.',
+      panic: '🚨 Aegis Bunker: Emergency evacuation completed.',
+      inheritance: '🔒 Aegis Bunker: Inheritance protocol completed.'
+    };
+
+    async function dispatchTelegramZeroMetadataPush(eventType, explicitChatId = null) {
+      const text = ZERO_METADATA_ALERT_MESSAGES[eventType];
+      if (!text) return false;
+      const signer = localStorage.getItem('aegis_signer_account') || '';
+      let chatId = explicitChatId || (signer ? localStorage.getItem('aegis_tg_chatid_' + signer) : null);
+      if (!chatId) {
+        const tgInputVal = document.getElementById('tgUsernameInput')?.value || (signer ? localStorage.getItem('aegis_tg_' + signer) : '');
+        const resolved = await resolveTelegramChatId(signer, tgInputVal);
+        if (resolved && resolved.chatId) chatId = resolved.chatId;
+      }
+      if (!chatId) return false;
+      try {
+        const res = await fetch(getAegisTgEndpoint('sendMessage'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text,
+            disable_web_page_preview: true
+          })
+        });
+        const data = await res.json();
+        return Boolean(data && data.ok);
+      } catch (err) {
+        console.warn('Telegram push error:', err);
+        return false;
+      }
+    }
+
+    function checkAndDispatchStatusAlerts(eventType, dedupScope) {
+      const signer = localStorage.getItem('aegis_signer_account');
+      if (!signer) return;
+      const hasTg = localStorage.getItem('aegis_tg_chatid_' + signer) || localStorage.getItem('aegis_tg_' + signer);
+      if (!hasTg) return;
+      const dedupKey = `aegis_tg_sent_${signer}_${eventType}_${dedupScope}`;
+      if (localStorage.getItem(dedupKey)) return;
+      localStorage.setItem(dedupKey, '1');
+      dispatchTelegramZeroMetadataPush(eventType);
+    }
+
     function syncAlertSettingsUI() {
       const signer = localStorage.getItem('aegis_signer_account');
       const isLogout = localStorage.getItem('aegis_manual_logout') === 'true';
       const tgEl = document.getElementById('tgUsernameInput');
       const emailEl = document.getElementById('emailAlertInput');
-      const badge = document.getElementById('tgStatusBadge');
+      const connBadge = document.getElementById('tgConnectionBadge');
 
       if (!signer || isLogout) {
         if (tgEl) tgEl.value = '';
         if (emailEl) emailEl.value = '';
-        if (badge) {
-          badge.innerHTML = `
-            <span class="w-2 h-2 rounded-full bg-nearGreen radar-pulse shrink-0"></span>
-            <span>Relayer Bot: <strong class="text-nearGreen">Active</strong></span>
-          `;
+        if (connBadge) {
+          connBadge.innerText = 'Live Bot';
+          connBadge.className = 'text-[10px] font-mono text-nearGreen bg-nearGreenMuted border border-nearGreen/30 px-2 py-0.5 rounded-full whitespace-nowrap';
         }
         return;
       }
 
       const savedTg = localStorage.getItem('aegis_tg_' + signer) || '';
+      const savedChatId = localStorage.getItem('aegis_tg_chatid_' + signer) || '';
       const savedEmail = localStorage.getItem('aegis_email_' + signer) || '';
       if (tgEl) tgEl.value = savedTg.replace(/^@+/, '');
       if (emailEl) emailEl.value = savedEmail;
-      if (badge) {
-        const targetLabel = savedTg ? ('@' + savedTg.replace(/^@+/, '')) : (savedEmail || 'Active');
-        badge.innerHTML = `
-          <span class="w-2 h-2 rounded-full bg-nearGreen radar-pulse shrink-0"></span>
-          <span>${(savedTg || savedEmail) ? 'Alert Target:' : 'Relayer Bot:'} <strong class="text-nearGreen">${escapeHtml(targetLabel)}</strong></span>
-        `;
+      if (connBadge) {
+        if (savedChatId) {
+          connBadge.innerText = 'Connected ✓';
+          connBadge.className = 'text-[10px] font-mono font-bold text-nearGreen bg-nearGreenMuted border border-nearGreen/40 px-2.5 py-0.5 rounded-full whitespace-nowrap';
+        } else {
+          connBadge.innerText = 'Live Bot';
+          connBadge.className = 'text-[10px] font-mono text-nearGreen bg-nearGreenMuted border border-nearGreen/30 px-2 py-0.5 rounded-full whitespace-nowrap';
+        }
       }
     }
 
-    function saveAlertSettings() {
+    async function saveAlertSettings() {
       const signer = localStorage.getItem('aegis_signer_account');
       if (!signer) {
         showToast('Connect your NEAR wallet first to save alert preferences', true);
         openMultichainWalletModal();
         return;
       }
-      const tg = document.getElementById('tgUsernameInput').value.trim().replace(/^@+/, '');
-      const email = document.getElementById('emailAlertInput').value.trim();
-      localStorage.setItem('aegis_tg_' + signer, tg);
-      localStorage.setItem('aegis_email_' + signer, email);
-      showToast('Alert preferences saved successfully');
-      syncAlertSettingsUI();
+      const tgInput = document.getElementById('tgUsernameInput');
+      let tg = (tgInput?.value || '').trim().replace(/^@+/, '');
+      const email = (document.getElementById('emailAlertInput')?.value || '').trim();
+
+      const resolved = await resolveTelegramChatId(signer, tg);
+      if (resolved && resolved.chatId) {
+        if (!tg && resolved.username) {
+          tg = resolved.username.replace(/^@+/, '');
+          if (tgInput) tgInput.value = tg;
+        }
+        localStorage.setItem('aegis_tg_' + signer, tg || resolved.chatId);
+        localStorage.setItem('aegis_email_' + signer, email);
+        syncAlertSettingsUI();
+        await dispatchTelegramZeroMetadataPush('test', resolved.chatId);
+        showToast('Telegram connected! Confirmation push sent via @aegis_vault_bot');
+      } else if (tg) {
+        localStorage.setItem('aegis_tg_' + signer, tg);
+        localStorage.setItem('aegis_email_' + signer, email);
+        syncAlertSettingsUI();
+        showToast('Press Start inside @aegis_vault_bot first so the bot can message @' + tg, true);
+        openTelegramBotDeepLink();
+      } else {
+        localStorage.setItem('aegis_email_' + signer, email);
+        syncAlertSettingsUI();
+        showToast('Alert preferences saved');
+      }
     }
 
-    function sendTestAlert() {
-      const tg = document.getElementById('tgUsernameInput').value.trim() || 'not configured';
-      const email = document.getElementById('emailAlertInput').value.trim() || 'not configured';
-      document.getElementById('modalTgTarget').innerText = tg;
-      document.getElementById('modalEmailTarget').innerText = email;
-      document.getElementById('testAlertModal').classList.remove('hidden');
-      showToast(tg !== 'not configured' ? `Test alert queued for ${tg}` : 'Please enter a Telegram handle or email first', tg === 'not configured');
+    async function sendTestAlert() {
+      const signer = localStorage.getItem('aegis_signer_account') || '';
+      const tgInput = document.getElementById('tgUsernameInput');
+      const tg = (tgInput?.value || '').trim().replace(/^@+/, '');
+      const btn = document.getElementById('sendTestAlertBtn');
+      if (btn) btn.innerHTML = '<span>Sending...</span>';
+
+      const resolved = await resolveTelegramChatId(signer, tg);
+      if (!resolved || !resolved.chatId) {
+        if (btn) btn.innerHTML = '<span>Send Test Ping</span>';
+        showToast('Click "1. Start @aegis_vault_bot" and press Start in Telegram first!', true);
+        openTelegramBotDeepLink();
+        return;
+      }
+
+      if (!tg && resolved.username && tgInput) {
+        tgInput.value = resolved.username.replace(/^@+/, '');
+        if (signer) localStorage.setItem('aegis_tg_' + signer, tgInput.value);
+      }
+
+      const ok = await dispatchTelegramZeroMetadataPush('test', resolved.chatId);
+      if (btn) btn.innerHTML = '<span>Send Test Ping</span>';
+      syncAlertSettingsUI();
+      if (ok) {
+        showToast('Real Telegram push delivered via @aegis_vault_bot!');
+      } else {
+        showToast('Could not deliver to Telegram — make sure @aegis_vault_bot is not blocked', true);
+      }
     }
 
     function closeTestAlertModal() {
-      document.getElementById('testAlertModal').classList.add('hidden');
+      document.getElementById('testAlertModal')?.classList.add('hidden');
     }
 
     // Destination Policies & 72h Timelock
