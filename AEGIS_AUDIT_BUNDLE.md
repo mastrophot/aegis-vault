@@ -6072,7 +6072,7 @@ if (typeof window !== "undefined") {
             </span>
           </div>
           <p class="text-xs text-[#8C95A6] hidden sm:block mt-0.5">
-            Multichain MPC Dead-Man's Switch · Chain Signatures MPC (v1.signer-prod.testnet)
+            Self-Custodial Crypto Bunker &amp; Family Inheritance Switch
           </p>
         </div>
       </div>
@@ -6133,12 +6133,12 @@ if (typeof window !== "undefined") {
             <div class="flex items-center gap-2.5">
               <span id="heartbeatPulseDot" class="w-2.5 h-2.5 rounded-full bg-yellow-400"></span>
               <span id="heartbeatCardTitle" class="text-xs font-mono font-bold uppercase tracking-wider text-[#A6B0C3]">
-                Dead-Man's Switch Heartbeat
+                Vault Check-In Timer
               </span>
             </div>
             <div class="flex items-center gap-2 flex-wrap">
-              <span id="bunkerEpochPill" class="text-[11px] font-mono font-bold text-nearGreen bg-nearGreenMuted border border-nearGreen/30 px-2.5 py-0.5 rounded-full whitespace-nowrap">
-                Derivation Path: aegis/v0 (Active)
+              <span id="bunkerEpochPill" class="hidden text-[11px] font-mono font-bold text-nearGreen bg-nearGreenMuted border border-nearGreen/30 px-2.5 py-0.5 rounded-full whitespace-nowrap">
+                Vault #1
               </span>
               <span id="heartbeatTag" class="text-xs font-mono font-medium text-yellow-400/90 bg-yellow-950/30 px-3 py-1 rounded-full border border-yellow-500/30">
                 Vault Inactive · Connect Wallet
@@ -6148,7 +6148,7 @@ if (typeof window !== "undefined") {
 
           <div>
             <div id="countdownTitle" class="text-[11px] uppercase font-mono text-textGray font-semibold tracking-wider">
-              Automatic Transfer to Heirs Initiates In:
+              Time Remaining Before Automatic Inheritance:
             </div>
             <div id="countdownBox" class="text-3xl sm:text-4xl md:text-5xl font-mono font-extrabold text-white tracking-tight mt-2 flex items-baseline gap-2">
               Ready to Arm
@@ -6230,10 +6230,10 @@ if (typeof window !== "undefined") {
           <div>
             <div class="flex items-center gap-2.5">
               <span class="w-2.5 h-2.5 rounded-full bg-nearGreen radar-pulse"></span>
-              <h3 class="text-base sm:text-lg font-bold text-white tracking-tight">Destination Routing Policy</h3>
+              <h3 class="text-base sm:text-lg font-bold text-white tracking-tight">Where Your Funds Go</h3>
             </div>
             <p class="text-xs sm:text-sm text-[#8C929D] mt-1">
-              Cryptographically locked egress destinations for emergency evacuation and autonomous push inheritance.
+              Set your personal backup wallets (for instant emergency withdrawal) and your family wallets (for automatic inheritance).
             </p>
           </div>
         </div>
@@ -6267,8 +6267,8 @@ if (typeof window !== "undefined") {
             </div>
             <div>
               <div class="font-bold text-nearGreen flex items-center gap-2">
-                <span>Bunker Egress Armed & Active On-Chain</span>
-                <span class="text-[10px] font-mono bg-nearGreen/20 text-nearGreen border border-nearGreen/40 px-2 py-0.5 rounded-full font-bold">BLOCKCHAIN ENFORCED</span>
+                <span>Backup &amp; Family Wallets Saved</span>
+                <span class="text-[10px] font-mono bg-nearGreen/20 text-nearGreen border border-nearGreen/40 px-2 py-0.5 rounded-full font-bold">PROTECTED ON-CHAIN</span>
               </div>
               <div id="activePolicySummary" class="text-white/80 text-[11px] mt-0.5 font-mono">
                 <!-- Dynamically populated: e.g. Backup: okgoogleok.testnet · Heirs: mastrophot.testnet -->
@@ -6314,14 +6314,14 @@ if (typeof window !== "undefined") {
                 <div class="space-y-1">
                   <div class="flex items-center gap-2">
                     <span class="w-2 h-2 rounded-full bg-red-400"></span>
-                    <h4 class="text-sm font-bold text-white tracking-tight">1. Emergency Panic Destination</h4>
+                    <h4 class="text-sm font-bold text-white tracking-tight">1. Your Backup Wallets (Emergency)</h4>
                   </div>
                   <p class="text-xs sm:text-sm text-[#B0B9C9] min-h-[40px] flex items-center">
-                    Triggering Panic sweeps 100% of all vault assets to your backup wallets instantly.
+                    Clicking Panic immediately withdraws 100% of your vault assets to these backup wallets.
                   </p>
                 </div>
                 <span class="text-[10px] font-mono font-bold text-red-400 bg-red-950/40 border border-red-500/30 px-2.5 py-0.5 rounded-full whitespace-nowrap">
-                  Emergency Egress
+                  Instant Withdrawal
                 </span>
               </div>
 
@@ -6331,8 +6331,7 @@ if (typeof window !== "undefined") {
                 <!-- NEAR -->
                 <div class="space-y-1.5">
                   <div class="flex items-center justify-between text-xs">
-                    <label class="text-[#8C929D] font-mono text-[11px] uppercase font-semibold">Backup NEAR Account</label>
-                    <span class="text-[10px] text-white/40 font-mono">Testnet ID</span>
+                    <label class="text-[#8C929D] font-mono text-[11px] uppercase font-semibold">Backup NEAR Wallet</label>
                   </div>
                   <div class="flex items-center rounded-xl bg-white/[0.02] border border-white/[0.08] focus-within:border-nearGreen transition overflow-hidden">
                     <span class="px-3 py-2.5 text-xs font-mono font-bold text-white bg-white/[0.03] border-r border-white/[0.06] shrink-0">
@@ -6346,7 +6345,6 @@ if (typeof window !== "undefined") {
                 <div class="space-y-1.5">
                   <div class="flex items-center justify-between text-xs">
                     <label class="text-[#8C929D] font-mono text-[11px] uppercase font-semibold">Backup Bitcoin Address</label>
-                    <span class="text-[10px] text-white/40 font-mono">Native SegWit (P2WPKH)</span>
                   </div>
                   <div class="flex items-center rounded-xl bg-white/[0.02] border border-white/[0.08] focus-within:border-nearGreen transition overflow-hidden">
                     <span class="px-3 py-2.5 text-xs font-mono font-bold text-[#F7931A] bg-white/[0.03] border-r border-white/[0.06] shrink-0">
@@ -6359,8 +6357,7 @@ if (typeof window !== "undefined") {
                 <!-- Ethereum / EVM -->
                 <div class="space-y-1.5">
                   <div class="flex items-center justify-between text-xs">
-                    <label class="text-[#8C929D] font-mono text-[11px] uppercase font-semibold">Backup Ethereum / EVM Address</label>
-                    <span class="text-[10px] text-white/40 font-mono">EVM / Base / Arbitrum</span>
+                    <label class="text-[#8C929D] font-mono text-[11px] uppercase font-semibold">Backup Ethereum Address</label>
                   </div>
                   <div class="flex items-center rounded-xl bg-white/[0.02] border border-white/[0.08] focus-within:border-nearGreen transition overflow-hidden">
                     <span class="px-3 py-2.5 text-xs font-mono font-bold text-[#627EEA] bg-white/[0.03] border-r border-white/[0.06] shrink-0">
@@ -6374,13 +6371,12 @@ if (typeof window !== "undefined") {
                 <div class="space-y-1.5">
                   <div class="flex items-center justify-between text-xs">
                     <label class="text-[#8C929D] font-mono text-[11px] uppercase font-semibold">Backup Solana Address</label>
-                    <span class="text-[10px] text-white/40 font-mono">Ed25519 Native</span>
                   </div>
                   <div class="flex items-center rounded-xl bg-white/[0.02] border border-white/[0.08] focus-within:border-nearGreen transition overflow-hidden">
                     <span class="px-3 py-2.5 text-xs font-mono font-bold text-[#9945FF] bg-white/[0.03] border-r border-white/[0.06] shrink-0">
                       SOL
                     </span>
-                    <input type="text" id="panicSolAddr" value="" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="e.g. Solana Base58 Address..." class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none">
+                    <input type="text" id="panicSolAddr" value="" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="e.g. Solana Address..." class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none">
                   </div>
                 </div>
               </div>
@@ -6394,14 +6390,14 @@ if (typeof window !== "undefined") {
                   <div class="space-y-1">
                     <div class="flex items-center gap-2">
                       <span class="w-2 h-2 rounded-full bg-nearGreen"></span>
-                      <h4 class="text-sm font-bold text-white tracking-tight">2. Family Inheritance Destinations</h4>
+                      <h4 class="text-sm font-bold text-white tracking-tight">2. Family Wallets (Inheritance)</h4>
                     </div>
                     <p class="text-xs sm:text-sm text-[#B0B9C9] min-h-[40px] flex items-center">
-                      Autonomous transfer executes if heartbeat expires. Heirs do not need to sign.
+                      If your timer and grace period expire, funds are sent here automatically.
                     </p>
                   </div>
                   <span class="text-[10px] font-mono font-bold text-nearGreen bg-nearGreenMuted border border-nearGreen/30 px-2.5 py-0.5 rounded-full whitespace-nowrap">
-                    Push Model
+                    Auto-Transfer
                   </span>
                 </div>
 
@@ -6411,8 +6407,7 @@ if (typeof window !== "undefined") {
                   <!-- NEAR -->
                   <div class="space-y-1.5">
                     <div class="flex items-center justify-between text-xs">
-                      <label class="text-[#8C929D] font-mono text-[11px] uppercase font-semibold">Family NEAR Account</label>
-                      <span class="text-[10px] text-white/40 font-mono">Testnet ID</span>
+                      <label class="text-[#8C929D] font-mono text-[11px] uppercase font-semibold">Family NEAR Wallet</label>
                     </div>
                     <div class="flex items-center rounded-xl bg-white/[0.02] border border-white/[0.08] focus-within:border-nearGreen transition overflow-hidden">
                       <span class="px-3 py-2.5 text-xs font-mono font-bold text-white bg-white/[0.03] border-r border-white/[0.06] shrink-0">
@@ -6426,7 +6421,6 @@ if (typeof window !== "undefined") {
                   <div class="space-y-1.5">
                     <div class="flex items-center justify-between text-xs">
                       <label class="text-[#8C929D] font-mono text-[11px] uppercase font-semibold">Family Bitcoin Address</label>
-                      <span class="text-[10px] text-white/40 font-mono">Native SegWit (P2WPKH)</span>
                     </div>
                     <div class="flex items-center rounded-xl bg-white/[0.02] border border-white/[0.08] focus-within:border-nearGreen transition overflow-hidden">
                       <span class="px-3 py-2.5 text-xs font-mono font-bold text-[#F7931A] bg-white/[0.03] border-r border-white/[0.06] shrink-0">
@@ -6439,8 +6433,7 @@ if (typeof window !== "undefined") {
                   <!-- Ethereum / EVM -->
                   <div class="space-y-1.5">
                     <div class="flex items-center justify-between text-xs">
-                      <label class="text-[#8C929D] font-mono text-[11px] uppercase font-semibold">Family Ethereum / EVM Address</label>
-                      <span class="text-[10px] text-white/40 font-mono">EVM / Base / Arbitrum</span>
+                      <label class="text-[#8C929D] font-mono text-[11px] uppercase font-semibold">Family Ethereum Address</label>
                     </div>
                     <div class="flex items-center rounded-xl bg-white/[0.02] border border-white/[0.08] focus-within:border-nearGreen transition overflow-hidden">
                       <span class="px-3 py-2.5 text-xs font-mono font-bold text-[#627EEA] bg-white/[0.03] border-r border-white/[0.06] shrink-0">
@@ -6454,13 +6447,12 @@ if (typeof window !== "undefined") {
                   <div class="space-y-1.5">
                     <div class="flex items-center justify-between text-xs">
                       <label class="text-[#8C929D] font-mono text-[11px] uppercase font-semibold">Family Solana Address</label>
-                      <span class="text-[10px] text-white/40 font-mono">Ed25519 Native</span>
                     </div>
                     <div class="flex items-center rounded-xl bg-white/[0.02] border border-white/[0.08] focus-within:border-nearGreen transition overflow-hidden">
                       <span class="px-3 py-2.5 text-xs font-mono font-bold text-[#9945FF] bg-white/[0.03] border-r border-white/[0.06] shrink-0">
                         SOL
                       </span>
-                      <input type="text" id="heirSolAddr" value="" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="e.g. Solana Base58 Address..." class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none">
+                      <input type="text" id="heirSolAddr" value="" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="e.g. Solana Address..." class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none">
                     </div>
                   </div>
 
@@ -6490,11 +6482,11 @@ if (typeof window !== "undefined") {
               <div class="space-y-0.5">
                 <div class="text-xs sm:text-sm font-bold text-white flex items-center gap-2">
                   <span id="addressStatusDot" class="w-2 h-2 rounded-full bg-nearGreen"></span>
-                  <span>Policy Enforcement:</span>
-                  <span id="addressStatusBadge" class="text-nearGreen font-mono font-bold">Active & Enforced</span>
+                  <span>Vault Protection:</span>
+                  <span id="addressStatusBadge" class="text-nearGreen font-mono font-bold">Active</span>
                 </div>
                 <p class="text-xs text-[#8C929D]">
-                  Fund redirection to arbitrary addresses is rejected by smart contract logic.
+                  Your funds can only be sent to the backup or family wallets saved above.
                 </p>
               </div>
 
@@ -6579,12 +6571,12 @@ if (typeof window !== "undefined") {
               <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
             </div>
             <div>
-              <h4 class="text-xs sm:text-sm font-extrabold text-amber-200">Bunker Inactive — Arm Vault Before Depositing</h4>
-              <p class="text-xs text-[#C5CAD3] mt-0.5">Deposit addresses are disabled for security until you configure and save emergency backup or inheritance destinations above.</p>
+              <h4 class="text-xs sm:text-sm font-extrabold text-amber-200">Vault Inactive — Save Wallets Above First</h4>
+              <p class="text-xs text-[#C5CAD3] mt-0.5">Deposit addresses unlock as soon as you save your backup or family wallets above.</p>
             </div>
           </div>
           <button onclick="switchTab('rescue')" class="px-4 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-black font-extrabold text-xs transition whitespace-nowrap shrink-0 self-start sm:self-center cursor-pointer">
-            Configure Policy ↑
+            Save Wallets Above ↑
           </button>
         </div>
       </div>
@@ -6612,14 +6604,14 @@ if (typeof window !== "undefined") {
         <div>
           <div class="flex items-center gap-2.5">
             <span class="w-2.5 h-2.5 rounded-full bg-nearGreen radar-pulse"></span>
-            <h3 class="text-base sm:text-lg font-extrabold text-white">Multichain Bunker Deposit Addresses</h3>
+            <h3 class="text-base sm:text-lg font-extrabold text-white">Your Vault Deposit Addresses</h3>
           </div>
-          <p class="text-xs text-[#8C929D] mt-0.5">Full deterministic addresses derived via NEAR MPC. <span class="text-amber-400/90 font-medium">⚠️ One-Epoch Addresses: do not save permanently in exchange whitelists.</span></p>
+          <p class="text-xs text-[#8C929D] mt-0.5">Send funds to these addresses to store them inside your vault.</p>
         </div>
         <div class="flex items-center gap-2 self-start sm:self-auto">
           <button onclick="fetchLiveBalances(true)" class="px-3.5 py-1.5 rounded-full bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-xs font-mono text-textSilver hover:text-white transition flex items-center gap-2 cursor-pointer">
             <span id="liveSyncDot" class="w-2 h-2 rounded-full bg-nearGreen radar-pulse"></span>
-            <span id="liveSyncBadge">Live On-Chain Synced</span>
+            <span id="liveSyncBadge">Refresh Balances</span>
             <svg class="w-3.5 h-3.5 text-[#8C929D]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
           </button>
         </div>
@@ -6639,7 +6631,7 @@ if (typeof window !== "undefined") {
                   <h4 class="text-base sm:text-lg font-bold text-white truncate leading-tight">Bitcoin</h4>
                   <span class="text-xs font-mono px-2.5 py-0.5 rounded-full bg-white/[0.05] border border-white/[0.08] text-[#8C929D] shrink-0 font-medium">Testnet</span>
                 </div>
-                <span class="text-xs sm:text-sm text-[#8C929D] font-mono truncate block mt-0.5">Native SegWit</span>
+                <span class="text-xs sm:text-sm text-[#8C929D] truncate block mt-0.5">BTC Network</span>
               </div>
             </div>
 
@@ -6654,7 +6646,6 @@ if (typeof window !== "undefined") {
             <div class="space-y-1.5 pt-1">
               <div class="flex items-center justify-between">
                 <span class="text-xs font-sans font-semibold text-[#A6B0C3] uppercase tracking-wider">Deposit Address</span>
-                <span class="text-xs text-nearGreen font-mono font-bold">Full · SegWit</span>
               </div>
               <div class="p-3.5 rounded-xl bg-white/[0.03] border border-white/[0.08] hover:border-white/[0.2] transition min-h-[68px] flex items-center cursor-pointer group" onclick="copyAddr('btcAddress')">
                 <span id="btcAddress" data-full="" class="font-mono text-xs sm:text-[13px] leading-relaxed text-[#8C929D] break-all select-all font-medium group-hover:text-nearGreen transition-colors">
@@ -6688,7 +6679,7 @@ if (typeof window !== "undefined") {
                   <h4 class="text-base sm:text-lg font-bold text-white truncate leading-tight">Ethereum</h4>
                   <span class="text-xs font-mono px-2.5 py-0.5 rounded-full bg-white/[0.05] border border-white/[0.08] text-[#8C929D] shrink-0 font-medium">Testnet</span>
                 </div>
-                <span class="text-xs sm:text-sm text-[#8C929D] font-mono truncate block mt-0.5">ETH · Base · Arbitrum</span>
+                <span class="text-xs sm:text-sm text-[#8C929D] truncate block mt-0.5">ETH · Base · Arbitrum</span>
               </div>
             </div>
 
@@ -6703,7 +6694,6 @@ if (typeof window !== "undefined") {
             <div class="space-y-1.5 pt-1">
               <div class="flex items-center justify-between">
                 <span class="text-xs font-sans font-semibold text-[#A6B0C3] uppercase tracking-wider">Deposit Address</span>
-                <span class="text-xs text-nearGreen font-mono font-bold">Full · EVM</span>
               </div>
               <div class="p-3.5 rounded-xl bg-white/[0.03] border border-white/[0.08] hover:border-white/[0.2] transition min-h-[68px] flex items-center cursor-pointer group" onclick="copyAddr('evmAddress')">
                 <span id="evmAddress" data-full="" class="font-mono text-xs sm:text-[13px] leading-relaxed text-[#8C929D] break-all select-all font-medium group-hover:text-nearGreen transition-colors">
@@ -6737,7 +6727,7 @@ if (typeof window !== "undefined") {
                   <h4 class="text-base sm:text-lg font-bold text-white truncate leading-tight">Solana</h4>
                   <span class="text-xs font-mono px-2.5 py-0.5 rounded-full bg-white/[0.05] border border-white/[0.08] text-[#8C929D] shrink-0 font-medium">Testnet</span>
                 </div>
-                <span class="text-xs sm:text-sm text-[#8C929D] font-mono truncate block mt-0.5">Ed25519 Native</span>
+                <span class="text-xs sm:text-sm text-[#8C929D] truncate block mt-0.5">SOL Network</span>
               </div>
             </div>
 
@@ -6752,7 +6742,6 @@ if (typeof window !== "undefined") {
             <div class="space-y-1.5 pt-1">
               <div class="flex items-center justify-between">
                 <span class="text-xs font-sans font-semibold text-[#A6B0C3] uppercase tracking-wider">Deposit Address</span>
-                <span class="text-xs text-nearGreen font-mono font-bold">Full · Ed25519</span>
               </div>
               <div class="p-3.5 rounded-xl bg-white/[0.03] border border-white/[0.08] hover:border-white/[0.2] transition min-h-[68px] flex items-center cursor-pointer group" onclick="copyAddr('solAddress')">
                 <span id="solAddress" data-full="" class="font-mono text-xs sm:text-[13px] leading-relaxed text-[#8C929D] break-all select-all font-medium group-hover:text-nearGreen transition-colors">
@@ -6786,7 +6775,7 @@ if (typeof window !== "undefined") {
                   <h4 class="text-base sm:text-lg font-bold text-white truncate leading-tight">NEAR</h4>
                   <span class="text-xs font-mono px-2.5 py-0.5 rounded-full bg-white/[0.05] border border-white/[0.08] text-[#8C929D] shrink-0 font-medium">Testnet</span>
                 </div>
-                <span class="text-xs sm:text-sm text-[#8C929D] font-mono truncate block mt-0.5">Native Implicit (Ed25519)</span>
+                <span class="text-xs sm:text-sm text-[#8C929D] truncate block mt-0.5">NEAR Network</span>
               </div>
             </div>
 
@@ -6801,7 +6790,6 @@ if (typeof window !== "undefined") {
             <div class="space-y-1.5 pt-1">
               <div class="flex items-center justify-between">
                 <span class="text-xs font-sans font-semibold text-[#A6B0C3] uppercase tracking-wider">Deposit Address</span>
-                <span class="text-xs text-nearGreen font-mono font-bold">Full · Ed25519</span>
               </div>
               <div class="p-3.5 rounded-xl bg-white/[0.03] border border-white/[0.08] hover:border-white/[0.2] transition min-h-[68px] flex items-center cursor-pointer group" onclick="copyAddr('nearAddress')">
                 <span id="nearAddress" data-full="" title="Connect wallet to reveal address" class="font-mono text-xs sm:text-[13px] leading-relaxed text-[#8C929D] break-all select-all font-medium group-hover:text-nearGreen transition-colors">
@@ -6843,7 +6831,7 @@ if (typeof window !== "undefined") {
               </span>
             </div>
             <p class="text-xs text-[#A6B0C3] leading-relaxed">
-              Zero-metadata status pushes via <strong class="text-white font-mono">@aegis_vault_bot</strong> (no wallet addresses, dates, or chains included).
+              Private status alerts via <strong class="text-white font-mono">@aegis_vault_bot</strong> (never includes wallet addresses, dates, or networks).
             </p>
           </div>
         </div>
@@ -7185,7 +7173,7 @@ if (typeof window !== "undefined") {
       <div class="flex items-center gap-2">
         <span class="text-nearGreen font-extrabold text-sm tracking-tighter">AEGIS</span>
         <span class="text-textMuted">·</span>
-        <span>Multichain MPC Dead-Man's Switch</span>
+        <span>Self-Custodial Crypto Bunker &amp; Inheritance Switch</span>
         <span class="text-textMuted">·</span>
         <span>100% Non-Custodial</span>
       </div>
@@ -7885,7 +7873,7 @@ if (typeof window !== "undefined") {
           tabRescue.innerHTML = `1. Rescue & Inheritance <span class="ml-1.5 px-2 py-0.5 text-[10px] bg-nearGreen text-nearBlack rounded-full font-bold">ARMED</span>`;
         }
         if (badge && !info.pending_policy) {
-          badge.innerText = 'Active & Enforced';
+          badge.innerText = 'Active';
           badge.className = 'text-nearGreen font-mono font-bold';
         }
         if (dot && !info.pending_policy) dot.className = 'w-2.5 h-2.5 rounded-full bg-nearGreen shadow-near-glow';
@@ -7900,7 +7888,7 @@ if (typeof window !== "undefined") {
           tabRescue.innerText = `1. Rescue & Inheritance (Destinations)`;
         }
         if (badge && !info.pending_policy) {
-          badge.innerText = 'Unconfigured';
+          badge.innerText = 'Not Set Yet';
           badge.className = 'text-amber-300 font-mono font-bold';
         }
         if (dot && !info.pending_policy) dot.className = 'w-2.5 h-2.5 rounded-full bg-amber-400';
@@ -7979,7 +7967,7 @@ if (typeof window !== "undefined") {
           else { unconfiguredBanner.classList.add('hidden'); unconfiguredBanner.classList.remove('flex'); }
         }
         if (badge) {
-          badge.innerText = isConfigured ? 'Active & Enforced' : 'Unconfigured';
+          badge.innerText = isConfigured ? 'Active' : 'Not Set Yet';
           badge.className = isConfigured ? 'text-nearGreen font-mono font-bold' : 'text-amber-300 font-mono font-bold';
         }
         if (dot) dot.className = isConfigured ? 'w-2.5 h-2.5 rounded-full bg-nearGreen shadow-near-glow' : 'w-2.5 h-2.5 rounded-full bg-amber-400';
@@ -8906,8 +8894,7 @@ if (typeof window !== "undefined") {
           }
         });
         if (pill) {
-          pill.innerText = 'Derivation Path: Connect Wallet to View';
-          pill.className = 'text-[11px] font-mono font-bold text-[#8E99AD] bg-white/[0.04] border border-white/[0.08] px-2.5 py-0.5 rounded-full whitespace-nowrap';
+          pill.classList.add('hidden');
         }
         if (banner) banner.classList.add('hidden');
         if (unarmedBanner) unarmedBanner.classList.add('hidden');
@@ -8928,8 +8915,8 @@ if (typeof window !== "undefined") {
         );
         const isEpochSwept = Boolean(lastFetchedVaultInfo && lastFetchedVaultInfo.is_epoch_swept);
         const burnedMsg = isInheritance
-          ? `Epoch ${currentEpochIndex} Inherited · Deposits Disabled`
-          : `Epoch ${currentEpochIndex} Burned · Deposits Disabled`;
+          ? `Vault Inherited · Deposits Disabled`
+          : `Vault Evacuated · Deposits Disabled`;
         chains.forEach(c => {
           if (c.addrEl) {
             c.addrEl.innerText = burnedMsg;
@@ -8942,18 +8929,13 @@ if (typeof window !== "undefined") {
             c.actionsEl.innerHTML = `
               <div class="col-span-2 py-2.5 px-3 rounded-xl ${isInheritance ? 'bg-purple-950/30 border border-purple-500/20 text-purple-300' : 'bg-red-950/30 border border-red-500/20 text-red-400'} text-center text-xs font-mono flex items-center justify-center gap-1.5 select-none">
                 <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
-                <span>${isInheritance ? (isEpochSwept ? 'Epoch Closed · Assets Transferred' : 'Epoch Closed · Sweep in Progress') : (isEpochSwept ? 'Epoch Burned · Assets Swept' : 'Epoch Burned · Sweep in Progress')}</span>
+                <span>${isInheritance ? (isEpochSwept ? 'Vault Closed · Assets Transferred' : 'Vault Closed · Transfer in Progress') : (isEpochSwept ? 'Vault Closed · Assets Swept' : 'Vault Closed · Sweep in Progress')}</span>
               </div>
             `;
           }
         });
         if (pill) {
-          pill.innerText = isInheritance
-            ? `Epoch ${currentEpochIndex} · ${isEpochSwept ? 'Inherited (Transferred)' : 'Inheritance (Sweeping)'}`
-            : `Epoch ${currentEpochIndex} · ${isEpochSwept ? 'Burned (Inactive)' : 'Evacuating (Sweeping)'}`;
-          pill.className = isInheritance
-            ? 'text-[11px] font-mono font-bold text-purple-300 bg-purple-950/40 border border-purple-500/30 px-2.5 py-0.5 rounded-full whitespace-nowrap'
-            : 'text-[11px] font-mono font-bold text-red-400 bg-red-950/40 border border-red-500/30 px-2.5 py-0.5 rounded-full whitespace-nowrap';
+          pill.classList.add('hidden');
         }
         if (banner) {
           banner.classList.remove('hidden');
@@ -8988,12 +8970,11 @@ if (typeof window !== "undefined") {
         if (banner) banner.classList.add('hidden');
         if (unarmedBanner) unarmedBanner.classList.add('hidden');
         if (pill) {
-          pill.innerText = `Epoch ${currentEpochIndex} · Grace Buffer (Deposits Locked)`;
-          pill.className = 'text-[11px] font-mono font-bold text-amber-300 bg-amber-950/40 border border-amber-500/30 px-2.5 py-0.5 rounded-full whitespace-nowrap';
+          pill.classList.add('hidden');
         }
         chains.forEach(c => {
           if (c.addrEl) {
-            c.addrEl.innerText = 'Heartbeat Expired · Deposits Locked (Grace Buffer)';
+            c.addrEl.innerText = 'Timer Expired · Deposits Paused (Grace Buffer)';
             c.addrEl.className = 'font-mono text-xs leading-relaxed text-amber-400 break-words select-none font-bold';
             c.addrEl.dataset.full = '';
           }
@@ -9018,14 +8999,13 @@ if (typeof window !== "undefined") {
       // If Bunker is NOT armed (Unconfigured or no egress addresses configured at all):
       if (!isArmed) {
         if (pill) {
-          pill.innerText = `Derivation Path: aegis/${currentSigner}/${currentEpochIndex} (Unarmed)`;
-          pill.className = 'text-[11px] font-mono font-bold text-amber-400 bg-amber-950/40 border border-amber-500/30 px-2.5 py-0.5 rounded-full whitespace-nowrap';
+          pill.classList.add('hidden');
         }
         if (unarmedBanner) unarmedBanner.classList.remove('hidden');
 
         chains.forEach(c => {
           if (c.addrEl) {
-            c.addrEl.innerText = 'Bunker Unarmed · Configure Egress First';
+            c.addrEl.innerText = 'Save backup or family wallets above to unlock';
             c.addrEl.className = 'font-mono text-xs leading-relaxed text-amber-400/80 break-words select-none font-semibold';
             c.addrEl.dataset.full = '';
           }
@@ -9033,7 +9013,7 @@ if (typeof window !== "undefined") {
             c.actionsEl.innerHTML = `
               <button type="button" onclick="switchTab('rescue')" class="col-span-2 py-2 px-3 rounded-xl bg-amber-950/25 hover:bg-amber-950/40 border border-amber-500/25 hover:border-amber-500/40 text-center text-xs font-mono text-amber-400 flex items-center justify-center gap-1.5 transition active:scale-98 cursor-pointer">
                 <svg class="w-3.5 h-3.5 text-amber-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
-                <span>Locked · Arm Vault Above ↑</span>
+                <span>Locked · Save Wallets Above ↑</span>
               </button>
             `;
           }
@@ -9045,8 +9025,7 @@ if (typeof window !== "undefined") {
       if (unarmedBanner) unarmedBanner.classList.add('hidden');
 
       if (pill) {
-        pill.innerText = `Derivation Path: aegis/${currentSigner}/${currentEpochIndex} (Active)`;
-        pill.className = 'text-[11px] font-mono font-bold text-nearGreen bg-nearGreenMuted border border-nearGreen/30 px-2.5 py-0.5 rounded-full whitespace-nowrap';
+        pill.classList.add('hidden');
       }
 
       // 1. Check local dynamic cache
@@ -9085,7 +9064,7 @@ if (typeof window !== "undefined") {
       chains.forEach(c => {
         if (!c.hasEgress) {
           if (c.addrEl) {
-            c.addrEl.innerText = 'Egress Incomplete · Set Above';
+            c.addrEl.innerText = 'Save backup & family wallets above to unlock';
             c.addrEl.className = 'font-mono text-xs leading-relaxed text-amber-400/80 break-words select-none font-semibold';
             c.addrEl.dataset.full = '';
           }
@@ -9093,7 +9072,7 @@ if (typeof window !== "undefined") {
             c.actionsEl.innerHTML = `
               <button type="button" onclick="switchTab('rescue')" class="col-span-2 py-2 px-3 rounded-xl bg-amber-950/25 hover:bg-amber-950/40 border border-amber-500/25 hover:border-amber-500/40 text-center text-xs font-mono text-amber-400 flex items-center justify-center gap-1.5 transition active:scale-98 cursor-pointer">
                 <svg class="w-3.5 h-3.5 text-amber-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
-                <span>Locked · Set Egress Above ↑</span>
+                <span>Locked · Save Wallets Above ↑</span>
               </button>
             `;
           }
@@ -9821,20 +9800,20 @@ if (typeof window !== "undefined") {
         if (pulseDot) pulseDot.className = 'w-2.5 h-2.5 rounded-full bg-amber-400';
         if (cardTitle) {
           cardTitle.className = 'text-xs font-mono font-bold uppercase tracking-wider text-amber-400';
-          cardTitle.innerText = 'AUTONOMOUS HEARTBEAT MONITOR';
+          cardTitle.innerText = 'VAULT CHECK-IN TIMER';
         }
         if (heartbeatTag) {
           heartbeatTag.className = 'text-xs font-mono font-medium text-amber-400/90 bg-amber-950/30 px-3 py-1 rounded-full border border-amber-500/30';
           heartbeatTag.innerText = 'Vault Unarmed';
         }
-        if (countdownTitle) countdownTitle.innerText = "Dead-Man's Switch Heartbeat:";
+        if (countdownTitle) countdownTitle.innerText = 'Time Remaining Before Automatic Inheritance:';
         if (countdownBox) countdownBox.innerText = 'Ready to Arm';
-        if (statusDisplay) statusDisplay.innerHTML = 'Status: <strong class="text-amber-400 font-bold">Unconfigured (Enter Destinations)</strong>';
+        if (statusDisplay) statusDisplay.innerHTML = 'Status: <strong class="text-amber-400 font-bold">Not Set Yet (Save Wallets Below)</strong>';
         if (timerBar) {
           timerBar.style.width = '100%';
           timerBar.className = 'h-full bg-amber-400/50 rounded-full transition-all duration-300';
         }
-        if (pctEl) pctEl.innerText = 'Waiting for destinations';
+        if (pctEl) pctEl.innerText = 'Waiting for wallets';
 
         if (pingBtn) {
           pingBtn.className = 'w-full bg-amber-400 hover:bg-amber-300 text-black font-extrabold py-3.5 px-6 near-pill-btn text-sm sm:text-base tracking-wide transition shadow-sm active:scale-98 flex items-center justify-center gap-2';
@@ -9847,7 +9826,7 @@ if (typeof window !== "undefined") {
           pingBtnIcon.setAttribute('stroke-width', '2');
         }
         if (pingBtnText) {
-          pingBtnText.innerText = 'Save Policy Below to Arm Vault';
+          pingBtnText.innerText = 'Save Wallets Below to Arm Vault';
         }
 
         const headerPanic = document.getElementById('headerPanicBtn');
@@ -9874,13 +9853,13 @@ if (typeof window !== "undefined") {
       if (pulseDot) pulseDot.className = 'w-2.5 h-2.5 rounded-full bg-nearGreen radar-pulse';
       if (cardTitle) {
         cardTitle.className = 'text-xs font-mono font-bold uppercase tracking-wider text-nearGreen';
-        cardTitle.innerText = 'AUTONOMOUS HEARTBEAT MONITOR';
+        cardTitle.innerText = 'VAULT CHECK-IN TIMER';
       }
       if (heartbeatTag) {
         heartbeatTag.className = 'text-xs font-mono font-medium text-textGray bg-nearElevated px-3 py-1 rounded-full border border-nearBorder';
         heartbeatTag.innerText = 'Last check-in: Active';
       }
-      if (countdownTitle) countdownTitle.innerText = 'Automatic Transfer to Heirs Initiates In:';
+      if (countdownTitle) countdownTitle.innerText = 'Time Remaining Before Automatic Inheritance:';
       if (pingBtn) {
         pingBtn.className = 'w-full bg-nearGreen hover:bg-nearGreenHover text-nearBlack font-extrabold py-3.5 px-6 near-pill-btn text-sm sm:text-base tracking-wide transition shadow-near-glow active:scale-98 flex items-center justify-center gap-2';
       }
