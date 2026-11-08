@@ -6038,17 +6038,9 @@ if (typeof window !== "undefined") {
           <!-- Connected state (hidden by default) -->
           <div id="connectedWalletPill" class="hidden flex items-center gap-2 h-9 px-3.5 rounded-full bg-nearElevated border border-nearBorder text-xs font-mono whitespace-nowrap shrink-0">
             <span class="w-2 h-2 rounded-full bg-nearGreen shrink-0"></span>
-            <span id="headerAccountName" class="font-bold text-nearGreen hidden sm:inline whitespace-nowrap">account.testnet</span>
-            <span id="headerAccountNameMobile" class="font-bold text-nearGreen sm:hidden whitespace-nowrap">acc...</span>
-            <span id="headerAccountBalance" class="text-[#A6B0C3] border-l border-white/10 pl-2 font-normal hidden sm:inline whitespace-nowrap">0.00 NEAR</span>
-            
-            <!-- Secondary linked chains (ETH / SOL / BTC) -->
-            <div id="headerMultichainBadges" class="hidden items-center gap-1.5 border-l border-white/10 pl-2"></div>
-
-            <button onclick="openMultichainWalletModal()" title="Link More Wallets" class="ml-1 text-[#00F5D4] hover:text-white transition p-0.5 shrink-0 flex items-center cursor-pointer">
-              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" /></svg>
-            </button>
-            <button onclick="disconnectAllWallets()" title="Disconnect All" class="ml-1 text-textGray hover:text-red-400 transition p-0.5 shrink-0 flex items-center cursor-pointer">
+            <span id="headerAccountName" onclick="openMultichainWalletModal()" class="font-bold text-nearGreen hidden sm:inline whitespace-nowrap cursor-pointer hover:underline">account.testnet</span>
+            <span id="headerAccountNameMobile" onclick="openMultichainWalletModal()" class="font-bold text-nearGreen sm:hidden whitespace-nowrap cursor-pointer">acc...</span>
+            <button onclick="disconnectAllWallets()" title="Disconnect Wallet" class="ml-1 text-textGray hover:text-red-400 transition p-0.5 shrink-0 flex items-center cursor-pointer">
               <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
             </button>
           </div>
@@ -8568,14 +8560,13 @@ if (typeof window !== "undefined") {
         if (nameEl) {
           nameEl.innerText = validNearAcc.length > 24 ? validNearAcc.slice(0, 10) + '...' + validNearAcc.slice(-8) : validNearAcc;
           nameEl.title = validNearAcc;
-          nameEl.className = 'font-bold text-nearGreen hidden sm:inline whitespace-nowrap';
+          nameEl.className = 'font-bold text-nearGreen hidden sm:inline whitespace-nowrap cursor-pointer hover:underline';
         }
         if (nameMobEl) {
           nameMobEl.innerText = validNearAcc.length > 12 ? validNearAcc.slice(0, 10) + '...' : validNearAcc;
-          nameMobEl.className = 'font-bold text-nearGreen sm:hidden whitespace-nowrap';
+          nameMobEl.className = 'font-bold text-nearGreen sm:hidden whitespace-nowrap cursor-pointer';
         }
 
-        fetchAccountNearBalance(validNearAcc);
         updateCountdownDisplay();
       } else {
         updateWalletDisconnectedUI();
