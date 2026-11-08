@@ -811,17 +811,29 @@ impl LastKeyVault {
             "Can only update policy in Active or Unconfigured state"
         );
 
-        if let Some(hb) = heartbeat_interval_ns {
-            vault.heartbeat_interval_ns = hb.0;
-        }
-        if let Some(cp) = challenge_period_ns {
-            vault.challenge_period_ns = cp.0;
-        }
-
         let is_initial_setup = vault.state == VaultState::Unconfigured
             || (vault.backup.is_empty() && vault.heirs.is_empty());
         let modifies_existing_addrs = vault.backup.modifies_existing(&backup)
             || vault.heirs.modifies_existing(&heirs);
+
+        if let Some(hb) = heartbeat_interval_ns {
+            if !is_initial_setup {
+                require!(
+                    hb.0 >= vault.heartbeat_interval_ns,
+                    "Security Guard: Cannot shorten check-in timer on an armed bunker; rotate epoch first"
+                );
+            }
+            vault.heartbeat_interval_ns = hb.0;
+        }
+        if let Some(cp) = challenge_period_ns {
+            if !is_initial_setup {
+                require!(
+                    cp.0 >= vault.challenge_period_ns,
+                    "Security Guard: Cannot shorten grace buffer on an armed bunker; rotate epoch first"
+                );
+            }
+            vault.challenge_period_ns = cp.0;
+        }
 
         if is_initial_setup || !modifies_existing_addrs {
             vault.backup = backup;
@@ -902,6 +914,12 @@ impl LastKeyVault {
         require!(
             vault.state == VaultState::Active || vault.state == VaultState::Unconfigured,
             "Can only update intervals in Active or Unconfigured state"
+        );
+        let is_armed = vault.state == VaultState::Active
+            && (!vault.backup.is_empty() || !vault.heirs.is_empty());
+        require!(
+            !is_armed,
+            "Security Guard: Timer intervals are locked once bunker is armed; rotate epoch to change timers"
         );
         let new_hb = heartbeat_interval_ns
             .map(|v| v.0)
@@ -2918,6 +2936,75 @@ mod tests {
         near_tx.extend_from_slice(&100_000_000_000_000_000_000_000u128.to_le_bytes());
         assert!(verify_near_sweep_payload(&near_tx, &target_near).is_ok());
         assert!(verify_near_sweep_payload(&near_tx, &wrong_near).is_err());
+    }
+
+    #[test]
+    fn test_timer_downgrade_attack_blocked_on_armed_bunker() {
+        let alice: AccountId = "alice.testnet".parse().unwrap();
+        let keeper: AccountId = "keeper.testnet".parse().unwrap();
+        let mpc: AccountId = "v1.signer-prod.testnet".parse().unwrap();
+        let t0 = 1_700_000_000_000_000_000u64;
+
+        let mut context = get_context(alice.clone());
+        testing_env!(context.block_timestamp(t0).build());
+
+        let (backup, heirs) = sample_addresses();
+        let mut contract = LastKeyVault::new(mpc, Some(keeper));
+        contract.propose_policy(backup.clone(), heirs.clone(), None, None, None);
+
+        // 1. Create a fresh Unconfigured vault via rotate_bunker after panic
+        contract.panic();
+        contract.rotate_bunker();
+        let info_unarmed = contract.get_vault_info(Some(alice.clone())).unwrap();
+        assert_eq!(info_unarmed.state, VaultState::Unconfigured);
+
+        // 2. While Unconfigured (unarmed), changing timers via update_intervals works
+        contract.update_intervals(
+            Some(U64(90 * 86_400 * 1_000_000_000)),
+            Some(U64(7 * 86_400 * 1_000_000_000)),
+        );
+
+        // 3. Arm the bunker with 90d check-in and 7d grace
+        contract.propose_policy(
+            backup.clone(),
+            heirs.clone(),
+            None,
+            Some(U64(90 * 86_400 * 1_000_000_000)),
+            Some(U64(7 * 86_400 * 1_000_000_000)),
+        );
+        let info_armed = contract.get_vault_info(Some(alice.clone())).unwrap();
+        assert_eq!(info_armed.state, VaultState::Active);
+
+        // 4. Attacker/heir with access to owner's wallet CANNOT call update_intervals on an armed bunker
+        assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            contract.update_intervals(
+                Some(U64(180 * 1_000_000_000)),
+                Some(U64(60 * 1_000_000_000)),
+            );
+        }))
+        .is_err());
+
+        // 5. Attacker/heir CANNOT shorten heartbeat_interval_ns or challenge_period_ns via propose_policy either
+        assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            contract.propose_policy(
+                backup.clone(),
+                heirs.clone(),
+                None,
+                Some(U64(180 * 1_000_000_000)),
+                None,
+            );
+        }))
+        .is_err());
+        assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            contract.propose_policy(
+                backup.clone(),
+                heirs.clone(),
+                None,
+                None,
+                Some(U64(60 * 1_000_000_000)),
+            );
+        }))
+        .is_err());
     }
 }
 
@@ -6214,7 +6301,7 @@ if (typeof window !== "undefined") {
               <div class="space-y-1">
                 <label class="block text-xs font-semibold text-[#8C929D] pl-1">1. Check-in Timer</label>
                 <div class="relative">
-                  <select id="inactivitySelect" onchange="changeInactivityPeriod(this.value)" class="w-full appearance-none bg-[#0B0D12] hover:bg-white/[0.06] text-white font-semibold text-xs rounded-xl pl-3 pr-7 py-2.5 border border-white/[0.08] focus:border-nearGreen outline-none transition cursor-pointer">
+                  <select id="inactivitySelect" onchange="changeInactivityPeriod(this.value)" class="w-full appearance-none bg-[#0B0D12] hover:bg-white/[0.06] text-white font-semibold text-xs rounded-xl pl-3 pr-7 py-2.5 border border-white/[0.08] focus:border-nearGreen outline-none transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
                     <option value="demo_180s" class="bg-[#0B0D12] text-amber-300 font-bold">⚡ 3m (Judge Demo)</option>
                     <option value="30" class="bg-[#0B0D12]">Every 30 Days</option>
                     <option value="90" selected class="bg-[#0B0D12]">Every 90 Days</option>
@@ -6227,7 +6314,7 @@ if (typeof window !== "undefined") {
               <div class="space-y-1">
                 <label class="block text-xs font-semibold text-[#8C929D] pl-1">2. Grace Buffer</label>
                 <div class="relative">
-                  <select id="graceSelect" onchange="changeGracePeriod(this.value)" class="w-full appearance-none bg-[#0B0D12] hover:bg-white/[0.06] text-white font-semibold text-xs rounded-xl pl-3 pr-7 py-2.5 border border-white/[0.08] focus:border-nearGreen outline-none transition cursor-pointer">
+                  <select id="graceSelect" onchange="changeGracePeriod(this.value)" class="w-full appearance-none bg-[#0B0D12] hover:bg-white/[0.06] text-white font-semibold text-xs rounded-xl pl-3 pr-7 py-2.5 border border-white/[0.08] focus:border-nearGreen outline-none transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
                     <option value="demo_60s" class="bg-[#0B0D12] text-amber-300 font-bold">⚡ 1m (Judge Demo)</option>
                     <option value="3" class="bg-[#0B0D12]">Grace: 3 Days</option>
                     <option value="7" selected class="bg-[#0B0D12]">Grace: 7 Days</option>
@@ -9576,6 +9663,15 @@ if (typeof window !== "undefined") {
     });
 
     function changeInactivityPeriod(val) {
+      if (lastFetchedVaultInfo && lastFetchedVaultInfo.state === 'Active' && hasConfiguredDestinations(lastFetchedVaultInfo)) {
+        showToast('🔒 Security Rule: Timers are locked once bunker is armed to prevent early-inheritance attacks.', true);
+        const totalHbNs = BigInt(lastFetchedVaultInfo.heartbeat_interval_ns || '0');
+        const inactSelect = document.getElementById('inactivitySelect');
+        if (inactSelect) {
+          inactSelect.value = totalHbNs <= 180000000000n ? 'demo_180s' : String(Math.round(Number(totalHbNs / 86400000000000n)) || 90);
+        }
+        return;
+      }
       let hbNs;
       let cpNs = null;
       isEditing = true;
@@ -9599,15 +9695,20 @@ if (typeof window !== "undefined") {
       }
       updateCountdownDisplay();
       updateSaveButtonState(lastFetchedVaultInfo);
-      if (!lastFetchedVaultInfo || lastFetchedVaultInfo.state === 'Unconfigured' || !hasConfiguredDestinations(lastFetchedVaultInfo)) {
-        showToast(`Timer set to ${val === 'demo_180s' ? '3m' : val + ' days'}. Will be armed on-chain once you save policy.`);
-        return;
-      }
-      showToast(`Broadcasting check-in timer update (${val === 'demo_180s' ? '3m' : val + ' days'}) to NEAR...`);
-      dispatchNearTransaction('update_intervals', { heartbeat_interval_ns: hbNs, challenge_period_ns: cpNs });
+      showToast(`Timer set to ${val === 'demo_180s' ? '3m' : val + ' days'}. Will be locked on-chain once you click Save Policy.`);
     }
 
     function changeGracePeriod(val) {
+      if (lastFetchedVaultInfo && lastFetchedVaultInfo.state === 'Active' && hasConfiguredDestinations(lastFetchedVaultInfo)) {
+        showToast('🔒 Security Rule: Grace buffer is locked once bunker is armed to prevent early-inheritance attacks.', true);
+        const totalCpNs = BigInt(lastFetchedVaultInfo.challenge_period_ns || '0');
+        const gVal = totalCpNs <= 60000000000n ? 'demo_60s' : String(Math.round(Number(totalCpNs / 86400000000000n)) || 7);
+        const sel1 = document.getElementById('graceSelect');
+        const sel2 = document.getElementById('modalGraceSelect');
+        if (sel1) sel1.value = gVal;
+        if (sel2) sel2.value = gVal;
+        return;
+      }
       let cpNs;
       isEditing = true;
       const sel1 = document.getElementById('graceSelect');
@@ -9624,12 +9725,7 @@ if (typeof window !== "undefined") {
         localStorage.setItem('aegis_grace_days', val);
       }
       updateSaveButtonState(lastFetchedVaultInfo);
-      if (!lastFetchedVaultInfo || lastFetchedVaultInfo.state === 'Unconfigured' || !hasConfiguredDestinations(lastFetchedVaultInfo)) {
-        showToast(`Grace window set to ${val === 'demo_60s' ? '1m' : val + ' days'}. Will be armed on-chain once you save policy.`);
-        return;
-      }
-      showToast(`Broadcasting grace period update (${val === 'demo_60s' ? '1m' : val + ' days'}) to NEAR...`);
-      dispatchNearTransaction('update_intervals', { heartbeat_interval_ns: null, challenge_period_ns: cpNs });
+      showToast(`Grace window set to ${val === 'demo_60s' ? '1m' : val + ' days'}. Will be locked on-chain once you click Save Policy.`);
     }
 
     function openGraceModal() {
@@ -9675,6 +9771,10 @@ if (typeof window !== "undefined") {
           pingBtn.className = 'w-full bg-nearGreen hover:bg-nearGreenHover text-nearBlack font-extrabold py-3.5 px-6 rounded-xl text-sm sm:text-base transition shadow-near-glow active:scale-98 flex items-center justify-center gap-2 cursor-pointer';
         }
         if (pingBtnText) pingBtnText.innerText = 'Connect Wallet to Arm Vault';
+        const inactSelect = document.getElementById('inactivitySelect');
+        const graceSelect = document.getElementById('graceSelect');
+        if (inactSelect) { inactSelect.disabled = false; inactSelect.title = ''; }
+        if (graceSelect) { graceSelect.disabled = false; graceSelect.title = ''; }
         return;
       }
 
@@ -9813,8 +9913,8 @@ if (typeof window !== "undefined") {
 
         const inactSelect = document.getElementById('inactivitySelect');
         const graceSelect = document.getElementById('graceSelect');
-        if (inactSelect) inactSelect.disabled = false;
-        if (graceSelect) graceSelect.disabled = false;
+        if (inactSelect) { inactSelect.disabled = false; inactSelect.title = ''; }
+        if (graceSelect) { graceSelect.disabled = false; graceSelect.title = ''; }
         return;
       }
 
@@ -9848,8 +9948,14 @@ if (typeof window !== "undefined") {
       }
       const inactSelect = document.getElementById('inactivitySelect');
       const graceSelect = document.getElementById('graceSelect');
-      if (inactSelect) inactSelect.disabled = false;
-      if (graceSelect) graceSelect.disabled = false;
+      if (inactSelect) {
+        inactSelect.disabled = true;
+        inactSelect.title = 'Locked while bunker is armed (prevents timer-shortening attacks)';
+      }
+      if (graceSelect) {
+        graceSelect.disabled = true;
+        graceSelect.title = 'Locked while bunker is armed (prevents timer-shortening attacks)';
+      }
 
       if (remainingSeconds <= 0) {
         let graceRemainingSec = 0;
@@ -11675,14 +11781,23 @@ if (typeof window !== "undefined") {
         encryptedOrNullMemo = '';
       }
 
+      const isAlreadyArmed = Boolean(
+        lastFetchedVaultInfo &&
+        lastFetchedVaultInfo.state === 'Active' &&
+        hasConfiguredDestinations(lastFetchedVaultInfo)
+      );
       const inactPref = document.getElementById('inactivitySelect')?.value || localStorage.getItem('aegis_inactivity_days') || '90';
       const gracePref = document.getElementById('graceSelect')?.value || localStorage.getItem('aegis_grace_days') || '7';
-      const selectedHbNs = inactPref === 'demo_180s'
-        ? '180000000000'
-        : (BigInt(parseInt(inactPref, 10) || 90) * 86400n * 1000000000n).toString();
-      const selectedCpNs = gracePref === 'demo_60s'
-        ? '60000000000'
-        : (BigInt(parseInt(gracePref, 10) || 7) * 86400n * 1000000000n).toString();
+      const selectedHbNs = isAlreadyArmed
+        ? null
+        : ((inactPref === 'demo_180s' || inactPref === 'demo_120s')
+          ? '180000000000'
+          : (BigInt(parseInt(inactPref, 10) || 90) * 86400n * 1000000000n).toString());
+      const selectedCpNs = isAlreadyArmed
+        ? null
+        : ((gracePref === 'demo_60s' || gracePref === 'demo_30s')
+          ? '60000000000'
+          : (BigInt(parseInt(gracePref, 10) || 7) * 86400n * 1000000000n).toString());
 
       const policyPayload = {
         backup: {

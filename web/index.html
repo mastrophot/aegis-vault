@@ -304,7 +304,7 @@
               <div class="space-y-1">
                 <label class="block text-xs font-semibold text-[#8C929D] pl-1">1. Check-in Timer</label>
                 <div class="relative">
-                  <select id="inactivitySelect" onchange="changeInactivityPeriod(this.value)" class="w-full appearance-none bg-[#0B0D12] hover:bg-white/[0.06] text-white font-semibold text-xs rounded-xl pl-3 pr-7 py-2.5 border border-white/[0.08] focus:border-nearGreen outline-none transition cursor-pointer">
+                  <select id="inactivitySelect" onchange="changeInactivityPeriod(this.value)" class="w-full appearance-none bg-[#0B0D12] hover:bg-white/[0.06] text-white font-semibold text-xs rounded-xl pl-3 pr-7 py-2.5 border border-white/[0.08] focus:border-nearGreen outline-none transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
                     <option value="demo_180s" class="bg-[#0B0D12] text-amber-300 font-bold">⚡ 3m (Judge Demo)</option>
                     <option value="30" class="bg-[#0B0D12]">Every 30 Days</option>
                     <option value="90" selected class="bg-[#0B0D12]">Every 90 Days</option>
@@ -317,7 +317,7 @@
               <div class="space-y-1">
                 <label class="block text-xs font-semibold text-[#8C929D] pl-1">2. Grace Buffer</label>
                 <div class="relative">
-                  <select id="graceSelect" onchange="changeGracePeriod(this.value)" class="w-full appearance-none bg-[#0B0D12] hover:bg-white/[0.06] text-white font-semibold text-xs rounded-xl pl-3 pr-7 py-2.5 border border-white/[0.08] focus:border-nearGreen outline-none transition cursor-pointer">
+                  <select id="graceSelect" onchange="changeGracePeriod(this.value)" class="w-full appearance-none bg-[#0B0D12] hover:bg-white/[0.06] text-white font-semibold text-xs rounded-xl pl-3 pr-7 py-2.5 border border-white/[0.08] focus:border-nearGreen outline-none transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
                     <option value="demo_60s" class="bg-[#0B0D12] text-amber-300 font-bold">⚡ 1m (Judge Demo)</option>
                     <option value="3" class="bg-[#0B0D12]">Grace: 3 Days</option>
                     <option value="7" selected class="bg-[#0B0D12]">Grace: 7 Days</option>
@@ -3666,6 +3666,15 @@
     });
 
     function changeInactivityPeriod(val) {
+      if (lastFetchedVaultInfo && lastFetchedVaultInfo.state === 'Active' && hasConfiguredDestinations(lastFetchedVaultInfo)) {
+        showToast('🔒 Security Rule: Timers are locked once bunker is armed to prevent early-inheritance attacks.', true);
+        const totalHbNs = BigInt(lastFetchedVaultInfo.heartbeat_interval_ns || '0');
+        const inactSelect = document.getElementById('inactivitySelect');
+        if (inactSelect) {
+          inactSelect.value = totalHbNs <= 180000000000n ? 'demo_180s' : String(Math.round(Number(totalHbNs / 86400000000000n)) || 90);
+        }
+        return;
+      }
       let hbNs;
       let cpNs = null;
       isEditing = true;
@@ -3689,15 +3698,20 @@
       }
       updateCountdownDisplay();
       updateSaveButtonState(lastFetchedVaultInfo);
-      if (!lastFetchedVaultInfo || lastFetchedVaultInfo.state === 'Unconfigured' || !hasConfiguredDestinations(lastFetchedVaultInfo)) {
-        showToast(`Timer set to ${val === 'demo_180s' ? '3m' : val + ' days'}. Will be armed on-chain once you save policy.`);
-        return;
-      }
-      showToast(`Broadcasting check-in timer update (${val === 'demo_180s' ? '3m' : val + ' days'}) to NEAR...`);
-      dispatchNearTransaction('update_intervals', { heartbeat_interval_ns: hbNs, challenge_period_ns: cpNs });
+      showToast(`Timer set to ${val === 'demo_180s' ? '3m' : val + ' days'}. Will be locked on-chain once you click Save Policy.`);
     }
 
     function changeGracePeriod(val) {
+      if (lastFetchedVaultInfo && lastFetchedVaultInfo.state === 'Active' && hasConfiguredDestinations(lastFetchedVaultInfo)) {
+        showToast('🔒 Security Rule: Grace buffer is locked once bunker is armed to prevent early-inheritance attacks.', true);
+        const totalCpNs = BigInt(lastFetchedVaultInfo.challenge_period_ns || '0');
+        const gVal = totalCpNs <= 60000000000n ? 'demo_60s' : String(Math.round(Number(totalCpNs / 86400000000000n)) || 7);
+        const sel1 = document.getElementById('graceSelect');
+        const sel2 = document.getElementById('modalGraceSelect');
+        if (sel1) sel1.value = gVal;
+        if (sel2) sel2.value = gVal;
+        return;
+      }
       let cpNs;
       isEditing = true;
       const sel1 = document.getElementById('graceSelect');
@@ -3714,12 +3728,7 @@
         localStorage.setItem('aegis_grace_days', val);
       }
       updateSaveButtonState(lastFetchedVaultInfo);
-      if (!lastFetchedVaultInfo || lastFetchedVaultInfo.state === 'Unconfigured' || !hasConfiguredDestinations(lastFetchedVaultInfo)) {
-        showToast(`Grace window set to ${val === 'demo_60s' ? '1m' : val + ' days'}. Will be armed on-chain once you save policy.`);
-        return;
-      }
-      showToast(`Broadcasting grace period update (${val === 'demo_60s' ? '1m' : val + ' days'}) to NEAR...`);
-      dispatchNearTransaction('update_intervals', { heartbeat_interval_ns: null, challenge_period_ns: cpNs });
+      showToast(`Grace window set to ${val === 'demo_60s' ? '1m' : val + ' days'}. Will be locked on-chain once you click Save Policy.`);
     }
 
     function openGraceModal() {
@@ -3765,6 +3774,10 @@
           pingBtn.className = 'w-full bg-nearGreen hover:bg-nearGreenHover text-nearBlack font-extrabold py-3.5 px-6 rounded-xl text-sm sm:text-base transition shadow-near-glow active:scale-98 flex items-center justify-center gap-2 cursor-pointer';
         }
         if (pingBtnText) pingBtnText.innerText = 'Connect Wallet to Arm Vault';
+        const inactSelect = document.getElementById('inactivitySelect');
+        const graceSelect = document.getElementById('graceSelect');
+        if (inactSelect) { inactSelect.disabled = false; inactSelect.title = ''; }
+        if (graceSelect) { graceSelect.disabled = false; graceSelect.title = ''; }
         return;
       }
 
@@ -3903,8 +3916,8 @@
 
         const inactSelect = document.getElementById('inactivitySelect');
         const graceSelect = document.getElementById('graceSelect');
-        if (inactSelect) inactSelect.disabled = false;
-        if (graceSelect) graceSelect.disabled = false;
+        if (inactSelect) { inactSelect.disabled = false; inactSelect.title = ''; }
+        if (graceSelect) { graceSelect.disabled = false; graceSelect.title = ''; }
         return;
       }
 
@@ -3938,8 +3951,14 @@
       }
       const inactSelect = document.getElementById('inactivitySelect');
       const graceSelect = document.getElementById('graceSelect');
-      if (inactSelect) inactSelect.disabled = false;
-      if (graceSelect) graceSelect.disabled = false;
+      if (inactSelect) {
+        inactSelect.disabled = true;
+        inactSelect.title = 'Locked while bunker is armed (prevents timer-shortening attacks)';
+      }
+      if (graceSelect) {
+        graceSelect.disabled = true;
+        graceSelect.title = 'Locked while bunker is armed (prevents timer-shortening attacks)';
+      }
 
       if (remainingSeconds <= 0) {
         let graceRemainingSec = 0;
@@ -5765,14 +5784,23 @@
         encryptedOrNullMemo = '';
       }
 
+      const isAlreadyArmed = Boolean(
+        lastFetchedVaultInfo &&
+        lastFetchedVaultInfo.state === 'Active' &&
+        hasConfiguredDestinations(lastFetchedVaultInfo)
+      );
       const inactPref = document.getElementById('inactivitySelect')?.value || localStorage.getItem('aegis_inactivity_days') || '90';
       const gracePref = document.getElementById('graceSelect')?.value || localStorage.getItem('aegis_grace_days') || '7';
-      const selectedHbNs = inactPref === 'demo_180s'
-        ? '180000000000'
-        : (BigInt(parseInt(inactPref, 10) || 90) * 86400n * 1000000000n).toString();
-      const selectedCpNs = gracePref === 'demo_60s'
-        ? '60000000000'
-        : (BigInt(parseInt(gracePref, 10) || 7) * 86400n * 1000000000n).toString();
+      const selectedHbNs = isAlreadyArmed
+        ? null
+        : ((inactPref === 'demo_180s' || inactPref === 'demo_120s')
+          ? '180000000000'
+          : (BigInt(parseInt(inactPref, 10) || 90) * 86400n * 1000000000n).toString());
+      const selectedCpNs = isAlreadyArmed
+        ? null
+        : ((gracePref === 'demo_60s' || gracePref === 'demo_30s')
+          ? '60000000000'
+          : (BigInt(parseInt(gracePref, 10) || 7) * 86400n * 1000000000n).toString());
 
       const policyPayload = {
         backup: {

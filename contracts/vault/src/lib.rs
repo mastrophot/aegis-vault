@@ -756,17 +756,29 @@ impl LastKeyVault {
             "Can only update policy in Active or Unconfigured state"
         );
 
-        if let Some(hb) = heartbeat_interval_ns {
-            vault.heartbeat_interval_ns = hb.0;
-        }
-        if let Some(cp) = challenge_period_ns {
-            vault.challenge_period_ns = cp.0;
-        }
-
         let is_initial_setup = vault.state == VaultState::Unconfigured
             || (vault.backup.is_empty() && vault.heirs.is_empty());
         let modifies_existing_addrs = vault.backup.modifies_existing(&backup)
             || vault.heirs.modifies_existing(&heirs);
+
+        if let Some(hb) = heartbeat_interval_ns {
+            if !is_initial_setup {
+                require!(
+                    hb.0 >= vault.heartbeat_interval_ns,
+                    "Security Guard: Cannot shorten check-in timer on an armed bunker; rotate epoch first"
+                );
+            }
+            vault.heartbeat_interval_ns = hb.0;
+        }
+        if let Some(cp) = challenge_period_ns {
+            if !is_initial_setup {
+                require!(
+                    cp.0 >= vault.challenge_period_ns,
+                    "Security Guard: Cannot shorten grace buffer on an armed bunker; rotate epoch first"
+                );
+            }
+            vault.challenge_period_ns = cp.0;
+        }
 
         if is_initial_setup || !modifies_existing_addrs {
             vault.backup = backup;
@@ -847,6 +859,12 @@ impl LastKeyVault {
         require!(
             vault.state == VaultState::Active || vault.state == VaultState::Unconfigured,
             "Can only update intervals in Active or Unconfigured state"
+        );
+        let is_armed = vault.state == VaultState::Active
+            && (!vault.backup.is_empty() || !vault.heirs.is_empty());
+        require!(
+            !is_armed,
+            "Security Guard: Timer intervals are locked once bunker is armed; rotate epoch to change timers"
         );
         let new_hb = heartbeat_interval_ns
             .map(|v| v.0)
@@ -2863,5 +2881,74 @@ mod tests {
         near_tx.extend_from_slice(&100_000_000_000_000_000_000_000u128.to_le_bytes());
         assert!(verify_near_sweep_payload(&near_tx, &target_near).is_ok());
         assert!(verify_near_sweep_payload(&near_tx, &wrong_near).is_err());
+    }
+
+    #[test]
+    fn test_timer_downgrade_attack_blocked_on_armed_bunker() {
+        let alice: AccountId = "alice.testnet".parse().unwrap();
+        let keeper: AccountId = "keeper.testnet".parse().unwrap();
+        let mpc: AccountId = "v1.signer-prod.testnet".parse().unwrap();
+        let t0 = 1_700_000_000_000_000_000u64;
+
+        let mut context = get_context(alice.clone());
+        testing_env!(context.block_timestamp(t0).build());
+
+        let (backup, heirs) = sample_addresses();
+        let mut contract = LastKeyVault::new(mpc, Some(keeper));
+        contract.propose_policy(backup.clone(), heirs.clone(), None, None, None);
+
+        // 1. Create a fresh Unconfigured vault via rotate_bunker after panic
+        contract.panic();
+        contract.rotate_bunker();
+        let info_unarmed = contract.get_vault_info(Some(alice.clone())).unwrap();
+        assert_eq!(info_unarmed.state, VaultState::Unconfigured);
+
+        // 2. While Unconfigured (unarmed), changing timers via update_intervals works
+        contract.update_intervals(
+            Some(U64(90 * 86_400 * 1_000_000_000)),
+            Some(U64(7 * 86_400 * 1_000_000_000)),
+        );
+
+        // 3. Arm the bunker with 90d check-in and 7d grace
+        contract.propose_policy(
+            backup.clone(),
+            heirs.clone(),
+            None,
+            Some(U64(90 * 86_400 * 1_000_000_000)),
+            Some(U64(7 * 86_400 * 1_000_000_000)),
+        );
+        let info_armed = contract.get_vault_info(Some(alice.clone())).unwrap();
+        assert_eq!(info_armed.state, VaultState::Active);
+
+        // 4. Attacker/heir with access to owner's wallet CANNOT call update_intervals on an armed bunker
+        assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            contract.update_intervals(
+                Some(U64(180 * 1_000_000_000)),
+                Some(U64(60 * 1_000_000_000)),
+            );
+        }))
+        .is_err());
+
+        // 5. Attacker/heir CANNOT shorten heartbeat_interval_ns or challenge_period_ns via propose_policy either
+        assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            contract.propose_policy(
+                backup.clone(),
+                heirs.clone(),
+                None,
+                Some(U64(180 * 1_000_000_000)),
+                None,
+            );
+        }))
+        .is_err());
+        assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            contract.propose_policy(
+                backup.clone(),
+                heirs.clone(),
+                None,
+                None,
+                Some(U64(60 * 1_000_000_000)),
+            );
+        }))
+        .is_err());
     }
 }
