@@ -1026,7 +1026,7 @@
                   </div>
                   <input type="text" id="heirFinalMemo" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" oninput="updateMemoByteCounter(this.value)" placeholder="e.g. Hardware wallet PIN & family vault instructions..." class="w-full bg-transparent pt-0.5 text-xs sm:text-[13px] font-mono text-white placeholder:text-[#585E6A] outline-none">
                   <div id="heirMemoPassphraseRow" class="flex items-center gap-2 pt-1 border-t border-white/[0.06]">
-                    <input type="password" id="heirMemoPassphrase" autocomplete="new-password" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly data-lpignore="true" data-1p-ignore="true" placeholder="Optional AES-256 passphrase (blank = auto-seal to Heir SOL key)" class="w-full bg-transparent text-[11px] font-mono text-white placeholder:text-[#585E6A] outline-none">
+                    <input type="password" id="heirMemoPassphrase" autocomplete="new-password" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly data-lpignore="true" data-1p-ignore="true" placeholder="Optional passphrase (blank = Heir SOL key)" class="w-full bg-transparent text-[11px] font-mono text-white placeholder:text-[#585E6A] outline-none">
                     <span id="e2eeArmedStatus" class="hidden text-[10px] font-mono text-nearGreen whitespace-nowrap font-bold">🔒 Sealed</span>
                   </div>
                 </div>
@@ -2133,8 +2133,8 @@
             el.value = '';
             el.disabled = true;
             el.placeholder = (isEvacuated || isGraceExp)
-              ? '🔒 Hidden — Bunker epoch closed (Rotate bunker to set new addresses)'
-              : '🔒 Hidden during Grace Buffer — Check-in to unlock';
+              ? '🔒 Epoch closed — Rotate bunker to unlock'
+              : '🔒 Grace Buffer — Check-in to unlock';
             el.dataset.defaultPlaceholder = el.dataset.defaultPlaceholder || defaultPlaceholders[id] || '';
           }
         });
@@ -2197,7 +2197,7 @@
               e2eeBadge.innerText = info.heir_memo.startsWith('enc:x25519:') ? '🔒 X25519 Armed' : '🔒 AES-256 Armed';
             }
             if (!userHasInteractedWithInputs && hMemo && !hMemo.value) {
-              hMemo.placeholder = '🔒 E2EE Testament armed on-chain (click Decrypt to verify, or type to replace)';
+              hMemo.placeholder = '🔒 E2EE Armed (Decrypt or type to replace)';
             }
           } else {
             if (!userHasInteractedWithInputs && info.heir_memo) setTestamentMode('plaintext', false);
@@ -5590,8 +5590,8 @@
             el.value = '';
             el.disabled = true;
             el.placeholder = isClosed
-              ? '🔒 Hidden — Bunker epoch closed (Rotate bunker to set new addresses)'
-              : '🔒 Hidden during Grace Buffer — Check-in to unlock';
+              ? '🔒 Epoch closed — Rotate bunker to unlock'
+              : '🔒 Grace Buffer — Check-in to unlock';
           }
         });
         const passEl = document.getElementById('heirMemoPassphrase');
