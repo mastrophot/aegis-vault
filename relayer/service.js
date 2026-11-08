@@ -551,6 +551,7 @@ class AegisRelayerService {
       vault_owner: vaultOwner,
       epoch,
       state,
+      memo: sweepMemo || null,
       updated_at: new Date().toISOString(),
       sweeps: {}
     };
@@ -1044,6 +1045,37 @@ class AegisRelayerService {
 
     const isComplete = !hasRetriableFailure;
     telemetryRecord.is_complete = isComplete;
+
+    const hasBroadcastedAnyTx = Boolean(
+      telemetryRecord.sweeps.btc?.tx_id ||
+      telemetryRecord.sweeps.evm?.tx_hash ||
+      telemetryRecord.sweeps.sol?.signature ||
+      telemetryRecord.sweeps.near?.tx_hash
+    );
+
+    if (!hasBroadcastedAnyTx) {
+      const latestVault = await this.getVaultInfo(vaultOwner).catch(() => null);
+      if (latestVault && latestVault.last_sweep_report) {
+        const existingStr = String(latestVault.last_sweep_report);
+        if (
+          existingStr.includes('"tx_hash"') ||
+          existingStr.includes('"signature"') ||
+          existingStr.includes('"tx_id"')
+        ) {
+          console.log(
+            `⏭️ [Aegis Relayer] Preserving existing on-chain telemetry with broadcasted L1 transactions for ${vaultOwner} (Epoch ${epoch})`
+          );
+          if (isComplete) {
+            this.processedSweeps.add(`${vaultOwner}:${epoch}:${state}`);
+          }
+          try {
+            return JSON.parse(existingStr);
+          } catch (_) {
+            return telemetryRecord;
+          }
+        }
+      }
+    }
 
     // Persist verified telemetry directly on-chain (`aegis.okgoogleok.testnet`)
     try {

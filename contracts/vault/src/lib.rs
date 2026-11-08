@@ -895,6 +895,27 @@ impl LastKeyVault {
             "Telemetry report exceeds 4096 bytes"
         );
 
+        let existing_has_real_tx = Self::internal_get_sweep_telemetry(&vault_owner, epoch)
+            .map_or(false, |prev| {
+                prev.contains("\"tx_hash\"")
+                    || prev.contains("\"signature\"")
+                    || prev.contains("\"tx_id\"")
+            });
+        let incoming_has_real_tx = report_json.contains("\"tx_hash\"")
+            || report_json.contains("\"signature\"")
+            || report_json.contains("\"tx_id\"");
+
+        if existing_has_real_tx && !incoming_has_real_tx {
+            if is_complete {
+                Self::internal_set_epoch_swept(&vault_owner, epoch, true);
+            }
+            env::log_str(&format!(
+                "SWEEP_TELEMETRY_PRESERVED: Vault={}, Epoch={} (ignored late zero-balance overwrite)",
+                vault_owner, epoch
+            ));
+            return;
+        }
+
         let key = format!("telemetry:{}:{}", vault_owner, epoch);
         env::storage_write(key.as_bytes(), report_json.as_bytes());
         Self::internal_set_epoch_swept(&vault_owner, epoch, is_complete);
