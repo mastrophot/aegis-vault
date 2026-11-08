@@ -10819,9 +10819,9 @@ if (typeof window !== "undefined") {
           if (linkEl && s.explorer) {
             const safeExp = sanitizeExplorerUrl(s.explorer);
             const mpcLink = s.near_mpc_tx
-              ? ` <span class="text-white/20">|</span> <a href="${sanitizeExplorerUrl(s.near_mpc_tx)}" target="_blank" rel="noopener noreferrer" class="text-nearGreen hover:underline">MPC Proof (v1.signer) ↗</a>`
+              ? ` <span class="text-white/20">|</span> <a href="${sanitizeExplorerUrl(s.near_mpc_tx)}" target="_blank" rel="noopener noreferrer" class="text-nearGreen hover:underline whitespace-nowrap">MPC Proof (v1.signer) ↗</a>`
               : '';
-            linkEl.innerHTML = `<a href="${safeExp}" target="_blank" rel="noopener noreferrer" class="text-amber-400 hover:underline font-mono">View on Mempool.space ↗</a>${mpcLink}`;
+            linkEl.innerHTML = `<a href="${safeExp}" target="_blank" rel="noopener noreferrer" class="text-amber-400 hover:underline font-mono whitespace-nowrap">View on Mempool.space ↗</a>${mpcLink}`;
           }
         } else if (t.is_complete) {
           setMonitorBadgeStyle(document.getElementById('monitorBtcStatus'), btcTarget === 'Not configured' ? 'Not configured' : 'No deposit (0 BTC)');
@@ -10836,9 +10836,9 @@ if (typeof window !== "undefined") {
           if (linkEl && s.explorer) {
             const safeExp = sanitizeExplorerUrl(s.explorer);
             const mpcLink = s.near_mpc_tx
-              ? ` <span class="text-white/20">|</span> <a href="${sanitizeExplorerUrl(s.near_mpc_tx)}" target="_blank" rel="noopener noreferrer" class="text-nearGreen hover:underline">MPC Proof (v1.signer) ↗</a>`
+              ? ` <span class="text-white/20">|</span> <a href="${sanitizeExplorerUrl(s.near_mpc_tx)}" target="_blank" rel="noopener noreferrer" class="text-nearGreen hover:underline whitespace-nowrap">MPC Proof (v1.signer) ↗</a>`
               : '';
-            linkEl.innerHTML = `<a href="${safeExp}" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:underline font-mono">View on Etherscan ↗</a>${mpcLink}`;
+            linkEl.innerHTML = `<a href="${safeExp}" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:underline font-mono whitespace-nowrap">View on Etherscan ↗</a>${mpcLink}`;
           }
         } else if (t.is_complete) {
           setMonitorBadgeStyle(document.getElementById('evmTxStatusBadge'), evmTarget === 'Not configured' ? 'Not configured' : 'No deposit (0 ETH)');
@@ -10853,9 +10853,9 @@ if (typeof window !== "undefined") {
           if (linkEl && s.explorer) {
             const safeExp = sanitizeExplorerUrl(s.explorer);
             const mpcLink = s.near_mpc_tx
-              ? ` <span class="text-white/20">|</span> <a href="${sanitizeExplorerUrl(s.near_mpc_tx)}" target="_blank" rel="noopener noreferrer" class="text-nearGreen hover:underline">MPC Proof (v1.signer) ↗</a>`
+              ? ` <span class="text-white/20">|</span> <a href="${sanitizeExplorerUrl(s.near_mpc_tx)}" target="_blank" rel="noopener noreferrer" class="text-nearGreen hover:underline whitespace-nowrap">MPC Proof (v1.signer) ↗</a>`
               : '';
-            linkEl.innerHTML = `<a href="${safeExp}" target="_blank" rel="noopener noreferrer" class="text-purple-400 hover:underline font-mono">View on Solscan ↗</a>${mpcLink}`;
+            linkEl.innerHTML = `<a href="${safeExp}" target="_blank" rel="noopener noreferrer" class="text-purple-400 hover:underline font-mono whitespace-nowrap">View on Solscan ↗</a>${mpcLink}`;
           }
         } else if (t.is_complete) {
           setMonitorBadgeStyle(document.getElementById('monitorSolStatus'), solTarget === 'Not configured' ? 'Not configured' : 'No deposit (0 SOL)');
@@ -10869,10 +10869,7 @@ if (typeof window !== "undefined") {
           if (s.amount && document.getElementById('monitorNearBal')) document.getElementById('monitorNearBal').innerText = s.amount;
           if (linkEl && s.explorer) {
             const safeExp = sanitizeExplorerUrl(s.explorer);
-            const mpcLink = s.near_mpc_tx
-              ? ` <span class="text-white/20">|</span> <a href="${sanitizeExplorerUrl(s.near_mpc_tx)}" target="_blank" rel="noopener noreferrer" class="text-nearGreen hover:underline">MPC Proof (v1.signer) ↗</a>`
-              : '';
-            linkEl.innerHTML = `<a href="${safeExp}" target="_blank" rel="noopener noreferrer" class="text-nearGreen hover:underline font-mono">View on NearBlocks ↗</a>${mpcLink}`;
+            linkEl.innerHTML = `<a href="${safeExp}" target="_blank" rel="noopener noreferrer" class="text-nearGreen hover:underline font-mono whitespace-nowrap">View on NearBlocks ↗</a>`;
           }
         } else if (t.is_complete) {
           setMonitorBadgeStyle(document.getElementById('monitorNearStatus'), nearTarget === 'Not configured' ? 'Not configured' : 'No deposit (0 NEAR)');
