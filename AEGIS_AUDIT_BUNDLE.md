@@ -142,19 +142,16 @@ impl ChainAddresses {
         btc_changed || evm_changed || sol_changed || near_changed
     }
 
-    /// Checks if applying `new` would replace any non-empty existing address
-    pub fn is_replacing_existing(&self, new: &ChainAddresses) -> bool {
-        let btc_replaced = !self.btc.trim().is_empty()
-            && !new.btc.trim().is_empty()
-            && self.btc.trim() != new.btc.trim();
-        let evm_replaced = !self.evm.trim().is_empty()
-            && !new.evm.trim().is_empty()
+    /// Checks if applying `new` would modify or clear any already-configured (non-empty) address.
+    /// Filling a previously empty chain slot (`""` or `None`) returns `false` so users can enable
+    /// additional networks on an active vault without triggering a 72-hour cooldown.
+    pub fn modifies_existing(&self, new: &ChainAddresses) -> bool {
+        let btc_modified = !self.btc.trim().is_empty() && self.btc.trim() != new.btc.trim();
+        let evm_modified = !self.evm.trim().is_empty()
             && !self.evm.trim().eq_ignore_ascii_case(new.evm.trim());
-        let sol_replaced = !self.sol.trim().is_empty()
-            && !new.sol.trim().is_empty()
-            && self.sol.trim() != new.sol.trim();
-        let near_replaced = self.near.is_some() && new.near.is_some() && self.near != new.near;
-        btc_replaced || evm_replaced || sol_replaced || near_replaced
+        let sol_modified = !self.sol.trim().is_empty() && self.sol.trim() != new.sol.trim();
+        let near_modified = self.near.is_some() && self.near != new.near;
+        btc_modified || evm_modified || sol_modified || near_modified
     }
 }
 
@@ -767,10 +764,10 @@ impl LastKeyVault {
 
         let is_initial_setup = vault.state == VaultState::Unconfigured
             || (vault.backup.is_empty() && vault.heirs.is_empty());
-        let has_changes = vault.backup.has_any_change(&backup)
-            || vault.heirs.has_any_change(&heirs);
+        let modifies_existing_addrs = vault.backup.modifies_existing(&backup)
+            || vault.heirs.modifies_existing(&heirs);
 
-        if is_initial_setup || !has_changes {
+        if is_initial_setup || !modifies_existing_addrs {
             vault.backup = backup;
             vault.heirs = heirs;
             vault.pending_policy = None;
@@ -9725,8 +9722,21 @@ if (typeof window !== "undefined") {
           `;
           btn.className = 'save-policy-btn bg-nearGreen/15 hover:bg-nearGreen/25 text-nearGreen border border-nearGreen/40 font-bold py-2 px-5 rounded-xl text-xs transition active:scale-98 whitespace-nowrap cursor-pointer';
         } else {
-          const isReplacingExisting = hasOnChain && !addressesMatch;
-          if (isReplacingExisting) {
+          // Only trigger 72h Cooldown if an ALREADY-CONFIGURED (non-empty) on-chain address is modified or cleared.
+          // Filling a previously empty network slot (e.g., adding Solana or Bitcoin later) activates instantly!
+          const norm = s => (s || '').trim();
+          const normEvm = s => (s || '').trim().toLowerCase();
+          const isModifyingExisting = hasOnChain && (
+            (norm(onChainBackupNear) && norm(pNear) !== norm(onChainBackupNear)) ||
+            (norm(onChainBackupBtc) && norm(pBtc) !== norm(onChainBackupBtc)) ||
+            (normEvm(onChainBackupEvm) && normEvm(pEvm) !== normEvm(onChainBackupEvm)) ||
+            (norm(onChainBackupSol) && norm(pSol) !== norm(onChainBackupSol)) ||
+            (norm(onChainHeirNear) && norm(hNear) !== norm(onChainHeirNear)) ||
+            (norm(onChainHeirBtc) && norm(hBtc) !== norm(onChainHeirBtc)) ||
+            (normEvm(onChainHeirEvm) && normEvm(hEvm) !== normEvm(onChainHeirEvm)) ||
+            (norm(onChainHeirSol) && norm(hSol) !== norm(onChainHeirSol))
+          );
+          if (isModifyingExisting) {
             btn.innerHTML = `Save Policy (72h Cooldown)`;
             btn.className = 'save-policy-btn bg-amber-400 hover:bg-amber-300 text-black font-extrabold py-2 px-5 rounded-xl text-xs transition shadow-sm active:scale-98 whitespace-nowrap cursor-pointer';
           } else {

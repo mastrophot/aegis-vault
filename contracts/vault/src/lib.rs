@@ -87,19 +87,16 @@ impl ChainAddresses {
         btc_changed || evm_changed || sol_changed || near_changed
     }
 
-    /// Checks if applying `new` would replace any non-empty existing address
-    pub fn is_replacing_existing(&self, new: &ChainAddresses) -> bool {
-        let btc_replaced = !self.btc.trim().is_empty()
-            && !new.btc.trim().is_empty()
-            && self.btc.trim() != new.btc.trim();
-        let evm_replaced = !self.evm.trim().is_empty()
-            && !new.evm.trim().is_empty()
+    /// Checks if applying `new` would modify or clear any already-configured (non-empty) address.
+    /// Filling a previously empty chain slot (`""` or `None`) returns `false` so users can enable
+    /// additional networks on an active vault without triggering a 72-hour cooldown.
+    pub fn modifies_existing(&self, new: &ChainAddresses) -> bool {
+        let btc_modified = !self.btc.trim().is_empty() && self.btc.trim() != new.btc.trim();
+        let evm_modified = !self.evm.trim().is_empty()
             && !self.evm.trim().eq_ignore_ascii_case(new.evm.trim());
-        let sol_replaced = !self.sol.trim().is_empty()
-            && !new.sol.trim().is_empty()
-            && self.sol.trim() != new.sol.trim();
-        let near_replaced = self.near.is_some() && new.near.is_some() && self.near != new.near;
-        btc_replaced || evm_replaced || sol_replaced || near_replaced
+        let sol_modified = !self.sol.trim().is_empty() && self.sol.trim() != new.sol.trim();
+        let near_modified = self.near.is_some() && self.near != new.near;
+        btc_modified || evm_modified || sol_modified || near_modified
     }
 }
 
@@ -712,10 +709,10 @@ impl LastKeyVault {
 
         let is_initial_setup = vault.state == VaultState::Unconfigured
             || (vault.backup.is_empty() && vault.heirs.is_empty());
-        let has_changes = vault.backup.has_any_change(&backup)
-            || vault.heirs.has_any_change(&heirs);
+        let modifies_existing_addrs = vault.backup.modifies_existing(&backup)
+            || vault.heirs.modifies_existing(&heirs);
 
-        if is_initial_setup || !has_changes {
+        if is_initial_setup || !modifies_existing_addrs {
             vault.backup = backup;
             vault.heirs = heirs;
             vault.pending_policy = None;

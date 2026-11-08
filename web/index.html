@@ -4059,8 +4059,21 @@
           `;
           btn.className = 'save-policy-btn bg-nearGreen/15 hover:bg-nearGreen/25 text-nearGreen border border-nearGreen/40 font-bold py-2 px-5 rounded-xl text-xs transition active:scale-98 whitespace-nowrap cursor-pointer';
         } else {
-          const isReplacingExisting = hasOnChain && !addressesMatch;
-          if (isReplacingExisting) {
+          // Only trigger 72h Cooldown if an ALREADY-CONFIGURED (non-empty) on-chain address is modified or cleared.
+          // Filling a previously empty network slot (e.g., adding Solana or Bitcoin later) activates instantly!
+          const norm = s => (s || '').trim();
+          const normEvm = s => (s || '').trim().toLowerCase();
+          const isModifyingExisting = hasOnChain && (
+            (norm(onChainBackupNear) && norm(pNear) !== norm(onChainBackupNear)) ||
+            (norm(onChainBackupBtc) && norm(pBtc) !== norm(onChainBackupBtc)) ||
+            (normEvm(onChainBackupEvm) && normEvm(pEvm) !== normEvm(onChainBackupEvm)) ||
+            (norm(onChainBackupSol) && norm(pSol) !== norm(onChainBackupSol)) ||
+            (norm(onChainHeirNear) && norm(hNear) !== norm(onChainHeirNear)) ||
+            (norm(onChainHeirBtc) && norm(hBtc) !== norm(onChainHeirBtc)) ||
+            (normEvm(onChainHeirEvm) && normEvm(hEvm) !== normEvm(onChainHeirEvm)) ||
+            (norm(onChainHeirSol) && norm(hSol) !== norm(onChainHeirSol))
+          );
+          if (isModifyingExisting) {
             btn.innerHTML = `Save Policy (72h Cooldown)`;
             btn.className = 'save-policy-btn bg-amber-400 hover:bg-amber-300 text-black font-extrabold py-2 px-5 rounded-xl text-xs transition shadow-sm active:scale-98 whitespace-nowrap cursor-pointer';
           } else {
