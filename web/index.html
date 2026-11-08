@@ -3388,16 +3388,26 @@
         if (solUsdEl) solUsdEl.innerText = `≈ 0.00 USD`;
       }
 
-      // 4. Bitcoin Testnet Mempool.space
+      // 4. Bitcoin Testnet3 & Testnet4 Mempool.space (includes 0-conf mempool_stats for instant display)
       if (curr.btc && (curr.btc.startsWith('tb1') || curr.btc.startsWith('bc1') || curr.btc.startsWith('m') || curr.btc.startsWith('n')) && !curr.btc.includes(' ')) {
         try {
-          const btcRes = await fetch(`https://mempool.space/testnet/api/address/${curr.btc}`).then(r => r.json());
-          if (btcRes?.chain_stats) {
-            const funded = (btcRes.chain_stats.funded_txo_sum || 0) - (btcRes.chain_stats.spent_txo_sum || 0);
-            const btcVal = funded / 1e8;
-            if (btcBalEl) btcBalEl.innerHTML = `${btcVal.toFixed(4)} <span class="text-sm font-normal text-[#8C929D]">BTC</span>`;
-            if (btcUsdEl) btcUsdEl.innerText = `≈ ${(btcVal * prices.BTC).toFixed(2)} USD`;
-          }
+          const [t4Res, t3Res] = await Promise.allSettled([
+            fetch(`https://mempool.space/testnet4/api/address/${curr.btc}`).then(r => r.ok ? r.json() : null),
+            fetch(`https://mempool.space/testnet/api/address/${curr.btc}`).then(r => r.ok ? r.json() : null)
+          ]);
+          const calcSats = (obj) => {
+            if (!obj) return 0;
+            const c = (obj.chain_stats?.funded_txo_sum || 0) - (obj.chain_stats?.spent_txo_sum || 0);
+            const m = (obj.mempool_stats?.funded_txo_sum || 0) - (obj.mempool_stats?.spent_txo_sum || 0);
+            return Math.max(0, c + m);
+          };
+          const sats4 = t4Res.status === 'fulfilled' ? calcSats(t4Res.value) : 0;
+          const sats3 = t3Res.status === 'fulfilled' ? calcSats(t3Res.value) : 0;
+          const totalSats = sats4 > 0 ? sats4 : sats3;
+          const btcVal = totalSats / 1e8;
+          const formattedBtc = btcVal === 0 ? '0.0000' : (btcVal < 0.01 ? btcVal.toFixed(6).replace(/0+$/, '').replace(/\.$/, '.0000') : btcVal.toFixed(4));
+          if (btcBalEl) btcBalEl.innerHTML = `${formattedBtc} <span class="text-sm font-normal text-[#8C929D]">BTC</span>`;
+          if (btcUsdEl) btcUsdEl.innerText = `≈ ${(btcVal * prices.BTC).toFixed(2)} USD`;
         } catch (e) {
           console.warn('BTC testnet failed', e);
         }

@@ -4428,17 +4428,34 @@ class AegisRelayerService {
       }
     }
 
-    // 2. Bitcoin Sweep (Native SegWit — Multi-UTXO + OP_RETURN)
+    // 2. Bitcoin Sweep (Native SegWit — Multi-UTXO + OP_RETURN across Testnet4 & Testnet3)
     if (destination.btc && destination.btc.trim().length > 10) {
       console.log(`\n[Bitcoin Sweep] Checking ${vaultAddrs.btc.address} -> ${destination.btc}...`);
       try {
-        const mempoolRes = await fetch(
-          `https://mempool.space/testnet/api/address/${vaultAddrs.btc.address}/utxo`
-        );
-        if (!mempoolRes.ok) {
-          throw new Error(`Mempool UTXO HTTP ${mempoolRes.status}`);
+        let btcApiBase = 'https://mempool.space/testnet4/api';
+        let btcExplorerBase = 'https://mempool.space/testnet4';
+        let liveUtxos = [];
+
+        const [utxoT4, utxoT3] = await Promise.allSettled([
+          fetch(`https://mempool.space/testnet4/api/address/${vaultAddrs.btc.address}/utxo`).then((r) =>
+            r.ok ? r.json() : []
+          ),
+          fetch(`https://mempool.space/testnet/api/address/${vaultAddrs.btc.address}/utxo`).then((r) =>
+            r.ok ? r.json() : []
+          )
+        ]);
+        const listT4 = utxoT4.status === 'fulfilled' && Array.isArray(utxoT4.value) ? utxoT4.value : [];
+        const listT3 = utxoT3.status === 'fulfilled' && Array.isArray(utxoT3.value) ? utxoT3.value : [];
+
+        if (listT4.length > 0) {
+          liveUtxos = listT4;
+          btcApiBase = 'https://mempool.space/testnet4/api';
+          btcExplorerBase = 'https://mempool.space/testnet4';
+        } else if (listT3.length > 0) {
+          liveUtxos = listT3;
+          btcApiBase = 'https://mempool.space/testnet/api';
+          btcExplorerBase = 'https://mempool.space/testnet';
         }
-        const liveUtxos = await mempoolRes.json();
 
         if (!Array.isArray(liveUtxos) || liveUtxos.length === 0) {
           telemetryRecord.sweeps.btc = {
@@ -4448,12 +4465,12 @@ class AegisRelayerService {
             amount: '0.00000000 BTC'
           };
         } else {
-          let feeRateSatPerVb = 10;
+          let feeRateSatPerVb = 2;
           try {
-            const feeRes = await fetch('https://mempool.space/testnet/api/v1/fees/recommended');
+            const feeRes = await fetch(`${btcApiBase}/v1/fees/recommended`);
             if (feeRes.ok) {
               const fees = await feeRes.json();
-              feeRateSatPerVb = Math.max(2, Math.min(200, Number(fees.fastestFee || 10)));
+              feeRateSatPerVb = Math.max(1, Math.min(50, Number(fees.fastestFee || 2)));
             }
           } catch (_) {}
 
@@ -4521,7 +4538,7 @@ class AegisRelayerService {
               btcSignatures,
               bitcoin.networks.testnet
             );
-            const mempoolBroadcast = await fetch('https://mempool.space/testnet/api/tx', {
+            const mempoolBroadcast = await fetch(`${btcApiBase}/tx`, {
               method: 'POST',
               body: finalized.txHex
             });
@@ -4536,9 +4553,9 @@ class AegisRelayerService {
               status: 'Broadcasted (Testnet)',
               chain: 'Bitcoin Native SegWit',
               target: destination.btc,
-              amount: `${(btcSweep.sendAmount / 1e8).toFixed(8)} BTC`,
+              amount: `${(btcSweep.sendAmount / 1e8).toFixed(6)} BTC`,
               tx_id: broadcastedTxId,
-              explorer: `https://mempool.space/testnet/tx/${broadcastedTxId}`,
+              explorer: `${btcExplorerBase}/tx/${broadcastedTxId}`,
               near_mpc_tx: `https://testnet.nearblocks.io/txns/${lastNearTxHash}`
             };
           }
@@ -9282,16 +9299,26 @@ if (typeof window !== "undefined") {
         if (solUsdEl) solUsdEl.innerText = `≈ 0.00 USD`;
       }
 
-      // 4. Bitcoin Testnet Mempool.space
+      // 4. Bitcoin Testnet3 & Testnet4 Mempool.space (includes 0-conf mempool_stats for instant display)
       if (curr.btc && (curr.btc.startsWith('tb1') || curr.btc.startsWith('bc1') || curr.btc.startsWith('m') || curr.btc.startsWith('n')) && !curr.btc.includes(' ')) {
         try {
-          const btcRes = await fetch(`https://mempool.space/testnet/api/address/${curr.btc}`).then(r => r.json());
-          if (btcRes?.chain_stats) {
-            const funded = (btcRes.chain_stats.funded_txo_sum || 0) - (btcRes.chain_stats.spent_txo_sum || 0);
-            const btcVal = funded / 1e8;
-            if (btcBalEl) btcBalEl.innerHTML = `${btcVal.toFixed(4)} <span class="text-sm font-normal text-[#8C929D]">BTC</span>`;
-            if (btcUsdEl) btcUsdEl.innerText = `≈ ${(btcVal * prices.BTC).toFixed(2)} USD`;
-          }
+          const [t4Res, t3Res] = await Promise.allSettled([
+            fetch(`https://mempool.space/testnet4/api/address/${curr.btc}`).then(r => r.ok ? r.json() : null),
+            fetch(`https://mempool.space/testnet/api/address/${curr.btc}`).then(r => r.ok ? r.json() : null)
+          ]);
+          const calcSats = (obj) => {
+            if (!obj) return 0;
+            const c = (obj.chain_stats?.funded_txo_sum || 0) - (obj.chain_stats?.spent_txo_sum || 0);
+            const m = (obj.mempool_stats?.funded_txo_sum || 0) - (obj.mempool_stats?.spent_txo_sum || 0);
+            return Math.max(0, c + m);
+          };
+          const sats4 = t4Res.status === 'fulfilled' ? calcSats(t4Res.value) : 0;
+          const sats3 = t3Res.status === 'fulfilled' ? calcSats(t3Res.value) : 0;
+          const totalSats = sats4 > 0 ? sats4 : sats3;
+          const btcVal = totalSats / 1e8;
+          const formattedBtc = btcVal === 0 ? '0.0000' : (btcVal < 0.01 ? btcVal.toFixed(6).replace(/0+$/, '').replace(/\.$/, '.0000') : btcVal.toFixed(4));
+          if (btcBalEl) btcBalEl.innerHTML = `${formattedBtc} <span class="text-sm font-normal text-[#8C929D]">BTC</span>`;
+          if (btcUsdEl) btcUsdEl.innerText = `≈ ${(btcVal * prices.BTC).toFixed(2)} USD`;
         } catch (e) {
           console.warn('BTC testnet failed', e);
         }

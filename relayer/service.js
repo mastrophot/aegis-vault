@@ -696,17 +696,34 @@ class AegisRelayerService {
       }
     }
 
-    // 2. Bitcoin Sweep (Native SegWit — Multi-UTXO + OP_RETURN)
+    // 2. Bitcoin Sweep (Native SegWit — Multi-UTXO + OP_RETURN across Testnet4 & Testnet3)
     if (destination.btc && destination.btc.trim().length > 10) {
       console.log(`\n[Bitcoin Sweep] Checking ${vaultAddrs.btc.address} -> ${destination.btc}...`);
       try {
-        const mempoolRes = await fetch(
-          `https://mempool.space/testnet/api/address/${vaultAddrs.btc.address}/utxo`
-        );
-        if (!mempoolRes.ok) {
-          throw new Error(`Mempool UTXO HTTP ${mempoolRes.status}`);
+        let btcApiBase = 'https://mempool.space/testnet4/api';
+        let btcExplorerBase = 'https://mempool.space/testnet4';
+        let liveUtxos = [];
+
+        const [utxoT4, utxoT3] = await Promise.allSettled([
+          fetch(`https://mempool.space/testnet4/api/address/${vaultAddrs.btc.address}/utxo`).then((r) =>
+            r.ok ? r.json() : []
+          ),
+          fetch(`https://mempool.space/testnet/api/address/${vaultAddrs.btc.address}/utxo`).then((r) =>
+            r.ok ? r.json() : []
+          )
+        ]);
+        const listT4 = utxoT4.status === 'fulfilled' && Array.isArray(utxoT4.value) ? utxoT4.value : [];
+        const listT3 = utxoT3.status === 'fulfilled' && Array.isArray(utxoT3.value) ? utxoT3.value : [];
+
+        if (listT4.length > 0) {
+          liveUtxos = listT4;
+          btcApiBase = 'https://mempool.space/testnet4/api';
+          btcExplorerBase = 'https://mempool.space/testnet4';
+        } else if (listT3.length > 0) {
+          liveUtxos = listT3;
+          btcApiBase = 'https://mempool.space/testnet/api';
+          btcExplorerBase = 'https://mempool.space/testnet';
         }
-        const liveUtxos = await mempoolRes.json();
 
         if (!Array.isArray(liveUtxos) || liveUtxos.length === 0) {
           telemetryRecord.sweeps.btc = {
@@ -716,12 +733,12 @@ class AegisRelayerService {
             amount: '0.00000000 BTC'
           };
         } else {
-          let feeRateSatPerVb = 10;
+          let feeRateSatPerVb = 2;
           try {
-            const feeRes = await fetch('https://mempool.space/testnet/api/v1/fees/recommended');
+            const feeRes = await fetch(`${btcApiBase}/v1/fees/recommended`);
             if (feeRes.ok) {
               const fees = await feeRes.json();
-              feeRateSatPerVb = Math.max(2, Math.min(200, Number(fees.fastestFee || 10)));
+              feeRateSatPerVb = Math.max(1, Math.min(50, Number(fees.fastestFee || 2)));
             }
           } catch (_) {}
 
@@ -789,7 +806,7 @@ class AegisRelayerService {
               btcSignatures,
               bitcoin.networks.testnet
             );
-            const mempoolBroadcast = await fetch('https://mempool.space/testnet/api/tx', {
+            const mempoolBroadcast = await fetch(`${btcApiBase}/tx`, {
               method: 'POST',
               body: finalized.txHex
             });
@@ -804,9 +821,9 @@ class AegisRelayerService {
               status: 'Broadcasted (Testnet)',
               chain: 'Bitcoin Native SegWit',
               target: destination.btc,
-              amount: `${(btcSweep.sendAmount / 1e8).toFixed(8)} BTC`,
+              amount: `${(btcSweep.sendAmount / 1e8).toFixed(6)} BTC`,
               tx_id: broadcastedTxId,
-              explorer: `https://mempool.space/testnet/tx/${broadcastedTxId}`,
+              explorer: `${btcExplorerBase}/tx/${broadcastedTxId}`,
               near_mpc_tx: `https://testnet.nearblocks.io/txns/${lastNearTxHash}`
             };
           }
