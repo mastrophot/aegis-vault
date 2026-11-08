@@ -101,7 +101,7 @@
     }
 
     .near-pill-btn {
-      border-radius: 9999px;
+      border-radius: 0.75rem;
       font-weight: 700;
       transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
     }
@@ -179,7 +179,7 @@
         <div>
           <div class="flex items-center gap-2.5 flex-wrap">
             <span class="font-extrabold text-xl sm:text-2xl tracking-tighter text-white">AEGIS</span>
-            <span class="text-[10px] sm:text-[11px] font-mono font-bold uppercase tracking-wider px-3 py-0.5 rounded-full bg-[#00F5D4]/10 text-[#00F5D4] border border-[#00F5D4]/30 hidden sm:inline-flex items-center gap-1.5">
+            <span class="text-[11px] font-sans font-bold px-2.5 py-0.5 rounded-lg bg-[#00F5D4]/10 text-[#00F5D4] border border-[#00F5D4]/30 hidden sm:inline-flex items-center gap-1.5">
               <span class="w-1.5 h-1.5 rounded-full bg-[#00F5D4] radar-pulse"></span>
               Secured by NEAR MPC
             </span>
@@ -194,8 +194,8 @@
       <div class="flex items-center gap-3">
         
         <!-- Live NEAR Testnet Explorer Link -->
-        <a href="https://testnet.nearblocks.io/address/aegis.okgoogleok.testnet" target="_blank" rel="noopener noreferrer" class="hidden xl:flex items-center gap-2 h-9 px-3.5 rounded-full bg-nearSurface border border-nearBorder hover:border-nearGreen/40 transition text-xs font-mono text-textSilver hover:text-textWhite shrink-0">
-          <span class="text-[#8E99AD] font-semibold">Contract:</span>
+        <a href="https://testnet.nearblocks.io/address/aegis.okgoogleok.testnet" target="_blank" rel="noopener noreferrer" class="hidden xl:flex items-center gap-2 h-9 px-3.5 rounded-xl bg-nearSurface border border-nearBorder hover:border-nearGreen/40 transition text-xs text-textSilver hover:text-textWhite shrink-0">
+          <span class="text-[#8E99AD] font-sans font-semibold">Contract:</span>
           <span class="text-white font-mono">aegis.okgoogleok.testnet</span>
           <svg class="w-3.5 h-3.5 text-textGray" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
         </a>
@@ -203,13 +203,13 @@
         <!-- User Wallet Connection Area -->
         <div id="walletArea" class="flex items-center gap-2 shrink-0">
           <!-- Disconnected state (default) -->
-          <button id="connectWalletBtn" onclick="openMultichainWalletModal()" class="flex items-center gap-2 h-9 px-4 rounded-full bg-purple-950/40 border border-purple-500/40 hover:bg-purple-900/40 text-xs font-mono font-bold text-purple-300 hover:text-white transition shadow-sm active:scale-95 whitespace-nowrap shrink-0 cursor-pointer">
-            <svg class="w-3.5 h-3.5 text-purple-400 shrink-0" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L14.4 7.2L20 8L16 12L17 17.6L12 15L7 17.6L8 12L4 8L9.6 7.2L12 2Z"/></svg>
+          <button id="connectWalletBtn" onclick="openMultichainWalletModal()" class="flex items-center gap-2 h-9 px-4 rounded-xl bg-nearGreen hover:bg-nearGreenHover text-nearBlack text-xs font-sans font-extrabold transition shadow-near-pill active:scale-95 whitespace-nowrap shrink-0 cursor-pointer">
+            <svg class="w-3.5 h-3.5 text-nearBlack shrink-0" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L14.4 7.2L20 8L16 12L17 17.6L12 15L7 17.6L8 12L4 8L9.6 7.2L12 2Z"/></svg>
             <span>Connect Wallet</span>
           </button>
 
           <!-- Connected state (hidden by default) -->
-          <div id="connectedWalletPill" class="hidden flex items-center gap-2 h-9 px-3.5 rounded-full bg-nearElevated border border-nearBorder text-xs font-mono whitespace-nowrap shrink-0">
+          <div id="connectedWalletPill" class="hidden flex items-center gap-2 h-9 px-3.5 rounded-xl bg-nearElevated border border-nearBorder text-xs font-mono whitespace-nowrap shrink-0">
             <span class="w-2 h-2 rounded-full bg-nearGreen shrink-0"></span>
             <span id="headerAccountName" onclick="openMultichainWalletModal()" class="font-bold text-nearGreen hidden sm:inline whitespace-nowrap cursor-pointer hover:underline">account.testnet</span>
             <span id="headerAccountNameMobile" onclick="openMultichainWalletModal()" class="font-bold text-nearGreen sm:hidden whitespace-nowrap cursor-pointer">acc...</span>
@@ -223,10 +223,10 @@
         <div class="h-6 w-px bg-white/[0.08] hidden sm:block mx-0.5 shrink-0"></div>
 
         <!-- Emergency Panic Button (Isolated Rounded-XL Safety Trigger) -->
-        <button id="headerPanicBtn" onclick="startAbortCountdown()" class="h-9 px-3.5 sm:px-4 rounded-xl bg-red-950/40 hover:bg-red-950/70 text-red-400 hover:text-red-300 border border-red-500/30 hover:border-red-500/60 transition text-xs sm:text-sm font-mono font-bold tracking-wider active:scale-98 flex items-center gap-2 shadow-sm shrink-0 whitespace-nowrap">
+        <button id="headerPanicBtn" onclick="startAbortCountdown()" class="h-9 px-3.5 sm:px-4 rounded-xl bg-red-950/40 hover:bg-red-950/70 text-red-400 hover:text-red-300 border border-red-500/30 hover:border-red-500/60 transition text-xs sm:text-sm font-sans font-bold tracking-wide active:scale-98 flex items-center gap-2 shadow-sm shrink-0 whitespace-nowrap">
           <span id="panicBtnDot" class="w-2 h-2 rounded-full bg-red-500 animate-pulse shrink-0"></span>
-          <span id="panicBtnLabel" class="hidden sm:inline">EMERGENCY PANIC</span>
-          <span id="panicBtnLabelMobile" class="sm:hidden">PANIC</span>
+          <span id="panicBtnLabel" class="hidden sm:inline">Emergency Panic</span>
+          <span id="panicBtnLabelMobile" class="sm:hidden">Panic</span>
         </button>
       </div>
 
@@ -244,26 +244,26 @@
         <div class="lg:col-span-7 space-y-4">
           <div class="flex items-center justify-between flex-wrap gap-2">
             <div class="flex items-center gap-2.5">
-              <span id="heartbeatPulseDot" class="w-2.5 h-2.5 rounded-full bg-yellow-400"></span>
-              <span id="heartbeatCardTitle" class="text-xs font-mono font-bold uppercase tracking-wider text-[#A6B0C3]">
+              <span id="heartbeatPulseDot" class="w-2.5 h-2.5 rounded-full bg-[#8E99AD]"></span>
+              <span id="heartbeatCardTitle" class="text-xs font-sans font-bold tracking-wide text-[#A6B0C3]">
                 Vault Check-In Timer
               </span>
             </div>
             <div class="flex items-center gap-2 flex-wrap">
-              <span id="bunkerEpochPill" class="hidden text-[11px] font-mono font-bold text-nearGreen bg-nearGreenMuted border border-nearGreen/30 px-2.5 py-0.5 rounded-full whitespace-nowrap">
+              <span id="bunkerEpochPill" class="hidden text-[11px] font-sans font-bold text-nearGreen bg-nearGreenMuted border border-nearGreen/30 px-2.5 py-0.5 rounded-lg whitespace-nowrap">
                 Vault #1
               </span>
-              <span id="heartbeatTag" class="text-xs font-mono font-medium text-yellow-400/90 bg-yellow-950/30 px-3 py-1 rounded-full border border-yellow-500/30">
-                Vault Inactive · Connect Wallet
+              <span id="heartbeatTag" class="text-xs font-sans font-semibold text-[#A6B0C3] bg-white/[0.04] px-3 py-1 rounded-lg border border-white/[0.08]">
+                Wallet Not Connected
               </span>
             </div>
           </div>
 
           <div>
-            <div id="countdownTitle" class="text-[11px] uppercase font-mono text-textGray font-semibold tracking-wider">
-              Time Remaining Before Automatic Inheritance:
+            <div id="countdownTitle" class="text-xs font-sans text-textGray font-medium">
+              Time remaining before automatic inheritance:
             </div>
-            <div id="countdownBox" class="text-3xl sm:text-4xl md:text-5xl font-mono font-extrabold text-white tracking-tight mt-2 flex items-baseline gap-2">
+            <div id="countdownBox" class="text-3xl sm:text-4xl md:text-5xl font-sans font-extrabold text-white tracking-tight mt-1.5 flex items-baseline gap-2">
               Ready to Arm
             </div>
           </div>
@@ -271,16 +271,16 @@
           <!-- Progress Bar -->
           <div class="space-y-1.5">
             <div class="w-full bg-white/[0.08] rounded-full h-1.5 overflow-hidden">
-              <div id="timerBar" class="bg-white/40 h-full w-full transition-all duration-1000 ease-out"></div>
+              <div id="timerBar" class="bg-white/20 h-full w-full transition-all duration-1000 ease-out"></div>
             </div>
-            <div class="flex justify-between text-xs text-textGray font-mono">
-              <span id="statusDisplay">Status: <strong class="text-yellow-400/90 font-bold">Connect Wallet to Arm</strong></span>
-              <span id="timerPctDisplay">100.0% remaining</span>
+            <div class="flex justify-between text-xs text-textGray font-sans">
+              <span id="statusDisplay">Status: <strong class="text-white font-semibold">Connect wallet to start</strong></span>
+              <span id="timerPctDisplay" class="font-mono">100.0% remaining</span>
             </div>
           </div>
 
           <!-- Top Heartbeat 72h Timelock Notice -->
-          <div id="heartbeatTimelockNotice" class="hidden mt-2 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/25 text-amber-300 font-mono text-xs flex items-center justify-between">
+          <div id="heartbeatTimelockNotice" class="hidden mt-2 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/25 text-amber-300 font-sans text-xs flex items-center justify-between">
             <div class="flex items-center gap-2">
               <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0"></span>
               <span id="heartbeatTimelockText" class="font-bold">72h Policy Timelock Active</span>
@@ -293,7 +293,7 @@
 
         <!-- Right: Check-in Button & Timer Selectors -->
         <div class="lg:col-span-5 flex flex-col gap-4 lg:pl-6 lg:border-l border-white/[0.08]">
-          <button id="pingMainBtn" onclick="handlePingMainBtnClick()" class="w-full bg-purple-600 hover:bg-purple-500 text-white font-extrabold py-3.5 px-6 near-pill-btn text-sm sm:text-base tracking-wide transition shadow-sm active:scale-98 flex items-center justify-center gap-2">
+          <button id="pingMainBtn" onclick="handlePingMainBtnClick()" class="w-full bg-nearGreen hover:bg-nearGreenHover text-nearBlack font-extrabold py-3.5 px-6 rounded-xl text-sm sm:text-base transition shadow-near-glow active:scale-98 flex items-center justify-center gap-2 cursor-pointer">
             <svg id="pingMainBtnIcon" class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L14.4 7.2L20 8L16 12L17 17.6L12 15L7 17.6L8 12L4 8L9.6 7.2L12 2Z"/></svg>
             <span id="pingMainBtnText">Connect Wallet to Arm Vault</span>
           </button>
@@ -302,7 +302,7 @@
           <div class="p-3.5 rounded-2xl bg-white/[0.03] border border-white/[0.08] space-y-2.5">
             <div class="grid grid-cols-2 gap-2.5">
               <div class="space-y-1">
-                <label class="block text-[10px] font-semibold text-[#8C929D] uppercase tracking-wider pl-1">1. Check-in Timer</label>
+                <label class="block text-xs font-semibold text-[#8C929D] pl-1">1. Check-in Timer</label>
                 <div class="relative">
                   <select id="inactivitySelect" onchange="changeInactivityPeriod(this.value)" class="w-full appearance-none bg-[#0B0D12] hover:bg-white/[0.06] text-white font-semibold text-xs rounded-xl pl-3 pr-7 py-2.5 border border-white/[0.08] focus:border-nearGreen outline-none transition cursor-pointer">
                     <option value="demo_120s" class="bg-[#0B0D12] text-amber-300 font-bold">⚡ 2m (Judge Demo)</option>
@@ -315,7 +315,7 @@
                 </div>
               </div>
               <div class="space-y-1">
-                <label class="block text-[10px] font-semibold text-[#8C929D] uppercase tracking-wider pl-1">2. Grace Buffer</label>
+                <label class="block text-xs font-semibold text-[#8C929D] pl-1">2. Grace Buffer</label>
                 <div class="relative">
                   <select id="graceSelect" onchange="changeGracePeriod(this.value)" class="w-full appearance-none bg-[#0B0D12] hover:bg-white/[0.06] text-white font-semibold text-xs rounded-xl pl-3 pr-7 py-2.5 border border-white/[0.08] focus:border-nearGreen outline-none transition cursor-pointer">
                     <option value="demo_30s" class="bg-[#0B0D12] text-amber-300 font-bold">⚡ 30s (Judge Demo)</option>
@@ -364,133 +364,56 @@
           </div>
         </div>
 
-        <!-- Initial Unconfigured Banner (Hidden if addresses exist) -->
-        <div id="unconfiguredBanner" class="hidden p-4 rounded-xl bg-amber-950/20 border border-amber-500/30 text-xs text-amber-200">
-          <div class="flex items-center gap-3 w-full">
-            <svg class="w-4 h-4 text-amber-400 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-            <span>No destination addresses entered yet. Enter your backup and family wallets below, then click <strong>Save Policy</strong>. Initial setup activates immediately without timelock.</span>
-          </div>
-        </div>
-
-        <!-- Armed & Synchronized Banner (Shown when destinations are saved on-chain) -->
-        <div id="activePolicyBanner" class="hidden p-4 rounded-xl bg-nearGreen/10 border border-nearGreen/35 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-white">
-          <div class="flex items-center gap-3">
-            <div class="w-8 h-8 rounded-lg bg-nearGreen/20 flex items-center justify-center text-nearGreen shrink-0 font-bold">
-              <svg class="w-4 h-4 text-nearGreen" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
-            </div>
-            <div>
-              <div class="font-bold text-nearGreen flex items-center gap-2">
-                <span>Backup &amp; Family Wallets Saved</span>
-                <span class="text-[10px] font-mono bg-nearGreen/20 text-nearGreen border border-nearGreen/40 px-2 py-0.5 rounded-full font-bold">PROTECTED ON-CHAIN</span>
-              </div>
-              <div id="activePolicySummary" class="text-white/80 text-[11px] mt-0.5 font-mono">
-                <!-- Dynamically populated: e.g. Backup: okgoogleok.testnet · Heirs: mastrophot.testnet -->
-              </div>
-            </div>
-          </div>
-          <div class="flex items-center gap-2 text-xs font-mono text-nearGreen self-start sm:self-auto">
-            <span class="w-2 h-2 rounded-full bg-nearGreen radar-pulse"></span>
-            <span class="font-bold">Live Synchronized</span>
-          </div>
-        </div>
-
-        <!-- Evacuated / Inherited / Expired Policy Banner -->
-        <div id="evacuatedPolicyBanner" class="hidden p-4 rounded-xl bg-red-950/25 border border-red-500/35 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-white">
-          <div class="flex items-center gap-3">
-            <div id="evacuatedBannerIconBox" class="w-8 h-8 rounded-lg bg-red-500/20 flex items-center justify-center text-red-400 shrink-0 font-bold">
-              <svg id="evacuatedBannerIcon" class="w-4 h-4 text-red-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-            </div>
-            <div>
-              <div id="evacuatedBannerHeader" class="font-bold text-red-400 flex flex-wrap items-center gap-2">
-                <span id="evacuatedBannerTitle">Bunker Evacuated · Protection Inactive</span>
-                <span id="evacuatedBannerBadge" class="text-[10px] font-mono bg-red-500/20 text-red-300 border border-red-500/40 px-2 py-0.5 rounded-full font-bold">KEYS BURNED</span>
-              </div>
-              <div id="evacuatedPolicySummary" class="text-white/80 text-[11px] mt-0.5 font-mono">
-                <!-- Egress status summary -->
-              </div>
-            </div>
-          </div>
-          <div id="evacuatedBannerRight" class="flex items-center gap-2 text-xs font-mono text-red-400 self-start sm:self-auto shrink-0">
-            <span id="evacuatedBannerDot" class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
-            <span id="evacuatedBannerRightText" class="font-bold">Vault Burned</span>
-          </div>
-        </div>
-
         <!-- Unified Multichain Policy Card (Routing Columns + Save Policy Footer) -->
         <div class="rounded-2xl bg-[#0B0D12] border border-white/[0.08] overflow-hidden shadow-card">
           <div class="grid grid-cols-1 lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x divide-white/[0.08]">
 
             <!-- Left Column: Emergency Panic Destination (Emergency Egress) -->
             <div class="p-6 flex flex-col justify-between">
-            <div class="space-y-5">
+            <div class="space-y-4">
               <div class="flex items-start justify-between gap-3 border-b border-white/[0.06] pb-4">
                 <div class="space-y-1">
                   <div class="flex items-center gap-2">
                     <span class="w-2 h-2 rounded-full bg-red-400"></span>
-                    <h4 class="text-sm font-bold text-white tracking-tight">1. Your Backup Wallets (Emergency)</h4>
+                    <h4 class="text-sm sm:text-base font-bold text-white tracking-tight">1. Your Backup Wallets (Emergency)</h4>
                   </div>
-                  <p class="text-xs sm:text-sm text-[#B0B9C9] min-h-[40px] flex items-center">
+                  <p class="text-xs sm:text-sm text-[#B0B9C9]">
                     Clicking Panic immediately withdraws 100% of your vault assets to these backup wallets.
                   </p>
                 </div>
-                <span class="text-[10px] font-mono font-bold text-red-400 bg-red-950/40 border border-red-500/30 px-2.5 py-0.5 rounded-full whitespace-nowrap">
+                <span class="text-xs font-sans font-semibold text-red-400 bg-red-950/40 border border-red-500/30 px-2.5 py-0.5 rounded-lg whitespace-nowrap shrink-0">
                   Instant Withdrawal
                 </span>
               </div>
 
-              <!-- 4 Chain Rows for Panic -->
-              <div class="space-y-4">
-                
-                <!-- NEAR -->
-                <div class="space-y-1.5">
-                  <div class="flex items-center justify-between text-xs">
-                    <label class="text-[#8C929D] font-mono text-[11px] uppercase font-semibold">Backup NEAR Wallet</label>
-                  </div>
-                  <div class="flex items-center rounded-xl bg-white/[0.02] border border-white/[0.08] focus-within:border-nearGreen transition overflow-hidden">
-                    <span class="px-3 py-2.5 text-xs font-mono font-bold text-white bg-white/[0.03] border-r border-white/[0.06] shrink-0">
-                      NEAR
-                    </span>
-                    <input type="text" id="panicNearAddr" value="" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="e.g. backup-wallet.testnet" class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none">
-                  </div>
+              <!-- 4 Chain Rows for Panic (Clean Single-Row Inputs without CAPS LOCK clutter) -->
+              <div class="space-y-3">
+                <div class="flex items-center rounded-xl bg-white/[0.02] border border-white/[0.08] focus-within:border-nearGreen transition overflow-hidden">
+                  <span class="w-16 text-center py-2.5 text-xs font-sans font-bold text-white bg-white/[0.03] border-r border-white/[0.06] shrink-0">
+                    NEAR
+                  </span>
+                  <input type="text" id="panicNearAddr" value="" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="Backup NEAR wallet (e.g. backup.testnet)" class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:font-sans placeholder:text-[#585E6A] outline-none">
                 </div>
 
-                <!-- Bitcoin -->
-                <div class="space-y-1.5">
-                  <div class="flex items-center justify-between text-xs">
-                    <label class="text-[#8C929D] font-mono text-[11px] uppercase font-semibold">Backup Bitcoin Address</label>
-                  </div>
-                  <div class="flex items-center rounded-xl bg-white/[0.02] border border-white/[0.08] focus-within:border-nearGreen transition overflow-hidden">
-                    <span class="px-3 py-2.5 text-xs font-mono font-bold text-[#F7931A] bg-white/[0.03] border-r border-white/[0.06] shrink-0">
-                      BTC
-                    </span>
-                    <input type="text" id="panicBtcAddr" value="" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="e.g. tb1q..." class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none">
-                  </div>
+                <div class="flex items-center rounded-xl bg-white/[0.02] border border-white/[0.08] focus-within:border-nearGreen transition overflow-hidden">
+                  <span class="w-16 text-center py-2.5 text-xs font-sans font-bold text-[#F7931A] bg-white/[0.03] border-r border-white/[0.06] shrink-0">
+                    BTC
+                  </span>
+                  <input type="text" id="panicBtcAddr" value="" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="Backup Bitcoin address (e.g. tb1q...)" class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:font-sans placeholder:text-[#585E6A] outline-none">
                 </div>
 
-                <!-- Ethereum / EVM -->
-                <div class="space-y-1.5">
-                  <div class="flex items-center justify-between text-xs">
-                    <label class="text-[#8C929D] font-mono text-[11px] uppercase font-semibold">Backup Ethereum Address</label>
-                  </div>
-                  <div class="flex items-center rounded-xl bg-white/[0.02] border border-white/[0.08] focus-within:border-nearGreen transition overflow-hidden">
-                    <span class="px-3 py-2.5 text-xs font-mono font-bold text-[#627EEA] bg-white/[0.03] border-r border-white/[0.06] shrink-0">
-                      ETH
-                    </span>
-                    <input type="text" id="panicEvmAddr" value="" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="e.g. 0x..." class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none">
-                  </div>
+                <div class="flex items-center rounded-xl bg-white/[0.02] border border-white/[0.08] focus-within:border-nearGreen transition overflow-hidden">
+                  <span class="w-16 text-center py-2.5 text-xs font-sans font-bold text-[#627EEA] bg-white/[0.03] border-r border-white/[0.06] shrink-0">
+                    ETH
+                  </span>
+                  <input type="text" id="panicEvmAddr" value="" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="Backup Ethereum / EVM address (e.g. 0x...)" class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:font-sans placeholder:text-[#585E6A] outline-none">
                 </div>
 
-                <!-- Solana -->
-                <div class="space-y-1.5">
-                  <div class="flex items-center justify-between text-xs">
-                    <label class="text-[#8C929D] font-mono text-[11px] uppercase font-semibold">Backup Solana Address</label>
-                  </div>
-                  <div class="flex items-center rounded-xl bg-white/[0.02] border border-white/[0.08] focus-within:border-nearGreen transition overflow-hidden">
-                    <span class="px-3 py-2.5 text-xs font-mono font-bold text-[#9945FF] bg-white/[0.03] border-r border-white/[0.06] shrink-0">
-                      SOL
-                    </span>
-                    <input type="text" id="panicSolAddr" value="" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="e.g. Solana Address..." class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none">
-                  </div>
+                <div class="flex items-center rounded-xl bg-white/[0.02] border border-white/[0.08] focus-within:border-nearGreen transition overflow-hidden">
+                  <span class="w-16 text-center py-2.5 text-xs font-sans font-bold text-[#9945FF] bg-white/[0.03] border-r border-white/[0.06] shrink-0">
+                    SOL
+                  </span>
+                  <input type="text" id="panicSolAddr" value="" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="Backup Solana address" class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:font-sans placeholder:text-[#585E6A] outline-none">
                 </div>
               </div>
             </div>
@@ -498,88 +421,63 @@
 
           <!-- Right Column: Family Push Inheritance (Heirs) -->
             <div class="p-6 flex flex-col justify-between">
-              <div class="space-y-5">
+              <div class="space-y-4">
                 <div class="flex items-start justify-between gap-3 border-b border-white/[0.06] pb-4">
                   <div class="space-y-1">
                     <div class="flex items-center gap-2">
                       <span class="w-2 h-2 rounded-full bg-nearGreen"></span>
-                      <h4 class="text-sm font-bold text-white tracking-tight">2. Family Wallets (Inheritance)</h4>
+                      <h4 class="text-sm sm:text-base font-bold text-white tracking-tight">2. Family Wallets (Inheritance)</h4>
                     </div>
-                    <p class="text-xs sm:text-sm text-[#B0B9C9] min-h-[40px] flex items-center">
+                    <p class="text-xs sm:text-sm text-[#B0B9C9]">
                       If your timer and grace period expire, funds are sent here automatically.
                     </p>
                   </div>
-                  <span class="text-[10px] font-mono font-bold text-nearGreen bg-nearGreenMuted border border-nearGreen/30 px-2.5 py-0.5 rounded-full whitespace-nowrap">
+                  <span class="text-xs font-sans font-semibold text-nearGreen bg-nearGreenMuted border border-nearGreen/30 px-2.5 py-0.5 rounded-lg whitespace-nowrap shrink-0">
                     Auto-Transfer
                   </span>
                 </div>
 
-                <!-- 4 Chain Rows for Heirs -->
-                <div class="space-y-4">
-                  
-                  <!-- NEAR -->
-                  <div class="space-y-1.5">
-                    <div class="flex items-center justify-between text-xs">
-                      <label class="text-[#8C929D] font-mono text-[11px] uppercase font-semibold">Family NEAR Wallet</label>
-                    </div>
-                    <div class="flex items-center rounded-xl bg-white/[0.02] border border-white/[0.08] focus-within:border-nearGreen transition overflow-hidden">
-                      <span class="px-3 py-2.5 text-xs font-mono font-bold text-white bg-white/[0.03] border-r border-white/[0.06] shrink-0">
-                        NEAR
-                      </span>
-                      <input type="text" id="heirNearAddr" value="" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="e.g. family.testnet" class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none">
-                    </div>
+                <!-- 4 Chain Rows for Heirs (Clean Single-Row Inputs without CAPS LOCK clutter) -->
+                <div class="space-y-3">
+                  <div class="flex items-center rounded-xl bg-white/[0.02] border border-white/[0.08] focus-within:border-nearGreen transition overflow-hidden">
+                    <span class="w-16 text-center py-2.5 text-xs font-sans font-bold text-white bg-white/[0.03] border-r border-white/[0.06] shrink-0">
+                      NEAR
+                    </span>
+                    <input type="text" id="heirNearAddr" value="" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="Family NEAR wallet (e.g. family.testnet)" class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:font-sans placeholder:text-[#585E6A] outline-none">
                   </div>
 
-                  <!-- Bitcoin -->
-                  <div class="space-y-1.5">
-                    <div class="flex items-center justify-between text-xs">
-                      <label class="text-[#8C929D] font-mono text-[11px] uppercase font-semibold">Family Bitcoin Address</label>
-                    </div>
-                    <div class="flex items-center rounded-xl bg-white/[0.02] border border-white/[0.08] focus-within:border-nearGreen transition overflow-hidden">
-                      <span class="px-3 py-2.5 text-xs font-mono font-bold text-[#F7931A] bg-white/[0.03] border-r border-white/[0.06] shrink-0">
-                        BTC
-                      </span>
-                      <input type="text" id="heirBtcAddr" value="" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="e.g. tb1q..." class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none">
-                    </div>
+                  <div class="flex items-center rounded-xl bg-white/[0.02] border border-white/[0.08] focus-within:border-nearGreen transition overflow-hidden">
+                    <span class="w-16 text-center py-2.5 text-xs font-sans font-bold text-[#F7931A] bg-white/[0.03] border-r border-white/[0.06] shrink-0">
+                      BTC
+                    </span>
+                    <input type="text" id="heirBtcAddr" value="" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="Family Bitcoin address (e.g. tb1q...)" class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:font-sans placeholder:text-[#585E6A] outline-none">
                   </div>
 
-                  <!-- Ethereum / EVM -->
-                  <div class="space-y-1.5">
-                    <div class="flex items-center justify-between text-xs">
-                      <label class="text-[#8C929D] font-mono text-[11px] uppercase font-semibold">Family Ethereum Address</label>
-                    </div>
-                    <div class="flex items-center rounded-xl bg-white/[0.02] border border-white/[0.08] focus-within:border-nearGreen transition overflow-hidden">
-                      <span class="px-3 py-2.5 text-xs font-mono font-bold text-[#627EEA] bg-white/[0.03] border-r border-white/[0.06] shrink-0">
-                        ETH
-                      </span>
-                      <input type="text" id="heirEvmAddr" value="" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="e.g. 0x..." class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none">
-                    </div>
+                  <div class="flex items-center rounded-xl bg-white/[0.02] border border-white/[0.08] focus-within:border-nearGreen transition overflow-hidden">
+                    <span class="w-16 text-center py-2.5 text-xs font-sans font-bold text-[#627EEA] bg-white/[0.03] border-r border-white/[0.06] shrink-0">
+                      ETH
+                    </span>
+                    <input type="text" id="heirEvmAddr" value="" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="Family Ethereum / EVM address (e.g. 0x...)" class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:font-sans placeholder:text-[#585E6A] outline-none">
                   </div>
 
-                  <!-- Solana -->
-                  <div class="space-y-1.5">
-                    <div class="flex items-center justify-between text-xs">
-                      <label class="text-[#8C929D] font-mono text-[11px] uppercase font-semibold">Family Solana Address</label>
-                    </div>
-                    <div class="flex items-center rounded-xl bg-white/[0.02] border border-white/[0.08] focus-within:border-nearGreen transition overflow-hidden">
-                      <span class="px-3 py-2.5 text-xs font-mono font-bold text-[#9945FF] bg-white/[0.03] border-r border-white/[0.06] shrink-0">
-                        SOL
-                      </span>
-                      <input type="text" id="heirSolAddr" value="" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="e.g. Solana Address..." class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none">
-                    </div>
+                  <div class="flex items-center rounded-xl bg-white/[0.02] border border-white/[0.08] focus-within:border-nearGreen transition overflow-hidden">
+                    <span class="w-16 text-center py-2.5 text-xs font-sans font-bold text-[#9945FF] bg-white/[0.03] border-r border-white/[0.06] shrink-0">
+                      SOL
+                    </span>
+                    <input type="text" id="heirSolAddr" value="" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="Family Solana address" class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:font-sans placeholder:text-[#585E6A] outline-none">
                   </div>
 
                   <!-- Optional Note to Heirs -->
                   <div class="space-y-1.5 pt-2 border-t border-white/[0.06]">
                     <div class="flex items-center justify-between text-xs">
-                      <label class="text-[#8C929D] font-mono text-[11px] uppercase font-semibold">Message to Heirs (Optional)</label>
-                      <span id="memoByteCount" class="text-[10px] text-nearGreen font-mono font-bold">0 / 240 B</span>
+                      <label class="text-[#8C929D] font-sans font-medium">Optional note for family</label>
+                      <span id="memoByteCount" class="text-[11px] text-[#8E99AD] font-mono">0 / 240 B</span>
                     </div>
                     <div class="flex items-center rounded-xl bg-white/[0.02] border border-white/[0.08] focus-within:border-nearGreen transition overflow-hidden">
-                      <span class="px-3 py-2.5 text-xs font-mono font-bold text-nearGreen bg-white/[0.03] border-r border-white/[0.06] shrink-0">
-                        NOTE
+                      <span class="w-16 text-center py-2.5 text-xs font-sans font-bold text-nearGreen bg-white/[0.03] border-r border-white/[0.06] shrink-0">
+                        Note
                       </span>
-                      <input type="text" id="heirFinalMemo" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" oninput="updateMemoByteCounter(this.value)" placeholder="e.g. Optional note for your family..." class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none">
+                      <input type="text" id="heirFinalMemo" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" oninput="updateMemoByteCounter(this.value)" placeholder="e.g. Optional note for your family..." class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-sans text-white placeholder:text-[#585E6A] outline-none">
                     </div>
                   </div>
                 </div>
@@ -596,7 +494,7 @@
                 <div class="text-xs sm:text-sm font-bold text-white flex items-center gap-2">
                   <span id="addressStatusDot" class="w-2 h-2 rounded-full bg-[#8E99AD]"></span>
                   <span>Vault Protection:</span>
-                  <span id="addressStatusBadge" class="text-[#8E99AD] font-mono font-bold">Wallet Not Connected</span>
+                  <span id="addressStatusBadge" class="text-[#8E99AD] font-sans font-bold">Wallet Not Connected</span>
                 </div>
                 <p id="addressStatusDesc" class="text-xs text-[#8C929D]">
                   Connect your NEAR wallet above to set your backup and family wallets.
@@ -604,10 +502,10 @@
               </div>
 
               <div class="flex items-center gap-3">
-                <button id="cancelUpdateBtn" onclick="cancelAddressCooldown()" class="cancel-policy-btn hidden px-4 py-2.5 rounded-xl bg-red-950/40 hover:bg-red-950/60 text-red-400 font-mono font-bold text-xs border border-red-500/30 transition">
+                <button id="cancelUpdateBtn" onclick="cancelAddressCooldown()" class="cancel-policy-btn hidden px-4 py-2.5 rounded-xl bg-red-950/40 hover:bg-red-950/60 text-red-400 font-sans font-bold text-xs border border-red-500/30 transition">
                   Cancel & Revert Update
                 </button>
-                <button id="applyPolicyBtn" onclick="applyAddressPolicy()" class="apply-policy-btn hidden px-4 py-2.5 rounded-xl bg-nearGreen hover:bg-nearGreenHover text-nearBlack font-mono font-bold text-xs transition shadow-near-glow whitespace-nowrap cursor-pointer">
+                <button id="applyPolicyBtn" onclick="applyAddressPolicy()" class="apply-policy-btn hidden px-4 py-2.5 rounded-xl bg-nearGreen hover:bg-nearGreenHover text-nearBlack font-sans font-bold text-xs transition shadow-near-glow whitespace-nowrap cursor-pointer">
                   Apply Policy
                 </button>
                 <button id="savePolicyBtn" onclick="saveAddresses()" class="save-policy-btn bg-nearGreen hover:bg-nearGreenHover text-nearBlack font-extrabold py-2.5 px-6 rounded-xl text-xs sm:text-sm transition shadow-near-glow active:scale-98 whitespace-nowrap cursor-pointer">
@@ -722,8 +620,8 @@
           <p class="text-xs text-[#8C929D] mt-0.5">Send funds to these addresses to store them inside your vault.</p>
         </div>
         <div class="flex items-center gap-2 self-start sm:self-auto">
-          <button onclick="fetchLiveBalances(true)" class="px-3.5 py-1.5 rounded-full bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-xs font-mono text-textSilver hover:text-white transition flex items-center gap-2 cursor-pointer">
-            <span id="liveSyncDot" class="w-2 h-2 rounded-full bg-nearGreen radar-pulse"></span>
+          <button onclick="fetchLiveBalances(true)" class="px-3.5 py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-xs font-sans font-semibold text-textSilver hover:text-white transition flex items-center gap-2 cursor-pointer">
+            <span id="liveSyncDot" class="w-2 h-2 rounded-full bg-white/20"></span>
             <span id="liveSyncBadge">Refresh Balances</span>
             <svg class="w-3.5 h-3.5 text-[#8C929D]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
           </button>
@@ -742,7 +640,7 @@
               <div class="flex-1 min-w-0">
                 <div class="flex items-center justify-between gap-2">
                   <h4 class="text-base sm:text-lg font-bold text-white truncate leading-tight">Bitcoin</h4>
-                  <span class="text-xs font-mono px-2.5 py-0.5 rounded-full bg-white/[0.05] border border-white/[0.08] text-[#8C929D] shrink-0 font-medium">Testnet</span>
+                  <span class="text-xs font-sans px-2.5 py-0.5 rounded-lg bg-white/[0.05] border border-white/[0.08] text-[#8C929D] shrink-0 font-medium">Testnet</span>
                 </div>
                 <span class="text-xs sm:text-sm text-[#8C929D] truncate block mt-0.5">BTC Network</span>
               </div>
@@ -750,7 +648,7 @@
 
             <!-- Vault Balance -->
             <div class="pt-1">
-              <div class="text-xs font-sans font-semibold text-[#A6B0C3] uppercase tracking-wider">Vault Balance</div>
+              <div class="text-xs font-sans font-medium text-[#A6B0C3]">Balance</div>
               <div id="btcBalanceText" class="text-2xl sm:text-3xl font-mono font-extrabold text-white mt-1 tracking-tight">0.0000 <span class="text-base font-normal text-[#B0B9C9]">BTC</span></div>
               <div id="btcUsdText" class="text-xs sm:text-sm font-mono text-[#A6B0C3] mt-1">≈ 0.00 USD</div>
             </div>
@@ -758,10 +656,10 @@
             <!-- Full Deposit Address -->
             <div class="space-y-1.5 pt-1">
               <div class="flex items-center justify-between">
-                <span class="text-xs font-sans font-semibold text-[#A6B0C3] uppercase tracking-wider">Deposit Address</span>
+                <span class="text-xs font-sans font-medium text-[#A6B0C3]">Deposit address</span>
               </div>
               <div class="p-3.5 rounded-xl bg-white/[0.03] border border-white/[0.08] hover:border-white/[0.2] transition min-h-[68px] flex items-center cursor-pointer group" onclick="copyAddr('btcAddress')">
-                <span id="btcAddress" data-full="" class="font-mono text-xs sm:text-[13px] leading-relaxed text-[#8C929D] break-all select-all font-medium group-hover:text-nearGreen transition-colors">
+                <span id="btcAddress" data-full="" class="font-sans text-xs sm:text-[13px] leading-relaxed text-[#8C929D] break-all select-all font-medium group-hover:text-nearGreen transition-colors">
                   Connect wallet to reveal address
                 </span>
               </div>
@@ -790,7 +688,7 @@
               <div class="flex-1 min-w-0">
                 <div class="flex items-center justify-between gap-2">
                   <h4 class="text-base sm:text-lg font-bold text-white truncate leading-tight">Ethereum</h4>
-                  <span class="text-xs font-mono px-2.5 py-0.5 rounded-full bg-white/[0.05] border border-white/[0.08] text-[#8C929D] shrink-0 font-medium">Testnet</span>
+                  <span class="text-xs font-sans px-2.5 py-0.5 rounded-lg bg-white/[0.05] border border-white/[0.08] text-[#8C929D] shrink-0 font-medium">Testnet</span>
                 </div>
                 <span class="text-xs sm:text-sm text-[#8C929D] truncate block mt-0.5">ETH · Base · Arbitrum</span>
               </div>
@@ -798,7 +696,7 @@
 
             <!-- Vault Balance -->
             <div class="pt-1">
-              <div class="text-xs font-sans font-semibold text-[#A6B0C3] uppercase tracking-wider">Vault Balance</div>
+              <div class="text-xs font-sans font-medium text-[#A6B0C3]">Balance</div>
               <div id="evmBalanceText" class="text-2xl sm:text-3xl font-mono font-extrabold text-white mt-1 tracking-tight">0.0000 <span class="text-base font-normal text-[#B0B9C9]">ETH</span></div>
               <div id="evmUsdText" class="text-xs sm:text-sm font-mono text-[#A6B0C3] mt-1">≈ 0.00 USD</div>
             </div>
@@ -806,10 +704,10 @@
             <!-- Full Deposit Address -->
             <div class="space-y-1.5 pt-1">
               <div class="flex items-center justify-between">
-                <span class="text-xs font-sans font-semibold text-[#A6B0C3] uppercase tracking-wider">Deposit Address</span>
+                <span class="text-xs font-sans font-medium text-[#A6B0C3]">Deposit address</span>
               </div>
               <div class="p-3.5 rounded-xl bg-white/[0.03] border border-white/[0.08] hover:border-white/[0.2] transition min-h-[68px] flex items-center cursor-pointer group" onclick="copyAddr('evmAddress')">
-                <span id="evmAddress" data-full="" class="font-mono text-xs sm:text-[13px] leading-relaxed text-[#8C929D] break-all select-all font-medium group-hover:text-nearGreen transition-colors">
+                <span id="evmAddress" data-full="" class="font-sans text-xs sm:text-[13px] leading-relaxed text-[#8C929D] break-all select-all font-medium group-hover:text-nearGreen transition-colors">
                   Connect wallet to reveal address
                 </span>
               </div>
@@ -838,7 +736,7 @@
               <div class="flex-1 min-w-0">
                 <div class="flex items-center justify-between gap-2">
                   <h4 class="text-base sm:text-lg font-bold text-white truncate leading-tight">Solana</h4>
-                  <span class="text-xs font-mono px-2.5 py-0.5 rounded-full bg-white/[0.05] border border-white/[0.08] text-[#8C929D] shrink-0 font-medium">Testnet</span>
+                  <span class="text-xs font-sans px-2.5 py-0.5 rounded-lg bg-white/[0.05] border border-white/[0.08] text-[#8C929D] shrink-0 font-medium">Testnet</span>
                 </div>
                 <span class="text-xs sm:text-sm text-[#8C929D] truncate block mt-0.5">SOL Network</span>
               </div>
@@ -846,7 +744,7 @@
 
             <!-- Vault Balance -->
             <div class="pt-1">
-              <div class="text-xs font-sans font-semibold text-[#A6B0C3] uppercase tracking-wider">Vault Balance</div>
+              <div class="text-xs font-sans font-medium text-[#A6B0C3]">Balance</div>
               <div id="solBalanceText" class="text-2xl sm:text-3xl font-mono font-extrabold text-white mt-1 tracking-tight">0.0000 <span class="text-base font-normal text-[#B0B9C9]">SOL</span></div>
               <div id="solUsdText" class="text-xs sm:text-sm font-mono text-[#A6B0C3] mt-1">≈ 0.00 USD</div>
             </div>
@@ -854,10 +752,10 @@
             <!-- Full Deposit Address -->
             <div class="space-y-1.5 pt-1">
               <div class="flex items-center justify-between">
-                <span class="text-xs font-sans font-semibold text-[#A6B0C3] uppercase tracking-wider">Deposit Address</span>
+                <span class="text-xs font-sans font-medium text-[#A6B0C3]">Deposit address</span>
               </div>
               <div class="p-3.5 rounded-xl bg-white/[0.03] border border-white/[0.08] hover:border-white/[0.2] transition min-h-[68px] flex items-center cursor-pointer group" onclick="copyAddr('solAddress')">
-                <span id="solAddress" data-full="" class="font-mono text-xs sm:text-[13px] leading-relaxed text-[#8C929D] break-all select-all font-medium group-hover:text-nearGreen transition-colors">
+                <span id="solAddress" data-full="" class="font-sans text-xs sm:text-[13px] leading-relaxed text-[#8C929D] break-all select-all font-medium group-hover:text-nearGreen transition-colors">
                   Connect wallet to reveal address
                 </span>
               </div>
@@ -886,7 +784,7 @@
               <div class="flex-1 min-w-0">
                 <div class="flex items-center justify-between gap-2">
                   <h4 class="text-base sm:text-lg font-bold text-white truncate leading-tight">NEAR</h4>
-                  <span class="text-xs font-mono px-2.5 py-0.5 rounded-full bg-white/[0.05] border border-white/[0.08] text-[#8C929D] shrink-0 font-medium">Testnet</span>
+                  <span class="text-xs font-sans px-2.5 py-0.5 rounded-lg bg-white/[0.05] border border-white/[0.08] text-[#8C929D] shrink-0 font-medium">Testnet</span>
                 </div>
                 <span class="text-xs sm:text-sm text-[#8C929D] truncate block mt-0.5">NEAR Network</span>
               </div>
@@ -894,7 +792,7 @@
 
             <!-- Vault Balance -->
             <div class="pt-1">
-              <div class="text-xs font-sans font-semibold text-[#A6B0C3] uppercase tracking-wider">Vault Balance</div>
+              <div class="text-xs font-sans font-medium text-[#A6B0C3]">Balance</div>
               <div id="nearBalanceText" class="text-2xl sm:text-3xl font-mono font-extrabold text-white mt-1 tracking-tight">0.0000 <span class="text-base font-normal text-[#B0B9C9]">NEAR</span></div>
               <div id="nearUsdText" class="text-xs sm:text-sm font-mono text-[#A6B0C3] mt-1">≈ 0.00 USD</div>
             </div>
@@ -902,10 +800,10 @@
             <!-- Full Vault Account -->
             <div class="space-y-1.5 pt-1">
               <div class="flex items-center justify-between">
-                <span class="text-xs font-sans font-semibold text-[#A6B0C3] uppercase tracking-wider">Deposit Address</span>
+                <span class="text-xs font-sans font-medium text-[#A6B0C3]">Deposit address</span>
               </div>
               <div class="p-3.5 rounded-xl bg-white/[0.03] border border-white/[0.08] hover:border-white/[0.2] transition min-h-[68px] flex items-center cursor-pointer group" onclick="copyAddr('nearAddress')">
-                <span id="nearAddress" data-full="" title="Connect wallet to reveal address" class="font-mono text-xs sm:text-[13px] leading-relaxed text-[#8C929D] break-all select-all font-medium group-hover:text-nearGreen transition-colors">
+                <span id="nearAddress" data-full="" title="Connect wallet to reveal address" class="font-sans text-xs sm:text-[13px] leading-relaxed text-[#8C929D] break-all select-all font-medium group-hover:text-nearGreen transition-colors">
                   Connect wallet to reveal address
                 </span>
               </div>
@@ -939,7 +837,7 @@
           <div class="space-y-1">
             <div class="flex items-center gap-2.5 flex-wrap">
               <h4 class="text-sm sm:text-base font-bold text-white tracking-tight">Telegram Push Notifications</h4>
-              <span id="tgConnectionBadge" class="text-[10px] font-mono text-[#8C929D] bg-white/[0.04] border border-white/[0.08] px-2.5 py-0.5 rounded-full whitespace-nowrap">
+              <span id="tgConnectionBadge" class="text-xs font-sans font-medium text-[#8C929D] bg-white/[0.04] border border-white/[0.08] px-2.5 py-0.5 rounded-lg whitespace-nowrap">
                 Not Connected
               </span>
             </div>
@@ -950,7 +848,7 @@
         </div>
 
         <div class="flex items-center gap-3 w-full md:w-auto justify-end shrink-0">
-          <button id="sendTestAlertBtn" onclick="sendTestAlert()" class="px-4 py-2.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] text-white font-mono font-bold text-xs sm:text-sm border border-white/[0.08] transition flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer">
+          <button id="sendTestAlertBtn" onclick="sendTestAlert()" class="px-4 py-2.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] text-white font-sans font-bold text-xs sm:text-sm border border-white/[0.08] transition flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer">
             <span>Send Test Ping</span>
           </button>
           <button id="connectTgBotBtn" onclick="openTelegramBotDeepLink()" class="bg-nearGreen hover:bg-nearGreenHover text-nearBlack font-extrabold py-2.5 px-5 rounded-xl text-xs sm:text-sm transition shadow-near-glow active:scale-98 whitespace-nowrap cursor-pointer">
@@ -1291,13 +1189,13 @@
         <span>100% Non-Custodial</span>
       </div>
       <div class="flex items-center gap-3">
-        <a href="https://docs.near.org/abstraction/chain-signatures" target="_blank" rel="noopener noreferrer" class="px-3.5 py-1 rounded-full bg-nearSurface hover:bg-nearElevated border border-nearBorder text-textSilver hover:text-nearGreen transition flex items-center gap-2 text-xs font-mono">
+        <a href="https://docs.near.org/abstraction/chain-signatures" target="_blank" rel="noopener noreferrer" class="px-3.5 py-1.5 rounded-xl bg-nearSurface hover:bg-nearElevated border border-nearBorder text-textSilver hover:text-nearGreen transition flex items-center gap-2 text-xs font-sans font-medium">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path d="M4 19V5L12 15.5V5H19.5V19L11.5 8.5V19H4Z" fill="#00EC97"/>
           </svg>
           <span>Chain Signatures MPC ↗</span>
         </a>
-        <a href="https://testnet.nearblocks.io/address/aegis.okgoogleok.testnet" target="_blank" rel="noopener noreferrer" class="px-3.5 py-1 rounded-full bg-nearSurface hover:bg-nearElevated border border-nearBorder text-textSilver hover:text-nearGreen transition text-xs font-mono">
+        <a href="https://testnet.nearblocks.io/address/aegis.okgoogleok.testnet" target="_blank" rel="noopener noreferrer" class="px-3.5 py-1.5 rounded-xl bg-nearSurface hover:bg-nearElevated border border-nearBorder text-textSilver hover:text-nearGreen transition text-xs font-sans font-medium">
           Explorer ↗
         </a>
       </div>
@@ -2654,8 +2552,6 @@
       // 3. Hide all active banners and alert dialogs
       const activeBanner = document.getElementById('activePolicyBanner');
       if (activeBanner) activeBanner.classList.add('hidden');
-      const unconfigBanner = document.getElementById('unconfiguredBanner');
-      if (unconfigBanner) unconfigBanner.classList.remove('hidden');
       const burnedBanner = document.getElementById('bunkerBurnedBanner');
       if (burnedBanner) burnedBanner.classList.add('hidden');
       const unarmedBanner = document.getElementById('bunkerUnarmedBanner');
@@ -2682,19 +2578,22 @@
       const timerBar = document.getElementById('timerBar');
       const pctEl = document.getElementById('timerPctDisplay');
 
-      if (pulseDot) pulseDot.className = 'w-2.5 h-2.5 rounded-full bg-yellow-400';
-      if (cardTitle) cardTitle.className = 'text-xs font-mono font-bold uppercase tracking-wider text-[#A6B0C3]';
+      if (pulseDot) pulseDot.className = 'w-2.5 h-2.5 rounded-full bg-[#8E99AD]';
+      if (cardTitle) cardTitle.className = 'text-xs font-sans font-bold tracking-wide text-[#A6B0C3]';
       if (heartbeatTag) {
-        heartbeatTag.className = 'text-xs font-mono font-medium text-yellow-400/90 bg-yellow-950/30 px-3 py-1 rounded-full border border-yellow-500/30';
-        heartbeatTag.innerText = 'Vault Inactive · Connect Wallet';
+        heartbeatTag.className = 'text-xs font-sans font-semibold text-[#A6B0C3] bg-white/[0.04] px-3 py-1 rounded-lg border border-white/[0.08]';
+        heartbeatTag.innerText = 'Wallet Not Connected';
       }
-      if (countdownTitle) countdownTitle.innerText = "Dead-Man's Switch Heartbeat:";
+      if (countdownTitle) countdownTitle.innerText = 'Time remaining before automatic inheritance:';
       if (countdownBox) countdownBox.innerText = 'Ready to Arm';
-      if (statusDisplay) statusDisplay.innerHTML = 'Status: <strong class="text-yellow-400/90 font-bold">Connect Wallet to Arm</strong>';
-      if (timerBar) timerBar.style.width = '100%';
+      if (statusDisplay) statusDisplay.innerHTML = 'Status: <strong class="text-white font-semibold">Connect wallet to start</strong>';
+      if (timerBar) {
+        timerBar.style.width = '100%';
+        timerBar.className = 'h-full bg-white/20 rounded-full transition-all duration-300';
+      }
       if (pctEl) pctEl.innerText = '100.0% remaining';
       if (pingBtn) {
-        pingBtn.className = 'w-full bg-purple-600 hover:bg-purple-500 text-white font-extrabold py-3.5 px-6 near-pill-btn text-sm sm:text-base tracking-wide transition shadow-sm active:scale-98 flex items-center justify-center gap-2';
+        pingBtn.className = 'w-full bg-nearGreen hover:bg-nearGreenHover text-nearBlack font-extrabold py-3.5 px-6 rounded-xl text-sm sm:text-base transition shadow-near-glow active:scale-98 flex items-center justify-center gap-2 cursor-pointer';
       }
       if (pingBtnText) pingBtnText.innerText = 'Connect Wallet to Arm Vault';
       const hbNoticeReset = document.getElementById('heartbeatTimelockNotice');
@@ -3821,11 +3720,11 @@
         if (countdownBox) countdownBox.innerText = 'Ready to Arm';
         if (timerBar) {
           timerBar.style.width = '100%';
-          timerBar.className = 'h-full bg-nearGreen rounded-full transition-all duration-300';
+          timerBar.className = 'h-full bg-white/20 rounded-full transition-all duration-300';
         }
         if (pctEl) pctEl.innerText = '100.0% remaining';
         if (pingBtn) {
-          pingBtn.className = 'w-full bg-purple-600 hover:bg-purple-500 text-white font-extrabold py-3.5 px-6 near-pill-btn text-sm sm:text-base tracking-wide transition shadow-sm active:scale-98 flex items-center justify-center gap-2';
+          pingBtn.className = 'w-full bg-nearGreen hover:bg-nearGreenHover text-nearBlack font-extrabold py-3.5 px-6 rounded-xl text-sm sm:text-base transition shadow-near-glow active:scale-98 flex items-center justify-center gap-2 cursor-pointer';
         }
         if (pingBtnText) pingBtnText.innerText = 'Connect Wallet to Arm Vault';
         return;
@@ -3844,17 +3743,17 @@
 
         if (pulseDot) pulseDot.className = isInheritance ? 'w-2.5 h-2.5 rounded-full bg-purple-500 animate-pulse' : 'w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse';
         if (cardTitle) {
-          cardTitle.className = isInheritance ? 'text-xs font-mono font-bold uppercase tracking-wider text-purple-400' : 'text-xs font-mono font-bold uppercase tracking-wider text-red-400';
-          cardTitle.innerText = isInheritance ? 'AUTONOMOUS INHERITANCE · TRANSFERRED' : 'BUNKER EVACUATED · KEYS BURNED';
+          cardTitle.className = isInheritance ? 'text-xs font-sans font-bold tracking-wide text-purple-400' : 'text-xs font-sans font-bold tracking-wide text-red-400';
+          cardTitle.innerText = isInheritance ? 'Automatic Inheritance · Transferred' : 'Bunker Evacuated · Keys Burned';
         }
         if (heartbeatTag) {
           heartbeatTag.className = isInheritance
-            ? 'text-xs font-mono font-medium text-purple-300 bg-purple-950/40 px-3 py-1 rounded-full border border-purple-500/30'
-            : 'text-xs font-mono font-medium text-red-400 bg-red-950/40 px-3 py-1 rounded-full border border-red-500/30';
+            ? 'text-xs font-sans font-semibold text-purple-300 bg-purple-950/40 px-3 py-1 rounded-lg border border-purple-500/30'
+            : 'text-xs font-sans font-semibold text-red-400 bg-red-950/40 px-3 py-1 rounded-lg border border-red-500/30';
           heartbeatTag.innerText = isInheritance ? 'Inheritance Executed · Inactive' : 'Vault Evacuated · Inactive';
         }
         if (countdownTitle) {
-          countdownTitle.innerText = isInheritance ? 'Heir Transfer Executed · Rotation Required:' : 'Bunker Evacuated · Rotation Required:';
+          countdownTitle.innerText = isInheritance ? 'Heir transfer executed · rotation required:' : 'Bunker evacuated · rotation required:';
         }
         if (countdownBox) {
           countdownBox.innerHTML = isInheritance
@@ -3877,7 +3776,7 @@
         }
 
         if (pingBtn) {
-          pingBtn.className = 'w-full bg-nearGreen hover:bg-nearGreenHover text-nearBlack font-extrabold py-3.5 px-6 near-pill-btn text-sm sm:text-base tracking-wide transition shadow-near-glow active:scale-98 flex items-center justify-center gap-2';
+          pingBtn.className = 'w-full bg-nearGreen hover:bg-nearGreenHover text-nearBlack font-extrabold py-3.5 px-6 rounded-xl text-sm sm:text-base transition shadow-near-glow active:scale-98 flex items-center justify-center gap-2 cursor-pointer';
         }
         if (pingBtnIcon) {
           pingBtnIcon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />';
@@ -3897,7 +3796,7 @@
         const panicDot = document.getElementById('panicBtnDot');
         if (headerPanic) {
           headerPanic.disabled = true;
-          headerPanic.className = 'h-9 px-3.5 sm:px-4 rounded-xl bg-red-950/20 text-red-500/50 border border-red-500/20 text-xs sm:text-sm font-mono font-bold tracking-wider cursor-not-allowed opacity-40 flex items-center gap-2 shrink-0 whitespace-nowrap';
+          headerPanic.className = 'h-9 px-3.5 sm:px-4 rounded-xl bg-red-950/20 text-red-500/50 border border-red-500/20 text-xs sm:text-sm font-sans font-bold tracking-wide cursor-not-allowed opacity-40 flex items-center gap-2 shrink-0 whitespace-nowrap';
         }
         if (panicLabel) {
           panicLabel.innerText = isInheritance ? 'INHERITANCE EXECUTED' : 'VAULT EVACUATED';
@@ -3922,14 +3821,14 @@
         if (onchainEl) onchainEl.classList.add('hidden');
         if (pulseDot) pulseDot.className = 'w-2.5 h-2.5 rounded-full bg-amber-400';
         if (cardTitle) {
-          cardTitle.className = 'text-xs font-mono font-bold uppercase tracking-wider text-amber-400';
-          cardTitle.innerText = 'VAULT CHECK-IN TIMER';
+          cardTitle.className = 'text-xs font-sans font-bold tracking-wide text-amber-400';
+          cardTitle.innerText = 'Vault Check-In Timer';
         }
         if (heartbeatTag) {
-          heartbeatTag.className = 'text-xs font-mono font-medium text-amber-400/90 bg-amber-950/30 px-3 py-1 rounded-full border border-amber-500/30';
+          heartbeatTag.className = 'text-xs font-sans font-semibold text-amber-400/90 bg-amber-950/30 px-3 py-1 rounded-lg border border-amber-500/30';
           heartbeatTag.innerText = 'Vault Unarmed';
         }
-        if (countdownTitle) countdownTitle.innerText = 'Time Remaining Before Automatic Inheritance:';
+        if (countdownTitle) countdownTitle.innerText = 'Time remaining before automatic inheritance:';
         if (countdownBox) countdownBox.innerText = 'Ready to Arm';
         if (statusDisplay) statusDisplay.innerHTML = 'Status: <strong class="text-amber-400 font-bold">Not Set Yet (Save Wallets Below)</strong>';
         if (timerBar) {
@@ -3939,7 +3838,7 @@
         if (pctEl) pctEl.innerText = 'Waiting for wallets';
 
         if (pingBtn) {
-          pingBtn.className = 'w-full bg-amber-400 hover:bg-amber-300 text-black font-extrabold py-3.5 px-6 near-pill-btn text-sm sm:text-base tracking-wide transition shadow-sm active:scale-98 flex items-center justify-center gap-2';
+          pingBtn.className = 'w-full bg-amber-400 hover:bg-amber-300 text-black font-extrabold py-3.5 px-6 rounded-xl text-sm sm:text-base transition shadow-sm active:scale-98 flex items-center justify-center gap-2 cursor-pointer';
         }
         if (pingBtnIcon) {
           pingBtnIcon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>';
@@ -3958,7 +3857,7 @@
         const panicDot = document.getElementById('panicBtnDot');
         if (headerPanic) {
           headerPanic.disabled = true;
-          headerPanic.className = 'h-9 px-3.5 sm:px-4 rounded-xl bg-amber-950/20 text-amber-500/50 border border-amber-500/20 text-xs sm:text-sm font-mono font-bold tracking-wider cursor-not-allowed opacity-40 flex items-center gap-2 shrink-0 whitespace-nowrap';
+          headerPanic.className = 'h-9 px-3.5 sm:px-4 rounded-xl bg-amber-950/20 text-amber-500/50 border border-amber-500/20 text-xs sm:text-sm font-sans font-bold tracking-wide cursor-not-allowed opacity-40 flex items-center gap-2 shrink-0 whitespace-nowrap';
         }
         if (panicLabel) panicLabel.innerText = 'VAULT UNARMED';
         if (panicLabelMobile) panicLabelMobile.innerText = 'UNARMED';
@@ -3975,16 +3874,16 @@
       
       if (pulseDot) pulseDot.className = 'w-2.5 h-2.5 rounded-full bg-nearGreen radar-pulse';
       if (cardTitle) {
-        cardTitle.className = 'text-xs font-mono font-bold uppercase tracking-wider text-nearGreen';
-        cardTitle.innerText = 'VAULT CHECK-IN TIMER';
+        cardTitle.className = 'text-xs font-sans font-bold tracking-wide text-nearGreen';
+        cardTitle.innerText = 'Vault Check-In Timer';
       }
       if (heartbeatTag) {
-        heartbeatTag.className = 'text-xs font-mono font-medium text-textGray bg-nearElevated px-3 py-1 rounded-full border border-nearBorder';
+        heartbeatTag.className = 'text-xs font-sans font-semibold text-textGray bg-nearElevated px-3 py-1 rounded-lg border border-nearBorder';
         heartbeatTag.innerText = 'Last check-in: Active';
       }
-      if (countdownTitle) countdownTitle.innerText = 'Time Remaining Before Automatic Inheritance:';
+      if (countdownTitle) countdownTitle.innerText = 'Time remaining before automatic inheritance:';
       if (pingBtn) {
-        pingBtn.className = 'w-full bg-nearGreen hover:bg-nearGreenHover text-nearBlack font-extrabold py-3.5 px-6 near-pill-btn text-sm sm:text-base tracking-wide transition shadow-near-glow active:scale-98 flex items-center justify-center gap-2';
+        pingBtn.className = 'w-full bg-nearGreen hover:bg-nearGreenHover text-nearBlack font-extrabold py-3.5 px-6 rounded-xl text-sm sm:text-base transition shadow-near-glow active:scale-98 flex items-center justify-center gap-2 cursor-pointer';
       }
       if (pingBtnIcon) {
         pingBtnIcon.innerHTML = '<path d="M12 2L14.4 7.2L20 8L16 12L17 17.6L12 15L7 17.6L8 12L4 8L9.6 7.2L12 2Z"/>';
@@ -4030,23 +3929,23 @@
           // 2. Grace Buffer Active — Live Countdown Timer
           if (pulseDot) pulseDot.className = 'w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping';
           if (cardTitle) {
-            cardTitle.className = 'text-xs font-mono font-bold uppercase tracking-wider text-amber-400';
-            cardTitle.innerText = '2. GRACE BUFFER COUNTDOWN';
+            cardTitle.className = 'text-xs font-sans font-bold tracking-wide text-amber-400';
+            cardTitle.innerText = '2. Grace Buffer Countdown';
           }
           if (heartbeatTag) {
-            heartbeatTag.className = 'text-xs font-mono font-bold text-amber-300 bg-amber-950/40 px-3 py-1 rounded-full border border-amber-500/40';
+            heartbeatTag.className = 'text-xs font-sans font-bold text-amber-300 bg-amber-950/40 px-3 py-1 rounded-lg border border-amber-500/40';
             heartbeatTag.innerText = 'Grace Buffer Active';
           }
           if (countdownTitle) {
-            countdownTitle.innerText = '2. Grace Buffer — Autonomous Sweep Initiates In:';
+            countdownTitle.innerText = '2. Grace Buffer — automatic sweep starts in:';
           }
           const { d, h, m, s } = formatTime(graceRemainingSec);
           if (countdownBox) {
             countdownBox.innerHTML =
-              `<span class="text-amber-400">${d}</span><span class="text-amber-400/60 text-2xl font-normal">d</span> ` +
-              `<span class="text-amber-400">${h}</span><span class="text-amber-400/60 text-2xl font-normal">h</span> ` +
-              `<span class="text-amber-400">${m}</span><span class="text-amber-400/60 text-2xl font-normal">m</span> ` +
-              `<span class="text-amber-400">${s}</span><span class="text-amber-400/60 text-2xl font-normal">s</span>`;
+              `<span class="font-mono text-amber-400">${d}</span><span class="text-amber-400/60 text-2xl font-normal">d</span> ` +
+              `<span class="font-mono text-amber-400">${h}</span><span class="text-amber-400/60 text-2xl font-normal">h</span> ` +
+              `<span class="font-mono text-amber-400">${m}</span><span class="text-amber-400/60 text-2xl font-normal">m</span> ` +
+              `<span class="font-mono text-amber-400">${s}</span><span class="text-amber-400/60 text-2xl font-normal">s</span>`;
           }
           const gracePct = Math.max(0, Math.min(100, (graceRemainingSec / totalGraceSec) * 100));
           if (timerBar) {
@@ -4061,15 +3960,15 @@
           // Both Check-in Timer and Grace Buffer Expired
           if (pulseDot) pulseDot.className = 'w-2.5 h-2.5 rounded-full bg-red-500 animate-ping';
           if (cardTitle) {
-            cardTitle.className = 'text-xs font-mono font-bold uppercase tracking-wider text-red-400';
-            cardTitle.innerText = 'HEARTBEAT & GRACE BUFFER EXPIRED';
+            cardTitle.className = 'text-xs font-sans font-bold tracking-wide text-red-400';
+            cardTitle.innerText = 'Timer & Grace Buffer Expired';
           }
           if (heartbeatTag) {
-            heartbeatTag.className = 'text-xs font-mono font-bold text-red-300 bg-red-950/40 px-3 py-1 rounded-full border border-red-500/40';
+            heartbeatTag.className = 'text-xs font-sans font-bold text-red-300 bg-red-950/40 px-3 py-1 rounded-lg border border-red-500/40';
             heartbeatTag.innerText = 'Sweeping to Heirs';
           }
           if (countdownTitle) {
-            countdownTitle.innerText = 'Autonomous Transfer to Heirs Executing:';
+            countdownTitle.innerText = 'Automatic transfer to heirs executing:';
           }
           if (countdownBox) countdownBox.innerHTML = '<span class="text-red-400">EXPIRED</span>';
           if (timerBar) {
@@ -4094,7 +3993,7 @@
                 <span class="w-2 h-2 rounded-full bg-amber-400 animate-ping shrink-0"></span>
                 <span class="truncate">${bannerLabel}</span>
               </span>
-              <span class="text-[10px] font-mono bg-amber-950/40 px-2.5 py-0.5 rounded border border-amber-500/30 shrink-0 whitespace-nowrap">View Live Sweep</span>
+              <span class="text-[10px] font-sans font-semibold bg-amber-950/40 px-2.5 py-0.5 rounded border border-amber-500/30 shrink-0 whitespace-nowrap">View Live Sweep</span>
             </div>
           `;
         }
@@ -4109,10 +4008,10 @@
       const { d, h, m, s } = formatTime(remainingSeconds);
       if (countdownBox) {
         countdownBox.innerHTML = 
-          `${d}<span class="text-textGray text-2xl font-normal">d</span> ` +
-          `${h}<span class="text-textGray text-2xl font-normal">h</span> ` +
-          `${m}<span class="text-textGray text-2xl font-normal">m</span> ` +
-          `${s}<span class="text-textGray text-2xl font-normal">s</span>`;
+          `<span class="font-mono">${d}</span><span class="text-textGray text-2xl font-normal">d</span> ` +
+          `<span class="font-mono">${h}</span><span class="text-textGray text-2xl font-normal">h</span> ` +
+          `<span class="font-mono">${m}</span><span class="text-textGray text-2xl font-normal">m</span> ` +
+          `<span class="font-mono">${s}</span><span class="text-textGray text-2xl font-normal">s</span>`;
       }
       
       const pct = Math.max(0, Math.min(100, (remainingSeconds / MAX_SECONDS) * 100));
