@@ -1,29 +1,22 @@
 /**
- * LastKey Telegram Sentinel Bot Service
- * 
- * Secure Bot Handshake:
- * - Listens for /start or /pair <TOKEN>
- * - Stores paired chat_id securely without unsolicited spamming
- * - Sends heartbeat reminder notifications & panic alerts
- * 
- * Usage:
- *   TELEGRAM_BOT_TOKEN="your_token_from_botfather" node scripts/telegram_bot.js
+ * Aegis Zero-Metadata Telegram Push Bot Helper
+ *
+ * Security Rules:
+ * - Never includes wallet addresses, account IDs, dates, tx hashes, or chain names in messages
+ * - Never passes destructive offset to getUpdates so stateless /start v1_<sha256> tags remain queryable
  */
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
-
-if (!token) {
-  console.log('⚠️ TELEGRAM_BOT_TOKEN not provided in environment.');
-  console.log('💡 How to get one in 30 seconds for free:');
-  console.log('   1. Open Telegram -> search @BotFather');
-  console.log('   2. Send /newbot -> choose name and username (e.g. MyLastKeyAlertBot)');
-  console.log('   3. Copy the HTTP API token');
-  console.log('   4. Run: TELEGRAM_BOT_TOKEN="your_token" node scripts/telegram_bot.js\n');
-}
-
 const API_BASE = token ? `https://api.telegram.org/bot${token}` : null;
-let lastUpdateId = 0;
-const pairedChats = new Set();
+const processedUpdateIds = new Set();
+
+const ZERO_METADATA_MESSAGES = {
+  test: '🛡 Aegis Bunker: Notification channel connected and active.',
+  reminder: '⏳ Aegis Bunker: Check-in window is nearing expiration. Perform a check-in to keep the bunker armed.',
+  grace: '⚠️ Aegis Bunker: Primary timer expired. Grace buffer is now active.',
+  panic: '🚨 Aegis Bunker: Emergency evacuation completed.',
+  inheritance: '🔒 Aegis Bunker: Inheritance protocol completed.'
+};
 
 async function sendMessage(chatId, text) {
   if (!API_BASE) return;
@@ -34,7 +27,7 @@ async function sendMessage(chatId, text) {
       body: JSON.stringify({
         chat_id: chatId,
         text,
-        parse_mode: 'HTML'
+        disable_web_page_preview: true
       })
     });
   } catch (err) {
@@ -46,46 +39,26 @@ async function pollUpdates() {
   if (!API_BASE) return;
 
   try {
-    const res = await fetch(`${API_BASE}/getUpdates?offset=${lastUpdateId + 1}&timeout=30`);
+    const res = await fetch(`${API_BASE}/getUpdates?limit=100`);
     const data = await res.json();
 
     if (data.ok && Array.isArray(data.result)) {
       for (const update of data.result) {
-        lastUpdateId = update.update_id;
+        if (processedUpdateIds.has(update.update_id)) continue;
+        processedUpdateIds.add(update.update_id);
 
         if (update.message && update.message.text) {
           const chatId = update.message.chat.id;
           const text = update.message.text.trim();
-          const from = update.message.from.first_name || 'User';
 
-          console.log(`📩 Received from ${from} (${chatId}): ${text}`);
-
-          if (text.startsWith('/start') || text.startsWith('/pair')) {
-            pairedChats.add(chatId);
-            await sendMessage(
-              chatId,
-              `🛡️ <b>Aegis Vault Sentinel Connected!</b>\n\n` +
-              `Welcome, <b>${from}</b>. Your Telegram account is now securely linked to your Aegis Vault.\n\n` +
-              `✅ <b>Zero-Spam Protection:</b> You will only receive critical alerts:\n` +
-              `• 14-day & 3-day advance heartbeat warnings\n` +
-              `• Emergency Panic evacuation broadcast notifications\n` +
-              `• Unauthorized address modification attempts\n\n` +
-              `🔗 <i>Vault Contract: aegis.okgoogleok.testnet</i>`
-            );
+          if (text.startsWith('/start')) {
+            await sendMessage(chatId, ZERO_METADATA_MESSAGES.test);
           } else if (text === '/test_panic') {
-            await sendMessage(
-              chatId,
-              `🚨 <b>[TEST EMERGENCY PANIC]</b>\n\n` +
-              `Panic triggered on contract <code>aegis.okgoogleok.testnet</code>!\n` +
-              `All assets across BTC, EVM, Solana, and NEAR are being evacuated to your cold backup addresses.`
-            );
+            await sendMessage(chatId, ZERO_METADATA_MESSAGES.panic);
+          } else if (text === '/test_inheritance') {
+            await sendMessage(chatId, ZERO_METADATA_MESSAGES.inheritance);
           } else if (text === '/test_alert') {
-            await sendMessage(
-              chatId,
-              `⚠️ <b>[AEGIS HEARTBEAT WARNING]</b>\n\n` +
-              `Your vault has <b>3 days remaining</b> before the inheritance grace window opens!\n\n` +
-              `Please open your dashboard and click <b>Check-In Now</b> to reset your timer.`
-            );
+            await sendMessage(chatId, ZERO_METADATA_MESSAGES.reminder);
           }
         }
       }
@@ -94,12 +67,11 @@ async function pollUpdates() {
     console.error('Polling error:', err.message);
   }
 
-  setTimeout(pollUpdates, 1500);
+  setTimeout(pollUpdates, 3000);
 }
 
-if (API_BASE) {
-  console.log('🚀 LastKey Telegram Bot Sentinel running...');
+if (API_BASE && require.main === module) {
   pollUpdates();
 }
 
-module.exports = { sendMessage, pairedChats };
+module.exports = { sendMessage, ZERO_METADATA_MESSAGES };

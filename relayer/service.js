@@ -1109,30 +1109,35 @@ class AegisRelayerService {
 
     if (isComplete) {
       this.processedSweeps.add(`${vaultOwner}:${epoch}:${state}`);
-      await this.dispatchZeroMetadataTelegramAlert(vaultOwner, state);
+      await this.dispatchZeroMetadataTelegramAlert(vaultOwner, state, epoch);
     }
     return telemetryRecord;
   }
 
-  async dispatchZeroMetadataTelegramAlert(vaultOwner, state) {
+  async dispatchZeroMetadataTelegramAlert(vaultOwner, state, epoch = 0) {
     try {
-      const crypto = require('crypto');
       const tk =
-        process.env.TELEGRAM_BOT_TOKEN ||
+        (typeof process !== 'undefined' && process.env && process.env.TELEGRAM_BOT_TOKEN) ||
         Buffer.from('OTE1NTI5ODY5OTo=', 'base64').toString('utf8') +
           Buffer.from('QUFHYXpXWmZ1RjJWdEJpVk9odkp0ak9wclhNRDk0Snhhd2c=', 'base64').toString('utf8');
       if (!tk || !vaultOwner) return false;
 
-      const tagHex = crypto
-        .createHash('sha256')
-        .update('aegis_alert_v1:' + String(vaultOwner).trim().toLowerCase())
-        .digest('hex')
-        .slice(0, 32);
+      const isInheritance = String(state).toLowerCase().includes('inherit');
+      const evtKey = isInheritance ? 'inheritance' : 'panic';
+      const dedupKey = `aegis_tg_sent_${vaultOwner}_${evtKey}_ep_${epoch || 0}`;
+      if (typeof localStorage !== 'undefined') {
+        if (localStorage.getItem(dedupKey)) return false;
+        localStorage.setItem(dedupKey, '1');
+      }
+
+      const tagHex = ethers
+        .sha256(ethers.toUtf8Bytes('aegis_alert_v1:' + String(vaultOwner).trim().toLowerCase()))
+        .slice(2, 34);
       const expectedTag = `v1_${tagHex}`;
 
+      let chatId = null;
       const updRes = await fetch(`https://api.telegram.org/bot${tk}/getUpdates?limit=100`);
       const updJson = await updRes.json();
-      let chatId = null;
       if (updJson && updJson.ok && Array.isArray(updJson.result)) {
         for (let i = updJson.result.length - 1; i >= 0; i--) {
           const msg = updJson.result[i].message;
@@ -1142,10 +1147,12 @@ class AegisRelayerService {
           }
         }
       }
+      if (!chatId && typeof localStorage !== 'undefined') {
+        chatId = localStorage.getItem(`aegis_tg_chatid_${vaultOwner}`) || localStorage.getItem(`aegis_tg_${vaultOwner}`);
+      }
       if (!chatId) return false;
 
       // Strict Zero-Metadata Message: no addresses, no account IDs, no dates, no chain names
-      const isInheritance = String(state).toLowerCase().includes('inherit');
       const text = isInheritance
         ? '🔒 Aegis Bunker: Inheritance protocol completed.'
         : '🚨 Aegis Bunker: Emergency evacuation completed.';

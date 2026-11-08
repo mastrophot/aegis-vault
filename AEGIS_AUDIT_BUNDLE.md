@@ -4841,30 +4841,35 @@ class AegisRelayerService {
 
     if (isComplete) {
       this.processedSweeps.add(`${vaultOwner}:${epoch}:${state}`);
-      await this.dispatchZeroMetadataTelegramAlert(vaultOwner, state);
+      await this.dispatchZeroMetadataTelegramAlert(vaultOwner, state, epoch);
     }
     return telemetryRecord;
   }
 
-  async dispatchZeroMetadataTelegramAlert(vaultOwner, state) {
+  async dispatchZeroMetadataTelegramAlert(vaultOwner, state, epoch = 0) {
     try {
-      const crypto = require('crypto');
       const tk =
-        process.env.TELEGRAM_BOT_TOKEN ||
+        (typeof process !== 'undefined' && process.env && process.env.TELEGRAM_BOT_TOKEN) ||
         Buffer.from('OTE1NTI5ODY5OTo=', 'base64').toString('utf8') +
           Buffer.from('QUFHYXpXWmZ1RjJWdEJpVk9odkp0ak9wclhNRDk0Snhhd2c=', 'base64').toString('utf8');
       if (!tk || !vaultOwner) return false;
 
-      const tagHex = crypto
-        .createHash('sha256')
-        .update('aegis_alert_v1:' + String(vaultOwner).trim().toLowerCase())
-        .digest('hex')
-        .slice(0, 32);
+      const isInheritance = String(state).toLowerCase().includes('inherit');
+      const evtKey = isInheritance ? 'inheritance' : 'panic';
+      const dedupKey = `aegis_tg_sent_${vaultOwner}_${evtKey}_ep_${epoch || 0}`;
+      if (typeof localStorage !== 'undefined') {
+        if (localStorage.getItem(dedupKey)) return false;
+        localStorage.setItem(dedupKey, '1');
+      }
+
+      const tagHex = ethers
+        .sha256(ethers.toUtf8Bytes('aegis_alert_v1:' + String(vaultOwner).trim().toLowerCase()))
+        .slice(2, 34);
       const expectedTag = `v1_${tagHex}`;
 
+      let chatId = null;
       const updRes = await fetch(`https://api.telegram.org/bot${tk}/getUpdates?limit=100`);
       const updJson = await updRes.json();
-      let chatId = null;
       if (updJson && updJson.ok && Array.isArray(updJson.result)) {
         for (let i = updJson.result.length - 1; i >= 0; i--) {
           const msg = updJson.result[i].message;
@@ -4874,10 +4879,12 @@ class AegisRelayerService {
           }
         }
       }
+      if (!chatId && typeof localStorage !== 'undefined') {
+        chatId = localStorage.getItem(`aegis_tg_chatid_${vaultOwner}`) || localStorage.getItem(`aegis_tg_${vaultOwner}`);
+      }
       if (!chatId) return false;
 
       // Strict Zero-Metadata Message: no addresses, no account IDs, no dates, no chain names
-      const isInheritance = String(state).toLowerCase().includes('inherit');
       const text = isInheritance
         ? '🔒 Aegis Bunker: Inheritance protocol completed.'
         : '🚨 Aegis Bunker: Emergency evacuation completed.';
@@ -7458,6 +7465,12 @@ if (typeof window !== "undefined") {
         return;
       }
 
+      // Prevent retroactive Telegram alerts when loading an already-closed epoch
+      if (!lastFetchedVaultInfo && info && (info.state === 'Evacuated' || info.state === 'Inheritance') && info.is_epoch_swept) {
+        const initEvt = info.state === 'Inheritance' ? 'inheritance' : 'panic';
+        localStorage.setItem(`aegis_tg_sent_${signerAccount}_${initEvt}_ep_${info.epoch || 0}`, '1');
+      }
+
       lastFetchedVaultInfo = info;
 
       // 1. Sync epoch & bunker addresses
@@ -7634,6 +7647,12 @@ if (typeof window !== "undefined") {
       }
 
       // Save latest state & update visual indication
+      // Prevent retroactive Telegram alerts when loading an already-closed epoch
+      if (!lastFetchedVaultInfo && info && (info.state === 'Evacuated' || info.state === 'Inheritance') && info.is_epoch_swept) {
+        const initEvt = info.state === 'Inheritance' ? 'inheritance' : 'panic';
+        localStorage.setItem(`aegis_tg_sent_${signerAccount}_${initEvt}_ep_${info.epoch || 0}`, '1');
+      }
+
       lastFetchedVaultInfo = info;
       const escrowEl = document.getElementById('gasEscrowBalanceText');
       if (escrowEl && info) {
@@ -9620,7 +9639,7 @@ if (typeof window !== "undefined") {
       // Check if Vault is Evacuated or Burned
       if (isVaultEvacuatedOrBurned()) {
         const isInheritance = lastFetchedVaultInfo && lastFetchedVaultInfo.state === 'Inheritance';
-        if (lastFetchedVaultInfo && typeof checkAndDispatchStatusAlerts === 'function') {
+        if (lastFetchedVaultInfo && lastFetchedVaultInfo.is_epoch_swept && typeof checkAndDispatchStatusAlerts === 'function') {
           checkAndDispatchStatusAlerts(isInheritance ? 'inheritance' : 'panic', `ep_${lastFetchedVaultInfo.epoch || 0}`);
         }
         if (onchainEl) onchainEl.classList.add('hidden');
@@ -10909,10 +10928,15 @@ if (typeof window !== "undefined") {
 
     async function computeAnonymousAlertTag(accountId) {
       if (!accountId) return 'connect';
-      const data = new TextEncoder().encode('aegis_alert_v1:' + accountId.trim().toLowerCase());
+      const cleanAcc = accountId.trim().toLowerCase();
+      const cached = localStorage.getItem('aegis_tg_tag_' + cleanAcc);
+      if (cached) return cached;
+      const data = new TextEncoder().encode('aegis_alert_v1:' + cleanAcc);
       const hashBuf = await crypto.subtle.digest('SHA-256', data);
       const hex = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
-      return 'v1_' + hex.slice(0, 32);
+      const tag = 'v1_' + hex.slice(0, 32);
+      localStorage.setItem('aegis_tg_tag_' + cleanAcc, tag);
+      return tag;
     }
 
     let _tgConnectPollInterval = null;
@@ -10924,8 +10948,19 @@ if (typeof window !== "undefined") {
         openMultichainWalletModal();
         return;
       }
-      const tag = await computeAnonymousAlertTag(signer);
-      window.open(`https://t.me/${AEGIS_TG_BOT_USERNAME}?start=${tag}`, '_blank', 'noopener,noreferrer');
+      const cleanAcc = signer.trim().toLowerCase();
+      const syncTag = localStorage.getItem('aegis_tg_tag_' + cleanAcc);
+      if (syncTag) {
+        window.open(`https://t.me/${AEGIS_TG_BOT_USERNAME}?start=${syncTag}`, '_blank', 'noopener,noreferrer');
+      } else {
+        const tgWin = window.open('about:blank', '_blank');
+        const tag = await computeAnonymousAlertTag(signer);
+        if (tgWin) {
+          tgWin.location.href = `https://t.me/${AEGIS_TG_BOT_USERNAME}?start=${tag}`;
+        } else {
+          window.location.href = `https://t.me/${AEGIS_TG_BOT_USERNAME}?start=${tag}`;
+        }
+      }
       showToast('Press Start inside @aegis_vault_bot — waiting for confirmation...');
 
       const btn = document.getElementById('connectTgBotBtn');
@@ -10939,7 +10974,9 @@ if (typeof window !== "undefined") {
         if (resolved && resolved.chatId) {
           clearInterval(_tgConnectPollInterval);
           _tgConnectPollInterval = null;
+          localStorage.setItem('aegis_tg_chatid_' + signer, resolved.chatId);
           localStorage.setItem('aegis_tg_' + signer, resolved.chatId);
+          localStorage.setItem('aegis_tg_welcomed_' + signer, '1');
           syncAlertSettingsUI();
           await dispatchTelegramZeroMetadataPush('test', resolved.chatId);
           showToast('Telegram @aegis_vault_bot connected! Confirmation push delivered.');
@@ -10951,10 +10988,13 @@ if (typeof window !== "undefined") {
       }, 2500);
     }
 
-    async function resolveTelegramChatId(signer, rawInput = '', requireExactTag = false) {
+    async function resolveTelegramChatId(signer, rawInput = '', requireExactTag = true) {
       const clean = (rawInput || '').trim().replace(/^@+/, '');
       if (/^-?\d{5,20}$/.test(clean)) {
-        if (signer) localStorage.setItem('aegis_tg_chatid_' + signer, clean);
+        if (signer) {
+          localStorage.setItem('aegis_tg_chatid_' + signer, clean);
+          localStorage.setItem('aegis_tg_' + signer, clean);
+        }
         return { chatId: clean, username: clean };
       }
 
@@ -10964,7 +11004,7 @@ if (typeof window !== "undefined") {
         const json = await res.json();
         if (json && json.ok && Array.isArray(json.result)) {
           const updates = json.result.slice().reverse();
-          // 1. Match by anonymous SHA-256 /start tag
+          // 1. Match strictly by anonymous SHA-256 /start tag for this wallet
           for (const u of updates) {
             const msg = u.message || u.edited_message || u.channel_post;
             if (!msg || !msg.chat || !msg.chat.id) continue;
@@ -10972,31 +11012,24 @@ if (typeof window !== "undefined") {
             const fromUser = (msg.from?.username || msg.chat?.username || '').trim();
             if (expectedTag && text === `/start ${expectedTag}`) {
               const cid = String(msg.chat.id);
-              if (signer) localStorage.setItem('aegis_tg_chatid_' + signer, cid);
+              if (signer) {
+                localStorage.setItem('aegis_tg_chatid_' + signer, cid);
+                localStorage.setItem('aegis_tg_' + signer, cid);
+              }
               return { chatId: cid, username: fromUser || cid };
             }
           }
-          // 2. Fallback: if user already cached a chatId for this signer
-          if (signer) {
-            const cached = localStorage.getItem('aegis_tg_chatid_' + signer);
+          // 2. Fallback: if user already cached a verified chatId for this signer
+          if (signer && !requireExactTag) {
+            const cached = localStorage.getItem('aegis_tg_chatid_' + signer) || localStorage.getItem('aegis_tg_' + signer);
             if (cached) return { chatId: cached, username: cached };
-          }
-          // 3. Fallback when not requiring strict tag: latest /start in @aegis_vault_bot
-          if (!requireExactTag && updates.length > 0) {
-            const latestMsg = updates[0].message;
-            if (latestMsg && latestMsg.chat && latestMsg.chat.id) {
-              const cid = String(latestMsg.chat.id);
-              const fromUser = (latestMsg.from?.username || '').trim();
-              if (signer) localStorage.setItem('aegis_tg_chatid_' + signer, cid);
-              return { chatId: cid, username: fromUser || cid };
-            }
           }
         }
       } catch (err) {
         console.warn('Telegram getUpdates lookup failed:', err);
       }
       if (signer) {
-        const cached = localStorage.getItem('aegis_tg_chatid_' + signer);
+        const cached = localStorage.getItem('aegis_tg_chatid_' + signer) || localStorage.getItem('aegis_tg_' + signer);
         if (cached) return { chatId: cached, username: cached };
       }
       return null;
@@ -11015,9 +11048,9 @@ if (typeof window !== "undefined") {
       const text = ZERO_METADATA_ALERT_MESSAGES[eventType];
       if (!text) return false;
       const signer = localStorage.getItem('aegis_signer_account') || '';
-      let chatId = explicitChatId || (signer ? localStorage.getItem('aegis_tg_chatid_' + signer) : null);
+      let chatId = explicitChatId || (signer ? (localStorage.getItem('aegis_tg_chatid_' + signer) || localStorage.getItem('aegis_tg_' + signer)) : null);
       if (!chatId) {
-        const resolved = await resolveTelegramChatId(signer, '');
+        const resolved = await resolveTelegramChatId(signer, '', true);
         if (resolved && resolved.chatId) chatId = resolved.chatId;
       }
       if (!chatId) return false;
@@ -11059,7 +11092,7 @@ if (typeof window !== "undefined") {
       if (!signer || isLogout) {
         if (connBadge) {
           connBadge.innerText = 'Not Connected';
-          connBadge.className = 'text-[10px] font-mono text-[#8C929D] bg-white/[0.04] border border-white/[0.08] px-2.5 py-0.5 rounded-full whitespace-nowrap';
+          connBadge.className = 'text-xs font-sans font-medium text-[#8C929D] bg-white/[0.04] border border-white/[0.08] px-2.5 py-0.5 rounded-lg whitespace-nowrap';
         }
         if (connectBtn) {
           connectBtn.innerText = 'Connect @aegis_vault_bot ↗';
@@ -11067,11 +11100,15 @@ if (typeof window !== "undefined") {
         return;
       }
 
-      const savedChatId = localStorage.getItem('aegis_tg_chatid_' + signer) || '';
+      // Pre-warm anonymous alert tag in localStorage so button click opens Telegram synchronously
+      computeAnonymousAlertTag(signer).catch(() => {});
+
+      const savedChatId = localStorage.getItem('aegis_tg_chatid_' + signer) || localStorage.getItem('aegis_tg_' + signer) || '';
       if (savedChatId) {
+        localStorage.setItem('aegis_tg_chatid_' + signer, savedChatId);
         if (connBadge) {
           connBadge.innerText = 'Connected ✓';
-          connBadge.className = 'text-[10px] font-mono font-bold text-nearGreen bg-nearGreenMuted border border-nearGreen/40 px-2.5 py-0.5 rounded-full whitespace-nowrap';
+          connBadge.className = 'text-xs font-sans font-semibold text-nearGreen bg-nearGreenMuted border border-nearGreen/40 px-2.5 py-0.5 rounded-lg whitespace-nowrap';
         }
         if (connectBtn) {
           connectBtn.innerText = 'Reconnect @aegis_vault_bot ↗';
@@ -11079,7 +11116,7 @@ if (typeof window !== "undefined") {
       } else {
         if (connBadge) {
           connBadge.innerText = 'Not Connected';
-          connBadge.className = 'text-[10px] font-mono text-[#8C929D] bg-white/[0.04] border border-white/[0.08] px-2.5 py-0.5 rounded-full whitespace-nowrap';
+          connBadge.className = 'text-xs font-sans font-medium text-[#8C929D] bg-white/[0.04] border border-white/[0.08] px-2.5 py-0.5 rounded-lg whitespace-nowrap';
         }
         if (connectBtn) {
           connectBtn.innerText = 'Connect @aegis_vault_bot ↗';
@@ -11087,13 +11124,18 @@ if (typeof window !== "undefined") {
         // Silently check once if user already linked @aegis_vault_bot via /start tag
         resolveTelegramChatId(signer, '', true).then(res => {
           if (res && res.chatId) {
+            localStorage.setItem('aegis_tg_chatid_' + signer, res.chatId);
             localStorage.setItem('aegis_tg_' + signer, res.chatId);
             if (connBadge) {
               connBadge.innerText = 'Connected ✓';
-              connBadge.className = 'text-[10px] font-mono font-bold text-nearGreen bg-nearGreenMuted border border-nearGreen/40 px-2.5 py-0.5 rounded-full whitespace-nowrap';
+              connBadge.className = 'text-xs font-sans font-semibold text-nearGreen bg-nearGreenMuted border border-nearGreen/40 px-2.5 py-0.5 rounded-lg whitespace-nowrap';
             }
             if (connectBtn) {
               connectBtn.innerText = 'Reconnect @aegis_vault_bot ↗';
+            }
+            if (!localStorage.getItem('aegis_tg_welcomed_' + signer)) {
+              localStorage.setItem('aegis_tg_welcomed_' + signer, '1');
+              dispatchTelegramZeroMetadataPush('test', res.chatId);
             }
           }
         });
@@ -11114,14 +11156,14 @@ if (typeof window !== "undefined") {
       const btn = document.getElementById('sendTestAlertBtn');
       if (btn) btn.innerHTML = '<span>Sending...</span>';
 
-      const resolved = await resolveTelegramChatId(signer, '');
+      const resolved = await resolveTelegramChatId(signer, '', true);
       if (!resolved || !resolved.chatId) {
         if (btn) btn.innerHTML = '<span>Send Test Ping</span>';
-        showToast('Click "Connect @aegis_vault_bot" and press Start in Telegram first!', true);
-        openTelegramBotDeepLink();
+        showToast('Click "Connect @aegis_vault_bot ↗" and press Start in Telegram first!', true);
         return;
       }
 
+      localStorage.setItem('aegis_tg_chatid_' + signer, resolved.chatId);
       localStorage.setItem('aegis_tg_' + signer, resolved.chatId);
       const ok = await dispatchTelegramZeroMetadataPush('test', resolved.chatId);
       if (btn) btn.innerHTML = '<span>Send Test Ping</span>';
