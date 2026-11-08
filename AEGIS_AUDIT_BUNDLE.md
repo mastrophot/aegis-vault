@@ -5024,6 +5024,7 @@ import { Connection } from "@solana/web3.js";
 import bs58 from "bs58";
 import nacl from "tweetnacl";
 import { edwardsToMontgomeryPub, edwardsToMontgomeryPriv } from "@noble/curves/ed25519";
+import * as nearAPI from "near-api-js";
 import RelayerModule from "../relayer/service.js";
 
 const AegisRelayerService = RelayerModule?.AegisRelayerService || RelayerModule;
@@ -5116,61 +5117,91 @@ export async function connectNearWallet(walletId = "meteor-wallet", contractId =
   return await signInWallet(walletId, contractId);
 }
 
-export async function connectEvmWallet() {
-  if (typeof window === "undefined" || !window.ethereum) {
-    throw new Error("No EVM wallet detected. Please install MetaMask, Rabby, or Coinbase Wallet.");
-  }
-  const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
-  if (!accounts || accounts.length === 0) {
-    throw new Error("No Ethereum account authorized.");
-  }
-  const address = accounts[0];
-  const chainId = await window.ethereum.request({ method: "eth_chainId" });
-  return { address, chainId };
+export function connectMyNearWallet(contractId = "aegis.okgoogleok.testnet") {
+  if (typeof window === "undefined") throw new Error("Window not defined");
+  const keyPair = nearAPI.utils.KeyPair.fromRandom("ed25519");
+  const pubKeyStr = keyPair.getPublicKey().toString();
+  localStorage.setItem("aegis_mnw_pending_key", keyPair.toString());
+  const currentUrl = new URL(window.location.href);
+  currentUrl.searchParams.delete("account_id");
+  currentUrl.searchParams.delete("public_key");
+  currentUrl.searchParams.delete("all_keys");
+  currentUrl.searchParams.delete("transactionHashes");
+  currentUrl.searchParams.delete("errorCode");
+  currentUrl.searchParams.delete("errorMessage");
+  const loginUrl = new URL("https://testnet.mynearwallet.com/login/");
+  loginUrl.searchParams.set("contract_id", contractId);
+  loginUrl.searchParams.set("public_key", pubKeyStr);
+  loginUrl.searchParams.set("success_url", currentUrl.toString());
+  loginUrl.searchParams.set("failure_url", currentUrl.toString());
+  window.location.assign(loginUrl.toString());
 }
 
-export async function connectSolanaWallet() {
-  if (typeof window === "undefined") throw new Error("Window not defined");
-  const provider = window.phantom?.solana || window.solana;
-  if (!provider) {
-    throw new Error("No Solana wallet detected. Please install Phantom or Solflare.");
+export async function connectOkxNearWallet(contractId = "aegis.okgoogleok.testnet") {
+  if (typeof window === "undefined" || !window.okxwallet?.near) {
+    throw new Error("OKX NEAR extension not detected. Install OKX Wallet extension first.");
   }
-  const resp = await provider.connect();
-  const address = resp.publicKey ? resp.publicKey.toString() : provider.publicKey.toString();
-  return { address };
+  const res = await window.okxwallet.near.requestSignIn({ contractId });
+  const accountId =
+    res?.accountId ||
+    window.okxwallet.near.getAccountId?.() ||
+    window.okxwallet.near.accountId;
+  if (!accountId) {
+    throw new Error("OKX NEAR sign-in did not return an accountId");
+  }
+  return { accountId };
 }
 
-export async function connectBitcoinWallet() {
-  if (typeof window === "undefined") throw new Error("Window not defined");
-  if (window.unisat) {
-    const accounts = await window.unisat.requestAccounts();
-    if (!accounts || accounts.length === 0) throw new Error("No Bitcoin account authorized.");
-    return { address: accounts[0], type: "unisat" };
+export async function verifyAndConnectKeyPair(accountId, privateKeyStr, contractId = "aegis.okgoogleok.testnet") {
+  const cleanAccount = String(accountId || "").trim().toLowerCase();
+  if (!/^[a-z0-9_-]+(\.[a-z0-9_-]+)*$/.test(cleanAccount) || cleanAccount.length < 2 || cleanAccount.length > 64) {
+    throw new Error("Invalid NEAR account ID format (e.g. alice.testnet)");
   }
-  if (window.okxwallet?.bitcoin) {
-    const res = await window.okxwallet.bitcoin.connect();
-    return { address: res.address, type: "okx" };
+  const cleanKey = String(privateKeyStr || "").trim();
+  const normalizedKey = cleanKey.startsWith("ed25519:") ? cleanKey : `ed25519:${cleanKey}`;
+  let keyPair;
+  try {
+    keyPair = nearAPI.utils.KeyPair.fromString(normalizedKey);
+  } catch (_) {
+    throw new Error("Invalid Ed25519 private key format (expected ed25519:...)");
   }
-  if (window.XverseProviders?.BitcoinProvider) {
-    throw new Error("Please connect Xverse via Bitcoin provider");
+  const pubKeyStr = keyPair.getPublicKey().toString();
+  const res = await fetch("https://test.rpc.fastnear.com", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "query",
+      params: {
+        request_type: "view_access_key",
+        finality: "optimistic",
+        account_id: cleanAccount,
+        public_key: pubKeyStr
+      }
+    })
+  });
+  const body = await res.json();
+  if (body?.error || body?.result?.error) {
+    throw new Error(`Key ${pubKeyStr.slice(0, 18)}... is not authorized on account ${cleanAccount}`);
   }
-  throw new Error("No Bitcoin wallet detected. Please install UniSat or OKX Wallet.");
+  const perm = body?.result?.permission;
+  if (perm && perm !== "FullAccess" && perm.FunctionCall) {
+    const receiver = perm.FunctionCall.receiver_id;
+    if (receiver && receiver !== contractId) {
+      throw new Error(`FunctionCall key is scoped to ${receiver}, not ${contractId}`);
+    }
+  }
+  return { accountId: cleanAccount, normalizedKey, publicKey: pubKeyStr };
 }
 
 export function detectInstalledWallets() {
   if (typeof window === "undefined") return {};
   return {
     meteor: typeof window.meteorWallet !== "undefined",
-    near: typeof window.near !== "undefined",
-    nightly: typeof window.nightly !== "undefined",
-    metaMask: typeof window.ethereum !== "undefined" && Boolean(window.ethereum.isMetaMask),
-    rabby: typeof window.ethereum !== "undefined" && Boolean(window.ethereum.isRabby),
-    coinbase: typeof window.ethereum !== "undefined" && Boolean(window.ethereum.isCoinbaseWallet),
-    evmGeneric: typeof window.ethereum !== "undefined",
-    phantom: Boolean(window.phantom?.solana || (window.solana && window.solana.isPhantom)),
-    solanaGeneric: typeof window.solana !== "undefined",
-    unisat: typeof window.unisat !== "undefined",
-    okx: typeof window.okxwallet !== "undefined"
+    near: Boolean(window.near && window.near.isSender) || typeof window.near !== "undefined",
+    nightly: Boolean(window.nightly?.near),
+    okxNear: Boolean(window.okxwallet?.near)
   };
 }
 
@@ -5182,11 +5213,131 @@ export async function disconnectWallet() {
     } catch (e) {}
   }
   if (typeof window !== "undefined") {
+    try {
+      if (window.okxwallet?.near?.signOut) await window.okxwallet.near.signOut();
+    } catch (_) {}
     localStorage.removeItem("aegis_signer_account");
+    localStorage.removeItem("aegis_wallet_type");
+    localStorage.removeItem("aegis_testnet_signer_key");
+    localStorage.removeItem("aegis_mnw_pending_key");
   }
 }
 
+async function signAndSendWithLocalKeyPair(signerAccountId, privateKeyStr, contractId, methodName, args, deposit, gas) {
+  const keyPair = nearAPI.utils.KeyPair.fromString(privateKeyStr.trim());
+  const pubKey = keyPair.getPublicKey();
+  const pubKeyStr = pubKey.toString();
+  const rpcUrl = "https://test.rpc.fastnear.com";
+
+  const keyRes = await fetch(rpcUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "query",
+      params: {
+        request_type: "view_access_key",
+        finality: "optimistic",
+        account_id: signerAccountId,
+        public_key: pubKeyStr
+      }
+    })
+  }).then((r) => r.json());
+
+  if (keyRes?.error || keyRes?.result?.error) {
+    throw new Error(keyRes?.result?.error || keyRes?.error?.message || "Access key lookup failed");
+  }
+
+  const nonce = BigInt(keyRes.result.nonce || 0) + 1n;
+  const blockHash = nearAPI.utils.serialize.base_decode(keyRes.result.block_hash);
+  const action = nearAPI.transactions.functionCall(
+    methodName,
+    args || {},
+    BigInt(gas || "30000000000000"),
+    BigInt(deposit || "0")
+  );
+  const tx = nearAPI.transactions.createTransaction(
+    signerAccountId,
+    pubKey,
+    contractId,
+    nonce,
+    [action],
+    blockHash
+  );
+
+  // If MyNearWallet FunctionCall key is used for a call with deposit > 0, redirect to MyNearWallet sign page
+  const perm = keyRes.result.permission;
+  if (perm && perm !== "FullAccess" && BigInt(deposit || "0") > 0n) {
+    const txBase64 = Buffer.from(tx.encode()).toString("base64");
+    const signUrl = new URL("https://testnet.mynearwallet.com/sign");
+    signUrl.searchParams.set("transactions", txBase64);
+    signUrl.searchParams.set("callbackUrl", window.location.href);
+    window.location.assign(signUrl.toString());
+    return { transaction: { hash: "Redirecting to MyNearWallet..." } };
+  }
+
+  const encodedTx = tx.encode();
+  const hashBuf = await crypto.subtle.digest("SHA-256", encodedTx);
+  const sig = keyPair.sign(new Uint8Array(hashBuf));
+  const signedTx = new nearAPI.transactions.SignedTransaction({
+    transaction: tx,
+    signature: new nearAPI.transactions.Signature({
+      keyType: pubKey.keyType,
+      data: sig.signature
+    })
+  });
+  const signedTxBase64 = Buffer.from(signedTx.encode()).toString("base64");
+
+  const sendRes = await fetch(rpcUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "send_tx",
+      params: {
+        signed_tx_base64: signedTxBase64,
+        wait_until: "EXECUTED_OPTIMISTIC"
+      }
+    })
+  }).then((r) => r.json());
+
+  if (sendRes?.error) {
+    throw new Error(sendRes.error.data ? JSON.stringify(sendRes.error.data) : sendRes.error.message);
+  }
+  const outcome = sendRes.result;
+  if (outcome?.status && typeof outcome.status === "object" && outcome.status.Failure) {
+    throw new Error(`NEAR transaction failed: ${JSON.stringify(outcome.status.Failure)}`);
+  }
+  return outcome;
+}
+
 export async function signAndSendNearTx(contractId, methodName, args = {}, deposit = "0", gas = "30000000000000") {
+  const storedKey = typeof window !== "undefined" ? localStorage.getItem("aegis_testnet_signer_key") : null;
+  const storedSigner = typeof window !== "undefined" ? localStorage.getItem("aegis_signer_account") : null;
+  const walletType = typeof window !== "undefined" ? localStorage.getItem("aegis_wallet_type") : null;
+
+  // 1. Local KeyPair or MyNearWallet FunctionCall Key
+  if (storedKey && storedSigner && (walletType === "keypair" || walletType === "my-near-wallet" || !walletType)) {
+    return await signAndSendWithLocalKeyPair(storedSigner, storedKey, contractId, methodName, args, deposit, gas);
+  }
+
+  // 2. OKX NEAR Extension
+  if (walletType === "okx-near" && typeof window !== "undefined" && window.okxwallet?.near) {
+    return await window.okxwallet.near.signAndSendTransaction({
+      receiverId: contractId,
+      actions: [
+        {
+          methodName,
+          args,
+          gas,
+          deposit
+        }
+      ]
+    });
+  }
+
   const argsBytes = typeof Buffer !== "undefined"
     ? Buffer.from(JSON.stringify(args))
     : new TextEncoder().encode(JSON.stringify(args));
@@ -5489,9 +5640,9 @@ if (typeof window !== "undefined") {
     signInWallet,
     connectWallet: connectNearWallet,
     connectNearWallet,
-    connectEvmWallet,
-    connectSolanaWallet,
-    connectBitcoinWallet,
+    connectMyNearWallet,
+    connectOkxNearWallet,
+    verifyAndConnectKeyPair,
     detectInstalledWallets,
     disconnectWallet,
     signAndSendNearTx,
@@ -6793,20 +6944,20 @@ if (typeof window !== "undefined") {
 
   </main>
 
-  <!-- Multichain Web3 Wallet Selector Modal -->
+  <!-- NEAR Protocol Wallet Selector Modal -->
   <div id="multichainWalletModal" class="fixed inset-0 bg-black/90 backdrop-blur-md z-50 flex items-center justify-center p-4 hidden">
-    <div class="near-card border border-white/10 rounded-3xl max-w-2xl w-full p-6 sm:p-8 space-y-6 shadow-2xl relative bg-[#0B0E15]">
+    <div class="near-card border border-white/10 rounded-3xl max-w-2xl w-full p-6 sm:p-8 space-y-5 shadow-2xl relative bg-[#0B0E15] max-h-[92vh] overflow-y-auto">
       
       <!-- Modal Header -->
-      <div class="flex items-start justify-between border-b border-white/[0.08] pb-5">
+      <div class="flex items-start justify-between border-b border-white/[0.08] pb-4">
         <div class="space-y-1">
-          <div class="flex items-center gap-2">
+          <div class="flex items-center gap-2 flex-wrap">
             <span class="w-2.5 h-2.5 rounded-full bg-[#00F5D4] animate-pulse"></span>
-            <h3 class="text-lg sm:text-xl font-extrabold text-white tracking-tight">Connect Web3 Wallet</h3>
-            <span class="text-[11px] font-mono text-[#00F5D4] bg-[#00F5D4]/10 border border-[#00F5D4]/30 px-2 py-0.5 rounded-full">Multichain</span>
+            <h3 class="text-lg sm:text-xl font-extrabold text-white tracking-tight">Connect NEAR Wallet</h3>
+            <span class="text-[11px] font-mono text-[#00F5D4] bg-[#00F5D4]/10 border border-[#00F5D4]/30 px-2 py-0.5 rounded-full">NEAR Protocol · Bunker Controller</span>
           </div>
           <p class="text-xs text-[#8E99AD] leading-relaxed">
-            Select a network and connect browser extensions to arm your bunker or link destination addresses.
+            Your NEAR account is the master cryptographic controller that derives deterministic Bitcoin, Ethereum, Solana &amp; NEAR bunker vaults via <code class="text-white/80">v1.signer-prod.testnet</code>.
           </p>
         </div>
         <button onclick="closeMultichainWalletModal()" class="w-8 h-8 rounded-full bg-white/[0.06] hover:bg-white/[0.12] text-[#8E99AD] hover:text-white flex items-center justify-center transition shrink-0 cursor-pointer">
@@ -6814,47 +6965,62 @@ if (typeof window !== "undefined") {
         </button>
       </div>
 
-      <!-- Network Selection Tabs -->
+      <!-- NEAR Wallet Type Filter Tabs -->
       <div class="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
         <button onclick="filterWalletNetwork('all')" id="tabNetAll" class="network-tab-btn px-3.5 py-1.5 rounded-full text-xs font-mono font-bold transition flex items-center gap-1.5 bg-[#00F5D4]/20 text-[#00F5D4] border border-[#00F5D4]/40 cursor-pointer">
-          <span>🌐 All</span>
+          <span>🌐 All NEAR Wallets (7)</span>
         </button>
-        <button onclick="filterWalletNetwork('near')" id="tabNetNear" class="network-tab-btn px-3.5 py-1.5 rounded-full text-xs font-mono font-bold transition flex items-center gap-1.5 bg-white/[0.04] text-[#8E99AD] hover:text-white border border-white/[0.08] cursor-pointer">
+        <button onclick="filterWalletNetwork('web')" id="tabNetWeb" class="network-tab-btn px-3.5 py-1.5 rounded-full text-xs font-mono font-bold transition flex items-center gap-1.5 bg-white/[0.04] text-[#8E99AD] hover:text-white border border-white/[0.08] cursor-pointer">
           <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
-          <span>NEAR</span>
+          <span>⚡ Web &amp; Mobile (Zero Install)</span>
         </button>
-        <button onclick="filterWalletNetwork('evm')" id="tabNetEvm" class="network-tab-btn px-3.5 py-1.5 rounded-full text-xs font-mono font-bold transition flex items-center gap-1.5 bg-white/[0.04] text-[#8E99AD] hover:text-white border border-white/[0.08] cursor-pointer">
-          <span class="w-2 h-2 rounded-full bg-blue-400"></span>
-          <span>Ethereum & EVM</span>
-        </button>
-        <button onclick="filterWalletNetwork('sol')" id="tabNetSol" class="network-tab-btn px-3.5 py-1.5 rounded-full text-xs font-mono font-bold transition flex items-center gap-1.5 bg-white/[0.04] text-[#8E99AD] hover:text-white border border-white/[0.08] cursor-pointer">
-          <span class="w-2 h-2 rounded-full bg-purple-400"></span>
-          <span>Solana</span>
-        </button>
-        <button onclick="filterWalletNetwork('btc')" id="tabNetBtc" class="network-tab-btn px-3.5 py-1.5 rounded-full text-xs font-mono font-bold transition flex items-center gap-1.5 bg-white/[0.04] text-[#8E99AD] hover:text-white border border-white/[0.08] cursor-pointer">
-          <span class="w-2 h-2 rounded-full bg-amber-400"></span>
-          <span>Bitcoin</span>
+        <button onclick="filterWalletNetwork('ext')" id="tabNetExt" class="network-tab-btn px-3.5 py-1.5 rounded-full text-xs font-mono font-bold transition flex items-center gap-1.5 bg-white/[0.04] text-[#8E99AD] hover:text-white border border-white/[0.08] cursor-pointer">
+          <span class="w-2 h-2 rounded-full bg-cyan-400"></span>
+          <span>🧩 Browser Extensions</span>
         </button>
       </div>
 
       <!-- Wallets Grid -->
-      <div id="walletsGrid" class="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[360px] overflow-y-auto pr-1">
+      <div id="walletsGrid" class="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[340px] overflow-y-auto pr-1">
         <!-- Rendered dynamically -->
+      </div>
+
+      <!-- Judge / CLI Testnet KeyPair Fast Login (Zero-Extension Testing) -->
+      <div class="rounded-2xl bg-white/[0.02] border border-white/[0.08] overflow-hidden">
+        <button onclick="toggleDevLogin()" type="button" class="w-full px-4 py-2.5 flex items-center justify-between text-left hover:bg-white/[0.04] transition cursor-pointer">
+          <div class="flex items-center gap-2">
+            <span class="text-xs font-mono font-bold text-[#B8C4D9]">🔑 Judge / CLI Testnet KeyPair Login (`ed25519:...`)</span>
+            <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-purple-500/15 text-purple-300 border border-purple-500/30">Instant RPC Auth</span>
+          </div>
+          <span id="devLoginChevron" class="text-xs text-[#8E99AD] font-mono">▼</span>
+        </button>
+        <div id="devLoginPanel" class="hidden px-4 pb-4 pt-2 border-t border-white/[0.06] space-y-2.5">
+          <p class="text-[11px] text-[#8E99AD] leading-relaxed">
+            For hackathon judges or automated testing: connect directly with any NEAR Testnet account ID and `ed25519:...` private key (verifies `view_access_key` on-chain before signing).
+          </p>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <input id="devAccountInput" type="text" placeholder="account.testnet" autocomplete="off" spellcheck="false" class="w-full bg-black/50 border border-white/15 rounded-xl px-3 py-2 text-xs font-mono text-white placeholder-[#6E788C] focus:outline-none focus:border-[#00F5D4]" />
+            <input id="devKeyInput" type="password" placeholder="ed25519:..." autocomplete="off" spellcheck="false" class="w-full bg-black/50 border border-white/15 rounded-xl px-3 py-2 text-xs font-mono text-white placeholder-[#6E788C] focus:outline-none focus:border-[#00F5D4]" />
+          </div>
+          <button onclick="connectDevKeyPair()" type="button" class="w-full py-2 px-4 rounded-xl bg-[#00F5D4]/15 hover:bg-[#00F5D4]/25 border border-[#00F5D4]/40 text-[#00F5D4] text-xs font-mono font-bold transition cursor-pointer">
+            Verify On-Chain Key &amp; Connect Account
+          </button>
+        </div>
       </div>
 
       <!-- Currently Connected Wallets Summary inside Modal -->
       <div id="modalConnectedSummary" class="hidden p-3.5 rounded-2xl bg-white/[0.02] border border-white/[0.08] space-y-2">
         <div class="flex items-center justify-between">
-          <span class="text-[11px] font-mono font-bold text-[#8E99AD] uppercase tracking-wider">Connected in this Session</span>
-          <button onclick="disconnectAllWallets()" class="text-[11px] font-mono text-red-400 hover:text-red-300 transition cursor-pointer">Disconnect All</button>
+          <span class="text-[11px] font-mono font-bold text-[#8E99AD] uppercase tracking-wider">Active NEAR Controller Session</span>
+          <button onclick="disconnectAllWallets()" class="text-[11px] font-mono text-red-400 hover:text-red-300 transition cursor-pointer">Disconnect Wallet</button>
         </div>
         <div id="modalConnectedList" class="space-y-1.5 text-xs font-mono"></div>
       </div>
 
       <!-- Footer Info -->
       <div class="text-[11px] font-mono text-[#6E788C] flex items-center justify-between border-t border-white/[0.06] pt-3.5">
-        <span>Smart contract on NEAR Testnet (aegis.okgoogleok.testnet)</span>
-        <span class="text-[#00F5D4] font-semibold">100% Non-Custodial</span>
+        <span>Smart contract: <strong class="text-[#A6B0C3]">aegis.okgoogleok.testnet</strong></span>
+        <span class="text-[#00F5D4] font-semibold">Least-Privilege FunctionCall Keys · NEP-413</span>
       </div>
 
     </div>
@@ -7954,150 +8120,101 @@ if (typeof window !== "undefined") {
       }
     }
 
-    // Multichain Web3 Wallet Definitions & Integrations
+    // NEAR Protocol Wallet Definitions & Security-Hardened Connectors
     const WALLET_DEFINITIONS = [
       {
         id: 'meteor',
-        network: 'near',
+        network: 'web',
+        alsoExt: true,
         name: 'Meteor Wallet',
-        desc: 'Browser Extension & Web Wallet',
-        chainTag: 'NEAR',
+        desc: 'Browser Extension & Web Popup (No Install Needed)',
+        chainTag: 'Web + Ext',
         tagColor: 'text-emerald-400 bg-emerald-950/40 border-emerald-500/30',
         icon: '<svg class="w-6 h-6 text-emerald-400" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L14.4 7.2L20 8L16 12L17 17.6L12 15L7 17.6L8 12L4 8L9.6 7.2L12 2Z"/></svg>',
         isInstalled: () => typeof window !== 'undefined' && Boolean(window.meteorWallet),
+        isWebReady: true,
         connect: () => connectNearDirect('meteor')
       },
       {
-        id: 'here',
-        network: 'near',
-        name: 'HERE Wallet',
-        desc: 'Mobile App & Telegram Web3',
-        chainTag: 'NEAR',
+        id: 'mynearwallet',
+        network: 'web',
+        alsoExt: false,
+        name: 'MyNearWallet',
+        desc: 'Official NEAR Testnet Web Wallet (testnet.mynearwallet.com)',
+        chainTag: 'Official Web',
         tagColor: 'text-emerald-400 bg-emerald-950/40 border-emerald-500/30',
+        icon: '<svg class="w-6 h-6 text-[#00F5D4]" viewBox="0 0 24 24" fill="currentColor"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-2 14h-2.4l-5.6-8.4V17H7V7h2.4l5.6 8.4V7H17v10z"/></svg>',
+        isInstalled: () => false,
+        isWebReady: true,
+        connect: () => connectNearDirect('mynearwallet')
+      },
+      {
+        id: 'here',
+        network: 'web',
+        alsoExt: false,
+        name: 'HERE / HOT Wallet',
+        desc: 'Mobile QR, Telegram HOT & Web Wallet',
+        chainTag: 'QR + Web',
+        tagColor: 'text-amber-400 bg-amber-950/40 border-amber-500/30',
         icon: '<svg class="w-6 h-6 text-amber-400" viewBox="0 0 24 24" fill="currentColor"><path d="M4 6h16v12H4z"/></svg>',
         isInstalled: () => false,
+        isWebReady: true,
         connect: () => connectNearDirect('here')
       },
       {
+        id: 'bitte',
+        network: 'web',
+        alsoExt: false,
+        name: 'Bitte AI Wallet',
+        desc: 'NEAR Passkey & AI Web Wallet (Mintbase)',
+        chainTag: 'Web Passkey',
+        tagColor: 'text-purple-400 bg-purple-950/40 border-purple-500/30',
+        icon: '<svg class="w-6 h-6 text-purple-400" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3 7h7l-5.5 4.5 2 7L12 16l-6.5 4.5 2-7L2 9h7z"/></svg>',
+        isInstalled: () => false,
+        isWebReady: true,
+        connect: () => connectNearDirect('bitte')
+      },
+      {
         id: 'nightly',
-        network: 'near',
-        name: 'Nightly',
-        desc: 'Multichain Browser Extension',
-        chainTag: 'NEAR / Multi',
-        tagColor: 'text-emerald-400 bg-emerald-950/40 border-emerald-500/30',
-        icon: '<svg class="w-6 h-6 text-purple-400" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10"/></svg>',
+        network: 'ext',
+        alsoExt: true,
+        name: 'Nightly Wallet',
+        desc: 'NEAR & Multichain Browser Extension',
+        chainTag: 'Extension',
+        tagColor: 'text-cyan-400 bg-cyan-950/40 border-cyan-500/30',
+        icon: '<svg class="w-6 h-6 text-indigo-400" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10"/></svg>',
         isInstalled: () => typeof window !== 'undefined' && Boolean(window.nightly?.near),
+        isWebReady: false,
+        downloadUrl: 'https://nightly.app/download',
         connect: () => connectNearDirect('nightly')
       },
       {
         id: 'sender',
-        network: 'near',
+        network: 'ext',
+        alsoExt: true,
         name: 'Sender Wallet',
-        desc: 'NEAR Browser Extension',
-        chainTag: 'NEAR',
-        tagColor: 'text-emerald-400 bg-emerald-950/40 border-emerald-500/30',
+        desc: 'Dedicated NEAR Browser Extension',
+        chainTag: 'Extension',
+        tagColor: 'text-cyan-400 bg-cyan-950/40 border-cyan-500/30',
         icon: '<svg class="w-6 h-6 text-cyan-400" viewBox="0 0 24 24" fill="currentColor"><path d="M2 12l20-9-9 20-3-8-8-3z"/></svg>',
-        isInstalled: () => typeof window !== 'undefined' && Boolean(window.near),
+        isInstalled: () => typeof window !== 'undefined' && Boolean(window.near && window.near.isSender),
+        isWebReady: false,
+        downloadUrl: 'https://sender.org',
         connect: () => connectNearDirect('sender')
       },
       {
-        id: 'bitte',
-        network: 'near',
-        name: 'Bitte Wallet',
-        desc: 'Web3 AI Agent Wallet',
-        chainTag: 'NEAR',
-        tagColor: 'text-emerald-400 bg-emerald-950/40 border-emerald-500/30',
-        icon: '<svg class="w-6 h-6 text-textSilver" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3 7h7l-5.5 4.5 2 7L12 16l-6.5 4.5 2-7L2 9h7z"/></svg>',
-        isInstalled: () => false,
-        connect: () => connectNearDirect('bitte')
-      },
-      {
-        id: 'metamask',
-        network: 'evm',
-        name: 'MetaMask',
-        desc: 'Ethereum & EVM Browser Extension',
-        chainTag: 'Ethereum / EVM',
-        tagColor: 'text-blue-400 bg-blue-950/40 border-blue-500/30',
-        icon: '<svg class="w-6 h-6 text-orange-400" viewBox="0 0 32 32" fill="currentColor"><path d="M29.5 2L17.5 10.8 19.8 5.4zM2.5 2l11.9 8.9L12.2 5.4zM25.7 22.8l-3.3 5 7.1 2zM2.5 29.8l7.1-2-3.3-5.1z"/></svg>',
-        isInstalled: () => typeof window !== 'undefined' && Boolean(window.ethereum?.isMetaMask && !window.ethereum?.isRabby),
-        connect: () => connectEvmDirect('metamask')
-      },
-      {
-        id: 'rabby',
-        network: 'evm',
-        name: 'Rabby Wallet',
-        desc: 'DeFi EVM Browser Extension',
-        chainTag: 'Ethereum / EVM',
-        tagColor: 'text-blue-400 bg-blue-950/40 border-blue-500/30',
-        icon: '<svg class="w-6 h-6 text-blue-400" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10"/></svg>',
-        isInstalled: () => typeof window !== 'undefined' && Boolean(window.ethereum?.isRabby),
-        connect: () => connectEvmDirect('rabby')
-      },
-      {
-        id: 'coinbase',
-        network: 'evm',
-        name: 'Coinbase Wallet',
-        desc: 'EVM Extension & Smart Wallet',
-        chainTag: 'Ethereum / Base',
-        tagColor: 'text-blue-400 bg-blue-950/40 border-blue-500/30',
-        icon: '<svg class="w-6 h-6 text-blue-500" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="3" width="18" height="18" rx="4"/></svg>',
-        isInstalled: () => typeof window !== 'undefined' && Boolean(window.ethereum?.isCoinbaseWallet),
-        connect: () => connectEvmDirect('coinbase')
-      },
-      {
-        id: 'evm_generic',
-        network: 'evm',
-        name: 'Injected EVM Wallet',
-        desc: 'Standard Web3 Extension (window.ethereum)',
-        chainTag: 'EVM Compatible',
-        tagColor: 'text-blue-400 bg-blue-950/40 border-blue-500/30',
-        icon: '<svg class="w-6 h-6 text-indigo-400" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L4 12l8 10 8-10z"/></svg>',
-        isInstalled: () => typeof window !== 'undefined' && Boolean(window.ethereum),
-        connect: () => connectEvmDirect('generic')
-      },
-      {
-        id: 'phantom',
-        network: 'sol',
-        name: 'Phantom',
-        desc: 'Solana & Multichain Browser Extension',
-        chainTag: 'Solana',
-        tagColor: 'text-purple-400 bg-purple-950/40 border-purple-500/30',
-        icon: '<svg class="w-6 h-6 text-purple-400" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.5 2 2 6.5 2 12c0 3.9 2.2 7.2 5.5 8.9V19c0-1.1.9-2 2-2h5c1.1 0 2 .9 2 2v1.9c3.3-1.7 5.5-5 5.5-8.9 0-5.5-4.5-10-10-10z"/></svg>',
-        isInstalled: () => typeof window !== 'undefined' && Boolean(window.phantom?.solana || (window.solana && window.solana.isPhantom)),
-        connect: () => connectSolanaDirect('phantom')
-      },
-      {
-        id: 'solflare',
-        network: 'sol',
-        name: 'Solflare',
-        desc: 'Non-custodial Solana Extension',
-        chainTag: 'Solana',
-        tagColor: 'text-purple-400 bg-purple-950/40 border-purple-500/30',
-        icon: '<svg class="w-6 h-6 text-amber-500" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l4 8-4 4-4-4z"/></svg>',
-        isInstalled: () => typeof window !== 'undefined' && Boolean(window.solflare),
-        connect: () => connectSolanaDirect('solflare')
-      },
-      {
-        id: 'unisat',
-        network: 'btc',
-        name: 'UniSat Wallet',
-        desc: 'Native SegWit & Taproot Extension',
-        chainTag: 'Bitcoin',
-        tagColor: 'text-amber-400 bg-amber-950/40 border-amber-500/30',
-        icon: '<svg class="w-6 h-6 text-amber-400" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10"/></svg>',
-        isInstalled: () => typeof window !== 'undefined' && Boolean(window.unisat),
-        connect: () => connectBitcoinDirect('unisat')
-      },
-      {
-        id: 'okx_btc',
-        network: 'btc',
-        name: 'OKX Wallet',
-        desc: 'Bitcoin & Multichain Browser Extension',
-        chainTag: 'Bitcoin / Multi',
-        tagColor: 'text-amber-400 bg-amber-950/40 border-amber-500/30',
+        id: 'okx_near',
+        network: 'ext',
+        alsoExt: true,
+        name: 'OKX Wallet (NEAR)',
+        desc: 'NEAR Protocol Browser Extension (window.okxwallet.near)',
+        chainTag: 'Extension',
+        tagColor: 'text-cyan-400 bg-cyan-950/40 border-cyan-500/30',
         icon: '<svg class="w-6 h-6 text-white" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>',
-        isInstalled: () => typeof window !== 'undefined' && Boolean(window.okxwallet?.bitcoin),
-        connect: () => connectBitcoinDirect('okx')
+        isInstalled: () => typeof window !== 'undefined' && Boolean(window.okxwallet?.near),
+        isWebReady: false,
+        downloadUrl: 'https://www.okx.com/web3',
+        connect: () => connectNearDirect('okx_near')
       }
     ];
 
@@ -8120,7 +8237,7 @@ if (typeof window !== "undefined") {
 
     function filterWalletNetwork(net) {
       currentNetworkFilter = net;
-      ['all', 'near', 'evm', 'sol', 'btc'].forEach(n => {
+      ['all', 'web', 'ext'].forEach(n => {
         const btn = document.getElementById('tabNet' + n.charAt(0).toUpperCase() + n.slice(1));
         if (btn) {
           if (n === net) {
@@ -8137,9 +8254,19 @@ if (typeof window !== "undefined") {
       const grid = document.getElementById('walletsGrid');
       if (!grid) return;
 
-      const filtered = WALLET_DEFINITIONS.filter(w => filter === 'all' || w.network === filter);
+      const filtered = WALLET_DEFINITIONS.filter(w => {
+        if (filter === 'all') return true;
+        if (filter === 'web') return w.isWebReady;
+        if (filter === 'ext') return w.alsoExt;
+        return true;
+      });
       grid.innerHTML = filtered.map(w => {
         const installed = w.isInstalled();
+        const badgeHtml = installed
+          ? '<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>Installed</span>'
+          : (w.isWebReady
+              ? '<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold bg-[#00F5D4]/15 text-[#00F5D4] border border-[#00F5D4]/30">Zero-Install Ready</span>'
+              : '<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono text-[#8E99AD] bg-white/[0.04] border border-white/[0.08]">Extension</span>');
         return `
           <div onclick="selectWalletToConnect('${w.id}')" class="flex items-center justify-between p-3.5 rounded-2xl bg-white/[0.03] hover:bg-white/[0.07] border border-white/[0.08] hover:border-[#00F5D4]/40 transition cursor-pointer group shadow-sm active:scale-98">
             <div class="flex items-center gap-3">
@@ -8147,9 +8274,9 @@ if (typeof window !== "undefined") {
                 ${w.icon}
               </div>
               <div>
-                <div class="flex items-center gap-2">
+                <div class="flex items-center gap-2 flex-wrap">
                   <span class="font-bold text-white text-sm tracking-tight group-hover:text-[#00F5D4] transition">${w.name}</span>
-                  ${installed ? '<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>Installed</span>' : ''}
+                  ${badgeHtml}
                 </div>
                 <div class="text-[11px] text-[#8E99AD]">${w.desc}</div>
               </div>
@@ -8167,9 +8294,96 @@ if (typeof window !== "undefined") {
       }
     }
 
+    async function waitForWalletProvider() {
+      let provider = window.AegisWallet || window.AegisMeteor || window.AegisWalletBundle;
+      if (!provider || typeof provider.signInWallet !== 'function') {
+        for (let i = 0; i < 25; i++) {
+          await new Promise(r => setTimeout(r, 100));
+          provider = window.AegisWallet || window.AegisMeteor || window.AegisWalletBundle;
+          if (provider && typeof provider.signInWallet === 'function') break;
+        }
+      }
+      return provider;
+    }
+
+    async function connectDevKeyPair() {
+      const accEl = document.getElementById('devAccountInput');
+      const keyEl = document.getElementById('devKeyInput');
+      const acc = accEl ? accEl.value.trim() : '';
+      const key = keyEl ? keyEl.value.trim() : '';
+      if (!acc || !key) {
+        showToast('Enter both NEAR Testnet Account ID and ed25519:... Private Key', true);
+        return;
+      }
+      try {
+        showToast(`Verifying on-chain access key for ${acc}...`);
+        const provider = await waitForWalletProvider();
+        if (!provider || typeof provider.verifyAndConnectKeyPair !== 'function') {
+          throw new Error('Wallet bundle not ready');
+        }
+        const res = await provider.verifyAndConnectKeyPair(acc, key, CONTRACT_ID);
+        if (keyEl) keyEl.value = '';
+        closeMultichainWalletModal();
+        updateWalletConnectedUI(res.accountId);
+        updateMultichainConnectedUI();
+        fetchAccountNearBalance(res.accountId);
+        fetchLiveContractState();
+        renderBunkerAddresses();
+        showToast(`✅ Connected ${res.accountId} (${res.permission} key verified on-chain)`);
+      } catch (err) {
+        console.error('[Aegis] Dev KeyPair login error:', err);
+        showToast(`Key verification failed: ${err.message}`, true);
+      }
+    }
+
     async function connectNearDirect(type) {
       localStorage.removeItem('aegis_manual_logout');
+      const walletDef = WALLET_DEFINITIONS.find(w => w.id === type);
+
+      // Extension-only wallets: check if extension is injected before failing silently
+      if (walletDef && !walletDef.isWebReady && !walletDef.isInstalled()) {
+        showToast(`${walletDef.name} extension not detected. Opening official download page — or use Meteor / MyNearWallet / HERE / Bitte (Zero-Install).`, true);
+        if (walletDef.downloadUrl) {
+          window.open(walletDef.downloadUrl, '_blank', 'noopener,noreferrer');
+        }
+        return;
+      }
+
       closeMultichainWalletModal();
+      const provider = await waitForWalletProvider();
+      if (!provider) {
+        showToast('Wallet provider initializing, please try again in a moment...', true);
+        return;
+      }
+
+      // 1. MyNearWallet (Official NEAR Testnet Web Redirect with FunctionCall AccessKey)
+      if (type === 'mynearwallet') {
+        showToast('Redirecting to Official MyNearWallet Testnet...');
+        await provider.connectMyNearWallet(CONTRACT_ID);
+        return;
+      }
+
+      // 2. OKX NEAR Extension
+      if (type === 'okx_near') {
+        try {
+          showToast('Connecting OKX NEAR Wallet...');
+          const res = await provider.connectOkxNearWallet(CONTRACT_ID);
+          if (res?.accountId) {
+            updateWalletConnectedUI(res.accountId);
+            updateMultichainConnectedUI();
+            fetchAccountNearBalance(res.accountId);
+            fetchLiveContractState();
+            renderBunkerAddresses();
+            showToast(`Connected OKX NEAR: ${res.accountId}`);
+          }
+        } catch (err) {
+          console.error('[Aegis] OKX NEAR error:', err);
+          showToast(`OKX NEAR error: ${err.message}`, true);
+        }
+        return;
+      }
+
+      // 3. Unified @near-wallet-selector modules (Meteor Web+Ext, HERE, Bitte, Nightly, Sender)
       const moduleMap = {
         meteor: 'meteor-wallet',
         here: 'here-wallet',
@@ -8178,169 +8392,37 @@ if (typeof window !== "undefined") {
         bitte: 'bitte-wallet'
       };
       const moduleId = moduleMap[type] || 'meteor-wallet';
-      showToast(`Connecting ${type.toUpperCase()}...`);
+      showToast(`Connecting ${walletDef ? walletDef.name : type.toUpperCase()}...`);
 
-      // 1. Direct extension fast path for Meteor
-      if (type === 'meteor' && window.meteorWallet && typeof window.meteorWallet.signIn === 'function') {
-        try {
-          await window.meteorWallet.signIn({ contractId: CONTRACT_ID });
-          const acc = window.meteorWallet.accountId || (typeof window.meteorWallet.getAccountId === 'function' ? await window.meteorWallet.getAccountId() : null);
-          if (acc) {
-            localStorage.setItem('aegis_signer_account', acc);
-            updateWalletConnectedUI(acc);
-            fetchAccountNearBalance(acc);
-            fetchLiveContractState();
-            renderBunkerAddresses();
-            showToast(`Meteor connected: ${acc}`);
-            return;
-          }
-        } catch (e) {
-          console.warn('[Aegis] Direct meteor error, trying selector:', e);
-        }
-      }
-
-      // 2. Direct wallet module sign-in via selector (NO SECOND MODAL!)
       try {
-        let provider = window.AegisWallet || window.AegisMeteor || window.AegisWalletBundle;
-        if (!provider || typeof provider.signInWallet !== 'function') {
-          for (let i = 0; i < 25; i++) {
-            await new Promise(r => setTimeout(r, 100));
-            provider = window.AegisWallet || window.AegisMeteor || window.AegisWalletBundle;
-            if (provider && typeof provider.signInWallet === 'function') break;
-          }
+        const res = await provider.signInWallet(moduleId, CONTRACT_ID);
+        const sel = await provider.getSelector(CONTRACT_ID);
+        const state = sel.store.getState();
+        const activeAcc = (Array.isArray(res) && res[0]?.accountId) ||
+                          state.accounts.find((acc) => acc.active)?.accountId ||
+                          state.accounts[0]?.accountId;
+        if (activeAcc) {
+          localStorage.setItem('aegis_signer_account', activeAcc);
+          localStorage.setItem('aegis_wallet_type', moduleId);
+          localStorage.removeItem('aegis_testnet_signer_key');
+          localStorage.removeItem('aegis_manual_logout');
+          updateWalletConnectedUI(activeAcc);
+          updateMultichainConnectedUI();
+          fetchAccountNearBalance(activeAcc);
+          fetchLiveContractState();
+          renderBunkerAddresses();
+          showToast(`Connected: ${activeAcc}`);
         }
-
-        if (provider && typeof provider.signInWallet === 'function') {
-          const res = await provider.signInWallet(moduleId, CONTRACT_ID);
-          const sel = await provider.getSelector(CONTRACT_ID);
-          const state = sel.store.getState();
-          const activeAcc = (Array.isArray(res) && res[0]?.accountId) ||
-                            state.accounts.find((acc) => acc.active)?.accountId ||
-                            state.accounts[0]?.accountId;
-          if (activeAcc) {
-            localStorage.setItem('aegis_signer_account', activeAcc);
-            localStorage.removeItem('aegis_manual_logout');
-            updateWalletConnectedUI(activeAcc);
-            fetchAccountNearBalance(activeAcc);
-            fetchLiveContractState();
-            renderBunkerAddresses();
-            showToast(`Connected: ${activeAcc}`);
-          }
-          return;
-        }
-
-        showToast('Wallet provider initializing, please try again in a moment...');
       } catch (err) {
         console.error(`[Aegis] ${type} connection error:`, err);
         showToast(`Connection error: ${err.message}`, true);
       }
     }
 
-    async function connectEvmDirect(type) {
-      try {
-        showToast('Connecting Ethereum / EVM extension...');
-        if (typeof window === 'undefined' || !window.ethereum) {
-          showToast('No EVM extension found. Please install MetaMask, Rabby, or Coinbase Wallet.', true);
-          return;
-        }
-        const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
-        if (!accounts || accounts.length === 0) {
-          showToast('EVM connection rejected or no accounts selected.', true);
-          return;
-        }
-        const ethAddress = accounts[0];
-        localStorage.setItem('aegis_connected_evm', ethAddress);
-
-        // Auto-fill EVM destination fields in Tab 1 if empty
-        const pEvm = document.getElementById('panicEvmAddr');
-        if (pEvm && !pEvm.value.trim()) pEvm.value = ethAddress;
-
-        closeMultichainWalletModal();
-        updateMultichainConnectedUI();
-        renderBunkerAddresses();
-        showToast(`EVM connected: ${ethAddress.slice(0, 6)}...${ethAddress.slice(-4)}`);
-      } catch (err) {
-        console.error('[Aegis] EVM connection error:', err);
-        showToast(`EVM Error: ${err.message}`, true);
-      }
-    }
-
-    async function connectSolanaDirect(type) {
-      try {
-        showToast('Connecting Solana extension...');
-        const provider = window.phantom?.solana || window.solana;
-        if (!provider) {
-          showToast('No Solana extension found. Please install Phantom or Solflare.', true);
-          return;
-        }
-        const resp = await provider.connect();
-        const solAddress = resp.publicKey ? resp.publicKey.toString() : provider.publicKey.toString();
-        localStorage.setItem('aegis_connected_sol', solAddress);
-
-        // Auto-fill Solana destination fields in Tab 1 if empty
-        const pSol = document.getElementById('panicSolAddr');
-        if (pSol && !pSol.value.trim()) pSol.value = solAddress;
-
-        closeMultichainWalletModal();
-        updateMultichainConnectedUI();
-        await fetchAccountSolanaBalance(solAddress);
-        renderBunkerAddresses();
-        showToast(`Solana connected: ${solAddress.slice(0, 5)}...${solAddress.slice(-4)}`);
-      } catch (err) {
-        console.error('[Aegis] Solana connection error:', err);
-        showToast(`Solana Error: ${err.message}`, true);
-      }
-    }
-
-    async function connectBitcoinDirect(type) {
-      try {
-        showToast('Connecting Bitcoin extension...');
-        let btcAddress = null;
-        if (window.unisat) {
-          const accounts = await window.unisat.requestAccounts();
-          if (accounts && accounts.length > 0) btcAddress = accounts[0];
-        } else if (window.okxwallet?.bitcoin) {
-          const res = await window.okxwallet.bitcoin.connect();
-          if (res && res.address) btcAddress = res.address;
-        }
-        if (!btcAddress) {
-          showToast('No Bitcoin extension found. Please install UniSat or OKX Wallet.', true);
-          return;
-        }
-        localStorage.setItem('aegis_connected_btc', btcAddress);
-
-        closeMultichainWalletModal();
-        updateMultichainConnectedUI();
-        showToast(`Bitcoin connected: ${btcAddress.slice(0, 5)}...${btcAddress.slice(-4)}`);
-      } catch (err) {
-        console.error('[Aegis] Bitcoin connection error:', err);
-        showToast(`Bitcoin Error: ${err.message}`, true);
-      }
-    }
-
     async function disconnectChain(chain) {
       if (chain === 'near') {
-        localStorage.setItem('aegis_manual_logout', 'true');
-        localStorage.removeItem('aegis_signer_account');
-        localStorage.removeItem('aegis_wallet_type');
-        localStorage.removeItem('aegis_testnet_signer_key');
-        lastFetchedVaultInfo = null;
-        updateWalletDisconnectedUI();
-      } else if (chain === 'evm') {
-        localStorage.removeItem('aegis_connected_evm');
-        if (localStorage.getItem('aegis_signer_account')?.startsWith('0x')) {
-          localStorage.removeItem('aegis_signer_account');
-          lastFetchedVaultInfo = null;
-          updateWalletDisconnectedUI();
-        }
-      } else if (chain === 'sol') {
-        localStorage.removeItem('aegis_connected_sol');
-      } else if (chain === 'btc') {
-        localStorage.removeItem('aegis_connected_btc');
+        await disconnectAllWallets();
       }
-      updateMultichainConnectedUI();
-      renderBunkerAddresses();
-      showToast(`Disconnected ${chain.toUpperCase()}`);
     }
 
     async function disconnectAllWallets() {
@@ -8348,15 +8430,22 @@ if (typeof window !== "undefined") {
       localStorage.removeItem('aegis_signer_account');
       localStorage.removeItem('aegis_wallet_type');
       localStorage.removeItem('aegis_testnet_signer_key');
+      localStorage.removeItem('aegis_mnw_pending_key');
       localStorage.removeItem('aegis_connected_evm');
       localStorage.removeItem('aegis_connected_sol');
       localStorage.removeItem('aegis_connected_btc');
+      try {
+        const provider = window.AegisWallet || window.AegisMeteor || window.AegisWalletBundle;
+        if (provider && typeof provider.signOutNear === 'function') {
+          await provider.signOutNear(CONTRACT_ID);
+        }
+      } catch (_) {}
       lastFetchedVaultInfo = null;
       updateMultichainConnectedUI();
       updateWalletDisconnectedUI();
       renderBunkerAddresses();
       closeMultichainWalletModal();
-      showToast('All wallets disconnected');
+      showToast('NEAR wallet disconnected');
     }
 
     function renderModalConnectedSummary() {
@@ -8365,106 +8454,62 @@ if (typeof window !== "undefined") {
       if (!sumEl || !listEl) return;
 
       const nearAcc = localStorage.getItem('aegis_signer_account');
-      const evmAcc = localStorage.getItem('aegis_connected_evm');
-      const solAcc = localStorage.getItem('aegis_connected_sol');
-      const btcAcc = localStorage.getItem('aegis_connected_btc');
+      const walletType = localStorage.getItem('aegis_wallet_type') || 'near-wallet';
 
-      const items = [];
-      if (nearAcc && !nearAcc.startsWith('0x')) {
-        items.push({ chain: 'near', name: 'NEAR Protocol', addr: nearAcc, color: 'text-emerald-400' });
-      }
-      if (evmAcc) {
-        items.push({ chain: 'evm', name: 'Ethereum / EVM', addr: evmAcc, color: 'text-blue-400' });
-      }
-      if (solAcc) {
-        items.push({ chain: 'sol', name: 'Solana', addr: solAcc, color: 'text-purple-400' });
-      }
-      if (btcAcc) {
-        items.push({ chain: 'btc', name: 'Bitcoin', addr: btcAcc, color: 'text-amber-400' });
-      }
-
-      if (items.length === 0) {
+      if (!nearAcc || nearAcc.startsWith('0x')) {
         sumEl.classList.add('hidden');
         return;
       }
 
       sumEl.classList.remove('hidden');
-      listEl.innerHTML = items.map(item => `
+      listEl.innerHTML = `
         <div class="flex items-center justify-between p-2 rounded-xl bg-white/[0.03] border border-white/[0.06]">
           <div class="flex items-center gap-2 overflow-hidden">
-            <span class="w-2 h-2 rounded-full ${item.color.replace('text-', 'bg-')} shrink-0"></span>
-            <span class="text-[#8E99AD] font-semibold">${escapeHtml(item.name)}:</span>
-            <span class="text-white truncate max-w-[200px] sm:max-w-[280px]" title="${escapeHtml(item.addr)}">${escapeHtml(item.addr)}</span>
+            <span class="w-2 h-2 rounded-full bg-emerald-400 shrink-0"></span>
+            <span class="text-[#8E99AD] font-semibold">NEAR (${escapeHtml(walletType)}):</span>
+            <span class="text-white truncate max-w-[200px] sm:max-w-[280px]" title="${escapeHtml(nearAcc)}">${escapeHtml(nearAcc)}</span>
           </div>
-          <button onclick="disconnectChain('${escapeHtml(item.chain)}')" class="text-[11px] text-[#8E99AD] hover:text-red-400 transition ml-2 shrink-0 cursor-pointer">Disconnect</button>
+          <button onclick="disconnectAllWallets()" class="text-[11px] text-[#8E99AD] hover:text-red-400 transition ml-2 shrink-0 cursor-pointer">Disconnect</button>
         </div>
-      `).join('');
+      `;
     }
 
     function updateMultichainConnectedUI() {
+      // Clean up any stale non-NEAR session keys from older versions
+      localStorage.removeItem('aegis_connected_evm');
+      localStorage.removeItem('aegis_connected_sol');
+      localStorage.removeItem('aegis_connected_btc');
       const nearAcc = localStorage.getItem('aegis_signer_account');
-      const evmAcc = localStorage.getItem('aegis_connected_evm');
-      const solAcc = localStorage.getItem('aegis_connected_sol');
-      const btcAcc = localStorage.getItem('aegis_connected_btc');
-
-      const hasAnyWallet = Boolean(nearAcc || evmAcc || solAcc || btcAcc);
+      if (nearAcc && nearAcc.startsWith('0x')) {
+        localStorage.removeItem('aegis_signer_account');
+      }
+      const validNearAcc = localStorage.getItem('aegis_signer_account');
       const connectBtn = document.getElementById('connectWalletBtn');
       const connectedPill = document.getElementById('connectedWalletPill');
       const nameEl = document.getElementById('headerAccountName');
       const nameMobEl = document.getElementById('headerAccountNameMobile');
       const badgesEl = document.getElementById('headerMultichainBadges');
 
-      if (hasAnyWallet) {
+      if (badgesEl) {
+        badgesEl.innerHTML = '';
+        badgesEl.className = 'hidden';
+      }
+
+      if (validNearAcc) {
         if (connectBtn) connectBtn.classList.add('hidden');
         if (connectedPill) connectedPill.classList.remove('hidden');
 
-        // Primary display
-        const primaryAcc = nearAcc || evmAcc || solAcc || btcAcc;
-        const isNear = Boolean(nearAcc && !nearAcc.startsWith('0x'));
-        const isSol = Boolean(!nearAcc && solAcc);
-        const isEvm = Boolean(!nearAcc && !solAcc && evmAcc);
-        const isBtc = Boolean(!nearAcc && !solAcc && !evmAcc && btcAcc);
-
         if (nameEl) {
-          nameEl.innerText = primaryAcc.length > 20 ? primaryAcc.slice(0, 8) + '...' + primaryAcc.slice(-6) : primaryAcc;
-          nameEl.title = primaryAcc;
-          nameEl.className = isNear
-            ? 'font-bold text-nearGreen hidden sm:inline whitespace-nowrap'
-            : (isSol ? 'font-bold text-purple-400 hidden sm:inline whitespace-nowrap' : (isBtc ? 'font-bold text-amber-400 hidden sm:inline whitespace-nowrap' : 'font-bold text-blue-400 hidden sm:inline whitespace-nowrap'));
+          nameEl.innerText = validNearAcc.length > 24 ? validNearAcc.slice(0, 10) + '...' + validNearAcc.slice(-8) : validNearAcc;
+          nameEl.title = validNearAcc;
+          nameEl.className = 'font-bold text-nearGreen hidden sm:inline whitespace-nowrap';
         }
         if (nameMobEl) {
-          nameMobEl.innerText = primaryAcc.slice(0, 6) + '...';
-          nameMobEl.className = isNear
-            ? 'font-bold text-nearGreen sm:hidden whitespace-nowrap'
-            : (isSol ? 'font-bold text-purple-400 sm:hidden whitespace-nowrap' : (isBtc ? 'font-bold text-amber-400 sm:hidden whitespace-nowrap' : 'font-bold text-blue-400 sm:hidden whitespace-nowrap'));
+          nameMobEl.innerText = validNearAcc.length > 12 ? validNearAcc.slice(0, 10) + '...' : validNearAcc;
+          nameMobEl.className = 'font-bold text-nearGreen sm:hidden whitespace-nowrap';
         }
 
-        // Live balance update for header
-        if (isNear) {
-          fetchAccountNearBalance(nearAcc);
-        } else if (isSol) {
-          fetchAccountSolanaBalance(solAcc);
-        } else if (isEvm) {
-          fetchAccountEvmBalance(evmAcc);
-        } else if (isBtc) {
-          fetchAccountBtcBalance(btcAcc);
-        }
-
-        // Secondary badges
-        if (badgesEl) {
-          badgesEl.innerHTML = '';
-          if (evmAcc && primaryAcc !== evmAcc) {
-            badgesEl.innerHTML += `<span class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-blue-500/15 text-blue-300 border border-blue-500/30" title="${escapeHtml(evmAcc)}">ETH: ${escapeHtml(evmAcc.slice(0, 6))}...</span>`;
-          }
-          if (solAcc && primaryAcc !== solAcc) {
-            badgesEl.innerHTML += `<span class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-purple-500/15 text-purple-300 border border-purple-500/30" title="${escapeHtml(solAcc)}">SOL: ${escapeHtml(solAcc.slice(0, 5))}...</span>`;
-          }
-          if (btcAcc && primaryAcc !== btcAcc) {
-            badgesEl.innerHTML += `<span class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-amber-500/15 text-amber-300 border border-amber-500/30" title="${escapeHtml(btcAcc)}">BTC: ${escapeHtml(btcAcc.slice(0, 5))}...</span>`;
-          }
-          badgesEl.className = badgesEl.innerHTML ? 'flex items-center gap-1.5 border-l border-white/10 pl-2' : 'hidden';
-        }
-
+        fetchAccountNearBalance(validNearAcc);
         updateCountdownDisplay();
       } else {
         updateWalletDisconnectedUI();
@@ -8479,40 +8524,103 @@ if (typeof window !== "undefined") {
     }
     const connectMeteorWallet = openMultichainWalletModal; // Backward-compatibility
 
-    async function initNearWallet() {
-      let provider = window.AegisWallet || window.AegisMeteor || window.AegisWalletBundle;
-      if (!provider || typeof provider.getSelector !== 'function') {
-        for (let i = 0; i < 25; i++) {
-          await new Promise(r => setTimeout(r, 100));
-          provider = window.AegisWallet || window.AegisMeteor || window.AegisWalletBundle;
-          if (provider && typeof provider.getSelector === 'function') break;
+    function handleMyNearWalletCallback() {
+      try {
+        const url = new URL(window.location.href);
+        const cbAccountId = url.searchParams.get('account_id');
+        const cbPublicKey = url.searchParams.get('public_key') || url.searchParams.get('all_keys');
+        const cbTxHashes = url.searchParams.get('transactionHashes');
+        const cbError = url.searchParams.get('errorCode');
+
+        let cleaned = false;
+        const nearIdRegex = /^(([a-z\d]+[-_])*[a-z\d]+\.)*([a-z\d]+[-_])*[a-z\d]+$/i;
+        const ed25519Regex = /^ed25519:[1-9A-HJ-NP-Za-km-z]{32,64}$/;
+
+        if (cbAccountId && nearIdRegex.test(cbAccountId)) {
+          const pendingKey = localStorage.getItem('aegis_mnw_pending_key');
+          localStorage.setItem('aegis_signer_account', cbAccountId);
+          localStorage.setItem('aegis_wallet_type', 'my-near-wallet');
+          localStorage.removeItem('aegis_manual_logout');
+          if (pendingKey && (!cbPublicKey || ed25519Regex.test(cbPublicKey.split(',')[0]))) {
+            localStorage.setItem('aegis_testnet_signer_key', pendingKey);
+          }
+          localStorage.removeItem('aegis_mnw_pending_key');
+          cleaned = true;
+          setTimeout(() => showToast(`✅ MyNearWallet connected: ${cbAccountId}`), 300);
         }
+
+        if (cbTxHashes) {
+          cleaned = true;
+          const firstHash = cbTxHashes.split(',')[0];
+          setTimeout(() => {
+            showToast(`✅ On-chain transaction confirmed! Tx: ${firstHash.slice(0, 10)}...`);
+            fetchLiveContractState();
+            const acc = localStorage.getItem('aegis_signer_account');
+            if (acc) fetchAccountNearBalance(acc);
+            fetchLiveBalances(true);
+          }, 400);
+        }
+
+        if (cbError) {
+          cleaned = true;
+          const errDesc = url.searchParams.get('errorMessage') || cbError;
+          setTimeout(() => showToast(`Wallet callback notice: ${decodeURIComponent(errDesc)}`, true), 300);
+        }
+
+        if (cleaned) {
+          ['account_id', 'public_key', 'all_keys', 'transactionHashes', 'errorCode', 'errorMessage', 'aegis_mnw_cb'].forEach(k => url.searchParams.delete(k));
+          window.history.replaceState({}, document.title, url.pathname + (url.search ? url.search : '') + url.hash);
+        }
+      } catch (e) {
+        console.warn('[Aegis] URL callback parse notice:', e);
       }
+    }
+
+    async function initNearWallet() {
+      handleMyNearWalletCallback();
+
+      let provider = await waitForWalletProvider();
+      const storedWalletType = localStorage.getItem('aegis_wallet_type');
+      const storedAccount = localStorage.getItem('aegis_signer_account');
+      const isManualLogout = localStorage.getItem('aegis_manual_logout') === 'true';
+
+      // If connected via MyNearWallet, KeyPair, or OKX NEAR, preserve that session directly
+      if (!isManualLogout && storedAccount && (storedWalletType === 'my-near-wallet' || storedWalletType === 'keypair' || storedWalletType === 'okx-near')) {
+        updateWalletConnectedUI(storedAccount);
+        updateMultichainConnectedUI();
+        fetchAccountNearBalance(storedAccount);
+        fetchLiveContractState();
+        renderBunkerAddresses();
+        return;
+      }
+
       if (provider && typeof provider.getSelector === 'function') {
         try {
           const sel = await provider.getSelector(CONTRACT_ID);
           const state = sel.store.getState();
           const activeAcc = state.accounts.find((acc) => acc.active)?.accountId || state.accounts[0]?.accountId;
-          const isManualLogout = localStorage.getItem('aegis_manual_logout') === 'true';
           if (activeAcc && !isManualLogout) {
             localStorage.setItem('aegis_signer_account', activeAcc);
             updateWalletConnectedUI(activeAcc);
+            updateMultichainConnectedUI();
             fetchAccountNearBalance(activeAcc);
             fetchLiveContractState();
             renderBunkerAddresses();
-          } else {
-            if (!activeAcc) localStorage.removeItem('aegis_signer_account');
+          } else if (!storedAccount || isManualLogout) {
+            localStorage.removeItem('aegis_signer_account');
             updateWalletDisconnectedUI();
             renderBunkerAddresses();
           }
 
           sel.store.observable.subscribe((nextState) => {
             if (localStorage.getItem('aegis_manual_logout') === 'true') return;
+            const currentWt = localStorage.getItem('aegis_wallet_type');
+            if (currentWt === 'my-near-wallet' || currentWt === 'keypair' || currentWt === 'okx-near') return;
+
             const acc = nextState.accounts.find((a) => a.active)?.accountId || nextState.accounts[0]?.accountId;
             if (acc) {
               const prev = localStorage.getItem('aegis_signer_account');
               if (prev && prev !== acc) {
-                // Switching account: reset all user inputs, caches and DOM balances immediately!
                 userHasInteractedWithInputs = false;
                 lastFetchedVaultInfo = null;
                 inputIds.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
@@ -8527,6 +8635,7 @@ if (typeof window !== "undefined") {
               }
               localStorage.setItem('aegis_signer_account', acc);
               updateWalletConnectedUI(acc);
+              updateMultichainConnectedUI();
               fetchAccountNearBalance(acc);
               if (prev !== acc) {
                 fetchLiveContractState();
@@ -8544,10 +8653,10 @@ if (typeof window !== "undefined") {
         }
       }
 
-      const manualAccount = localStorage.getItem('aegis_signer_account');
-      if (manualAccount) {
-        updateWalletConnectedUI(manualAccount);
-        fetchAccountNearBalance(manualAccount);
+      if (storedAccount && !isManualLogout) {
+        updateWalletConnectedUI(storedAccount);
+        updateMultichainConnectedUI();
+        fetchAccountNearBalance(storedAccount);
         fetchLiveContractState();
         renderBunkerAddresses();
         return;
@@ -8783,38 +8892,39 @@ if (typeof window !== "undefined") {
     }
 
     async function disconnectWallet() {
-      localStorage.removeItem('aegis_signer_account');
-      localStorage.removeItem('aegis_wallet_type');
-      localStorage.removeItem('aegis_testnet_signer_key');
-      localStorage.removeItem('aegis_connected_evm');
-      localStorage.removeItem('aegis_connected_sol');
-      localStorage.removeItem('aegis_connected_btc');
-      updateWalletDisconnectedUI();
-      updateMultichainConnectedUI();
-      renderBunkerAddresses();
-      showToast('Wallet disconnected');
+      await disconnectAllWallets();
     }
 
     // Direct On-Chain Contract Caller via NEAR Testnet RPC
     async function dispatchNearTransaction(methodName, args = {}, depositOverride = '0') {
+      const signerAccountId = localStorage.getItem('aegis_signer_account');
+      if (!signerAccountId) {
+        showToast('Please connect your NEAR wallet first!', true);
+        openMultichainWalletModal();
+        throw new Error('Wallet not connected');
+      }
+
       showToast(`Broadcasting on-chain ${methodName}() to NEAR Testnet...`);
       try {
         console.log(`[Aegis On-Chain] Dispatching ${methodName} on ${CONTRACT_ID} with args:`, args);
 
         const attachedDeposit = String(depositOverride || '0');
+        const provider = window.AegisWallet || window.AegisMeteor || window.AegisWalletBundle;
 
-        // 1. Signed in via Meteor Wallet (Wallet Selector or Direct Injection)
-        if (window.AegisMeteor) {
-          const outcome = await window.AegisMeteor.signAndSendNearTx(
+        if (provider && typeof provider.signAndSendNearTx === 'function') {
+          const outcome = await provider.signAndSendNearTx(
             CONTRACT_ID,
             methodName,
             args,
             attachedDeposit,
             '30000000000000' // 30 TGas
           );
+          if (outcome?.redirecting) {
+            return outcome;
+          }
           const txHash = outcome?.transaction?.hash || outcome?.transaction_outcome?.id || 'Confirmed';
-          console.log(`✅ [Aegis] Meteor transaction confirmed: ${txHash}`, outcome);
-          showToast(`✅ ${methodName}() confirmed on-chain! Tx: ${txHash.slice(0, 8)}...`);
+          console.log(`✅ [Aegis] NEAR transaction confirmed: ${txHash}`, outcome);
+          showToast(`✅ ${methodName}() confirmed on-chain! Tx: ${String(txHash).slice(0, 8)}...`);
           userHasInteractedWithInputs = false;
           isEditing = false;
           const currentSigner = localStorage.getItem('aegis_signer_account');
@@ -8826,10 +8936,8 @@ if (typeof window !== "undefined") {
           return outcome;
         }
 
-        // 2. Direct private key in localStorage
+        // Fallback: Direct private key in localStorage via window.nearApi
         const storedKey = localStorage.getItem('aegis_testnet_signer_key');
-        const signerAccountId = localStorage.getItem('aegis_signer_account');
-
         if (window.nearApi && storedKey && signerAccountId) {
           const { connect, keyStores, KeyPair } = window.nearApi;
           const keyStore = new keyStores.InMemoryKeyStore();
@@ -8854,7 +8962,7 @@ if (typeof window !== "undefined") {
 
           const txHash = outcome?.transaction?.hash || outcome?.transaction_outcome?.id || 'Confirmed';
           console.log(`✅ [Aegis] KeyPair transaction confirmed: ${txHash}`, outcome);
-          showToast(`✅ ${methodName}() confirmed on-chain! Tx: ${txHash.slice(0, 8)}...`);
+          showToast(`✅ ${methodName}() confirmed on-chain! Tx: ${String(txHash).slice(0, 8)}...`);
           userHasInteractedWithInputs = false;
           isEditing = false;
           setTimeout(() => {
@@ -8865,13 +8973,15 @@ if (typeof window !== "undefined") {
           return outcome;
         }
 
-        // 3. Not signed in: Trigger Wallet Connect
-        showToast('Please connect your Web3 wallet first!', true);
+        showToast('Please connect your NEAR wallet first!', true);
         openMultichainWalletModal();
         throw new Error('Wallet not connected');
       } catch (err) {
         console.error(`❌ [Aegis] Failed to dispatch ${methodName}:`, err);
-        if (err.message !== 'Wallet not connected') {
+        if (err.message && (err.message.includes('No NEAR wallet connected') || err.message === 'Wallet not connected')) {
+          showToast('Please connect your NEAR wallet first!', true);
+          openMultichainWalletModal();
+        } else {
           showToast(`Error dispatching ${methodName}: ${err.message}`, true);
         }
         throw err;

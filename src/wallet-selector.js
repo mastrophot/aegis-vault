@@ -10,6 +10,7 @@ import { Connection } from "@solana/web3.js";
 import bs58 from "bs58";
 import nacl from "tweetnacl";
 import { edwardsToMontgomeryPub, edwardsToMontgomeryPriv } from "@noble/curves/ed25519";
+import * as nearAPI from "near-api-js";
 import RelayerModule from "../relayer/service.js";
 
 const AegisRelayerService = RelayerModule?.AegisRelayerService || RelayerModule;
@@ -102,61 +103,91 @@ export async function connectNearWallet(walletId = "meteor-wallet", contractId =
   return await signInWallet(walletId, contractId);
 }
 
-export async function connectEvmWallet() {
-  if (typeof window === "undefined" || !window.ethereum) {
-    throw new Error("No EVM wallet detected. Please install MetaMask, Rabby, or Coinbase Wallet.");
-  }
-  const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
-  if (!accounts || accounts.length === 0) {
-    throw new Error("No Ethereum account authorized.");
-  }
-  const address = accounts[0];
-  const chainId = await window.ethereum.request({ method: "eth_chainId" });
-  return { address, chainId };
+export function connectMyNearWallet(contractId = "aegis.okgoogleok.testnet") {
+  if (typeof window === "undefined") throw new Error("Window not defined");
+  const keyPair = nearAPI.utils.KeyPair.fromRandom("ed25519");
+  const pubKeyStr = keyPair.getPublicKey().toString();
+  localStorage.setItem("aegis_mnw_pending_key", keyPair.toString());
+  const currentUrl = new URL(window.location.href);
+  currentUrl.searchParams.delete("account_id");
+  currentUrl.searchParams.delete("public_key");
+  currentUrl.searchParams.delete("all_keys");
+  currentUrl.searchParams.delete("transactionHashes");
+  currentUrl.searchParams.delete("errorCode");
+  currentUrl.searchParams.delete("errorMessage");
+  const loginUrl = new URL("https://testnet.mynearwallet.com/login/");
+  loginUrl.searchParams.set("contract_id", contractId);
+  loginUrl.searchParams.set("public_key", pubKeyStr);
+  loginUrl.searchParams.set("success_url", currentUrl.toString());
+  loginUrl.searchParams.set("failure_url", currentUrl.toString());
+  window.location.assign(loginUrl.toString());
 }
 
-export async function connectSolanaWallet() {
-  if (typeof window === "undefined") throw new Error("Window not defined");
-  const provider = window.phantom?.solana || window.solana;
-  if (!provider) {
-    throw new Error("No Solana wallet detected. Please install Phantom or Solflare.");
+export async function connectOkxNearWallet(contractId = "aegis.okgoogleok.testnet") {
+  if (typeof window === "undefined" || !window.okxwallet?.near) {
+    throw new Error("OKX NEAR extension not detected. Install OKX Wallet extension first.");
   }
-  const resp = await provider.connect();
-  const address = resp.publicKey ? resp.publicKey.toString() : provider.publicKey.toString();
-  return { address };
+  const res = await window.okxwallet.near.requestSignIn({ contractId });
+  const accountId =
+    res?.accountId ||
+    window.okxwallet.near.getAccountId?.() ||
+    window.okxwallet.near.accountId;
+  if (!accountId) {
+    throw new Error("OKX NEAR sign-in did not return an accountId");
+  }
+  return { accountId };
 }
 
-export async function connectBitcoinWallet() {
-  if (typeof window === "undefined") throw new Error("Window not defined");
-  if (window.unisat) {
-    const accounts = await window.unisat.requestAccounts();
-    if (!accounts || accounts.length === 0) throw new Error("No Bitcoin account authorized.");
-    return { address: accounts[0], type: "unisat" };
+export async function verifyAndConnectKeyPair(accountId, privateKeyStr, contractId = "aegis.okgoogleok.testnet") {
+  const cleanAccount = String(accountId || "").trim().toLowerCase();
+  if (!/^[a-z0-9_-]+(\.[a-z0-9_-]+)*$/.test(cleanAccount) || cleanAccount.length < 2 || cleanAccount.length > 64) {
+    throw new Error("Invalid NEAR account ID format (e.g. alice.testnet)");
   }
-  if (window.okxwallet?.bitcoin) {
-    const res = await window.okxwallet.bitcoin.connect();
-    return { address: res.address, type: "okx" };
+  const cleanKey = String(privateKeyStr || "").trim();
+  const normalizedKey = cleanKey.startsWith("ed25519:") ? cleanKey : `ed25519:${cleanKey}`;
+  let keyPair;
+  try {
+    keyPair = nearAPI.utils.KeyPair.fromString(normalizedKey);
+  } catch (_) {
+    throw new Error("Invalid Ed25519 private key format (expected ed25519:...)");
   }
-  if (window.XverseProviders?.BitcoinProvider) {
-    throw new Error("Please connect Xverse via Bitcoin provider");
+  const pubKeyStr = keyPair.getPublicKey().toString();
+  const res = await fetch("https://test.rpc.fastnear.com", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "query",
+      params: {
+        request_type: "view_access_key",
+        finality: "optimistic",
+        account_id: cleanAccount,
+        public_key: pubKeyStr
+      }
+    })
+  });
+  const body = await res.json();
+  if (body?.error || body?.result?.error) {
+    throw new Error(`Key ${pubKeyStr.slice(0, 18)}... is not authorized on account ${cleanAccount}`);
   }
-  throw new Error("No Bitcoin wallet detected. Please install UniSat or OKX Wallet.");
+  const perm = body?.result?.permission;
+  if (perm && perm !== "FullAccess" && perm.FunctionCall) {
+    const receiver = perm.FunctionCall.receiver_id;
+    if (receiver && receiver !== contractId) {
+      throw new Error(`FunctionCall key is scoped to ${receiver}, not ${contractId}`);
+    }
+  }
+  return { accountId: cleanAccount, normalizedKey, publicKey: pubKeyStr };
 }
 
 export function detectInstalledWallets() {
   if (typeof window === "undefined") return {};
   return {
     meteor: typeof window.meteorWallet !== "undefined",
-    near: typeof window.near !== "undefined",
-    nightly: typeof window.nightly !== "undefined",
-    metaMask: typeof window.ethereum !== "undefined" && Boolean(window.ethereum.isMetaMask),
-    rabby: typeof window.ethereum !== "undefined" && Boolean(window.ethereum.isRabby),
-    coinbase: typeof window.ethereum !== "undefined" && Boolean(window.ethereum.isCoinbaseWallet),
-    evmGeneric: typeof window.ethereum !== "undefined",
-    phantom: Boolean(window.phantom?.solana || (window.solana && window.solana.isPhantom)),
-    solanaGeneric: typeof window.solana !== "undefined",
-    unisat: typeof window.unisat !== "undefined",
-    okx: typeof window.okxwallet !== "undefined"
+    near: Boolean(window.near && window.near.isSender) || typeof window.near !== "undefined",
+    nightly: Boolean(window.nightly?.near),
+    okxNear: Boolean(window.okxwallet?.near)
   };
 }
 
@@ -168,11 +199,131 @@ export async function disconnectWallet() {
     } catch (e) {}
   }
   if (typeof window !== "undefined") {
+    try {
+      if (window.okxwallet?.near?.signOut) await window.okxwallet.near.signOut();
+    } catch (_) {}
     localStorage.removeItem("aegis_signer_account");
+    localStorage.removeItem("aegis_wallet_type");
+    localStorage.removeItem("aegis_testnet_signer_key");
+    localStorage.removeItem("aegis_mnw_pending_key");
   }
 }
 
+async function signAndSendWithLocalKeyPair(signerAccountId, privateKeyStr, contractId, methodName, args, deposit, gas) {
+  const keyPair = nearAPI.utils.KeyPair.fromString(privateKeyStr.trim());
+  const pubKey = keyPair.getPublicKey();
+  const pubKeyStr = pubKey.toString();
+  const rpcUrl = "https://test.rpc.fastnear.com";
+
+  const keyRes = await fetch(rpcUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "query",
+      params: {
+        request_type: "view_access_key",
+        finality: "optimistic",
+        account_id: signerAccountId,
+        public_key: pubKeyStr
+      }
+    })
+  }).then((r) => r.json());
+
+  if (keyRes?.error || keyRes?.result?.error) {
+    throw new Error(keyRes?.result?.error || keyRes?.error?.message || "Access key lookup failed");
+  }
+
+  const nonce = BigInt(keyRes.result.nonce || 0) + 1n;
+  const blockHash = nearAPI.utils.serialize.base_decode(keyRes.result.block_hash);
+  const action = nearAPI.transactions.functionCall(
+    methodName,
+    args || {},
+    BigInt(gas || "30000000000000"),
+    BigInt(deposit || "0")
+  );
+  const tx = nearAPI.transactions.createTransaction(
+    signerAccountId,
+    pubKey,
+    contractId,
+    nonce,
+    [action],
+    blockHash
+  );
+
+  // If MyNearWallet FunctionCall key is used for a call with deposit > 0, redirect to MyNearWallet sign page
+  const perm = keyRes.result.permission;
+  if (perm && perm !== "FullAccess" && BigInt(deposit || "0") > 0n) {
+    const txBase64 = Buffer.from(tx.encode()).toString("base64");
+    const signUrl = new URL("https://testnet.mynearwallet.com/sign");
+    signUrl.searchParams.set("transactions", txBase64);
+    signUrl.searchParams.set("callbackUrl", window.location.href);
+    window.location.assign(signUrl.toString());
+    return { transaction: { hash: "Redirecting to MyNearWallet..." } };
+  }
+
+  const encodedTx = tx.encode();
+  const hashBuf = await crypto.subtle.digest("SHA-256", encodedTx);
+  const sig = keyPair.sign(new Uint8Array(hashBuf));
+  const signedTx = new nearAPI.transactions.SignedTransaction({
+    transaction: tx,
+    signature: new nearAPI.transactions.Signature({
+      keyType: pubKey.keyType,
+      data: sig.signature
+    })
+  });
+  const signedTxBase64 = Buffer.from(signedTx.encode()).toString("base64");
+
+  const sendRes = await fetch(rpcUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "send_tx",
+      params: {
+        signed_tx_base64: signedTxBase64,
+        wait_until: "EXECUTED_OPTIMISTIC"
+      }
+    })
+  }).then((r) => r.json());
+
+  if (sendRes?.error) {
+    throw new Error(sendRes.error.data ? JSON.stringify(sendRes.error.data) : sendRes.error.message);
+  }
+  const outcome = sendRes.result;
+  if (outcome?.status && typeof outcome.status === "object" && outcome.status.Failure) {
+    throw new Error(`NEAR transaction failed: ${JSON.stringify(outcome.status.Failure)}`);
+  }
+  return outcome;
+}
+
 export async function signAndSendNearTx(contractId, methodName, args = {}, deposit = "0", gas = "30000000000000") {
+  const storedKey = typeof window !== "undefined" ? localStorage.getItem("aegis_testnet_signer_key") : null;
+  const storedSigner = typeof window !== "undefined" ? localStorage.getItem("aegis_signer_account") : null;
+  const walletType = typeof window !== "undefined" ? localStorage.getItem("aegis_wallet_type") : null;
+
+  // 1. Local KeyPair or MyNearWallet FunctionCall Key
+  if (storedKey && storedSigner && (walletType === "keypair" || walletType === "my-near-wallet" || !walletType)) {
+    return await signAndSendWithLocalKeyPair(storedSigner, storedKey, contractId, methodName, args, deposit, gas);
+  }
+
+  // 2. OKX NEAR Extension
+  if (walletType === "okx-near" && typeof window !== "undefined" && window.okxwallet?.near) {
+    return await window.okxwallet.near.signAndSendTransaction({
+      receiverId: contractId,
+      actions: [
+        {
+          methodName,
+          args,
+          gas,
+          deposit
+        }
+      ]
+    });
+  }
+
   const argsBytes = typeof Buffer !== "undefined"
     ? Buffer.from(JSON.stringify(args))
     : new TextEncoder().encode(JSON.stringify(args));
@@ -475,9 +626,9 @@ if (typeof window !== "undefined") {
     signInWallet,
     connectWallet: connectNearWallet,
     connectNearWallet,
-    connectEvmWallet,
-    connectSolanaWallet,
-    connectBitcoinWallet,
+    connectMyNearWallet,
+    connectOkxNearWallet,
+    verifyAndConnectKeyPair,
     detectInstalledWallets,
     disconnectWallet,
     signAndSendNearTx,
