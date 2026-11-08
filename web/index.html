@@ -305,7 +305,7 @@
                 <label class="block text-xs font-semibold text-[#8C929D] pl-1">1. Check-in Timer</label>
                 <div class="relative">
                   <select id="inactivitySelect" onchange="changeInactivityPeriod(this.value)" class="w-full appearance-none bg-[#0B0D12] hover:bg-white/[0.06] text-white font-semibold text-xs rounded-xl pl-3 pr-7 py-2.5 border border-white/[0.08] focus:border-nearGreen outline-none transition cursor-pointer">
-                    <option value="demo_120s" class="bg-[#0B0D12] text-amber-300 font-bold">⚡ 2m (Judge Demo)</option>
+                    <option value="demo_180s" class="bg-[#0B0D12] text-amber-300 font-bold">⚡ 3m (Judge Demo)</option>
                     <option value="30" class="bg-[#0B0D12]">Every 30 Days</option>
                     <option value="90" selected class="bg-[#0B0D12]">Every 90 Days</option>
                     <option value="180" class="bg-[#0B0D12]">Every 180 Days</option>
@@ -318,7 +318,7 @@
                 <label class="block text-xs font-semibold text-[#8C929D] pl-1">2. Grace Buffer</label>
                 <div class="relative">
                   <select id="graceSelect" onchange="changeGracePeriod(this.value)" class="w-full appearance-none bg-[#0B0D12] hover:bg-white/[0.06] text-white font-semibold text-xs rounded-xl pl-3 pr-7 py-2.5 border border-white/[0.08] focus:border-nearGreen outline-none transition cursor-pointer">
-                    <option value="demo_30s" class="bg-[#0B0D12] text-amber-300 font-bold">⚡ 30s (Judge Demo)</option>
+                    <option value="demo_60s" class="bg-[#0B0D12] text-amber-300 font-bold">⚡ 1m (Judge Demo)</option>
                     <option value="3" class="bg-[#0B0D12]">Grace: 3 Days</option>
                     <option value="7" selected class="bg-[#0B0D12]">Grace: 7 Days</option>
                     <option value="14" class="bg-[#0B0D12]">Grace: 14 Days</option>
@@ -1004,7 +1004,7 @@
       <div>
         <label class="block text-xs font-semibold text-textSilver mb-1.5">Grace Buffer Duration:</label>
         <select id="modalGraceSelect" onchange="changeGracePeriod(this.value)" class="w-full bg-nearElevated text-textWhite font-mono text-xs rounded-2xl p-3.5 border border-nearBorder focus:outline-none focus:border-nearGreen transition">
-          <option value="demo_30s" class="text-amber-300 font-bold">⚡ 30s (Judge Demo)</option>
+          <option value="demo_60s" class="text-amber-300 font-bold">⚡ 1m (Judge Demo)</option>
           <option value="3">3 Extra Days</option>
           <option value="7" selected>7 Extra Days (Default)</option>
           <option value="14">14 Extra Days (High Safety)</option>
@@ -1622,9 +1622,9 @@
           const totalHbNs = BigInt(info.heartbeat_interval_ns);
           const inactSelect = document.getElementById('inactivitySelect');
           if (inactSelect) {
-            if (totalHbNs <= 120000000000n) {
-              inactSelect.value = 'demo_120s';
-              localStorage.setItem('aegis_inactivity_days', 'demo_120s');
+            if (totalHbNs <= 180000000000n) {
+              inactSelect.value = 'demo_180s';
+              localStorage.setItem('aegis_inactivity_days', 'demo_180s');
             } else {
               const inactDays = Math.round(Number(totalHbNs / 86400000000000n));
               if ([30, 90, 180, 365].includes(inactDays)) {
@@ -1637,10 +1637,10 @@
           const totalCpNs = BigInt(info.challenge_period_ns || 604800000000000n);
           const graceSelect = document.getElementById('graceSelect');
           const modalGrace = document.getElementById('modalGraceSelect');
-          if (totalCpNs <= 30000000000n) {
-            if (graceSelect) graceSelect.value = 'demo_30s';
-            if (modalGrace) modalGrace.value = 'demo_30s';
-            localStorage.setItem('aegis_grace_days', 'demo_30s');
+          if (totalCpNs <= 60000000000n) {
+            if (graceSelect) graceSelect.value = 'demo_60s';
+            if (modalGrace) modalGrace.value = 'demo_60s';
+            localStorage.setItem('aegis_grace_days', 'demo_60s');
           } else {
             const graceDays = Math.round(Number(totalCpNs / 86400000000000n));
             if ([3, 7, 14, 30].includes(graceDays)) {
@@ -3503,16 +3503,16 @@
     }
 
     // Configurable Inactivity & Grace Periods
-    if (localStorage.getItem('aegis_inactivity_days') === 'demo_60s') {
-      localStorage.setItem('aegis_inactivity_days', 'demo_120s');
+    if (localStorage.getItem('aegis_inactivity_days') === 'demo_60s' || localStorage.getItem('aegis_inactivity_days') === 'demo_120s') {
+      localStorage.setItem('aegis_inactivity_days', 'demo_180s');
     }
-    if (localStorage.getItem('aegis_grace_days') === 'demo_15s') {
-      localStorage.setItem('aegis_grace_days', 'demo_30s');
+    if (localStorage.getItem('aegis_grace_days') === 'demo_15s' || localStorage.getItem('aegis_grace_days') === 'demo_30s') {
+      localStorage.setItem('aegis_grace_days', 'demo_60s');
     }
     const initialInactPref = localStorage.getItem('aegis_inactivity_days') || '90';
-    let inactivityDays = initialInactPref === 'demo_120s' ? 0 : parseInt(initialInactPref);
-    let graceDays = localStorage.getItem('aegis_grace_days') === 'demo_30s' ? 0 : parseInt(localStorage.getItem('aegis_grace_days') || '7');
-    let MAX_SECONDS = initialInactPref === 'demo_120s' ? 120 : (inactivityDays * 24 * 3600);
+    let inactivityDays = initialInactPref === 'demo_180s' ? 0 : parseInt(initialInactPref);
+    let graceDays = localStorage.getItem('aegis_grace_days') === 'demo_60s' ? 0 : parseInt(localStorage.getItem('aegis_grace_days') || '7');
+    let MAX_SECONDS = initialInactPref === 'demo_180s' ? 180 : (inactivityDays * 24 * 3600);
 
     function calculateInitialRemainingSeconds() {
       const currentEpoch = localStorage.getItem('aegis_bunker_epoch') || '0';
@@ -3574,11 +3574,11 @@
 
       const inactPref = document.getElementById('inactivitySelect')?.value || localStorage.getItem('aegis_inactivity_days') || '90';
       const gracePref = document.getElementById('graceSelect')?.value || localStorage.getItem('aegis_grace_days') || '7';
-      const selectedHbNs = inactPref === 'demo_120s'
-        ? 120000000000n
+      const selectedHbNs = inactPref === 'demo_180s'
+        ? 180000000000n
         : BigInt(parseInt(inactPref, 10) || 90) * 86400n * 1000000000n;
-      const selectedCpNs = gracePref === 'demo_30s'
-        ? 30000000000n
+      const selectedCpNs = gracePref === 'demo_60s'
+        ? 60000000000n
         : BigInt(parseInt(gracePref, 10) || 7) * 86400n * 1000000000n;
       const onChainHbNs = info?.heartbeat_interval_ns ? BigInt(info.heartbeat_interval_ns) : selectedHbNs;
       const onChainCpNs = info?.challenge_period_ns ? BigInt(info.challenge_period_ns) : selectedCpNs;
@@ -3669,17 +3669,17 @@
       let hbNs;
       let cpNs = null;
       isEditing = true;
-      if (val === 'demo_120s') {
-        MAX_SECONDS = 120;
-        remainingSeconds = 120;
-        hbNs = '120000000000'; // 120 seconds (2 minutes)
-        cpNs = '30000000000'; // 30 seconds Grace Window for fast Judge Demo
-        localStorage.setItem('aegis_inactivity_days', 'demo_120s');
-        localStorage.setItem('aegis_grace_days', 'demo_30s');
+      if (val === 'demo_180s') {
+        MAX_SECONDS = 180;
+        remainingSeconds = 180;
+        hbNs = '180000000000'; // 180 seconds (3 minutes)
+        cpNs = '60000000000'; // 60 seconds (1 minute) Grace Window for Judge Demo
+        localStorage.setItem('aegis_inactivity_days', 'demo_180s');
+        localStorage.setItem('aegis_grace_days', 'demo_60s');
         const sel1 = document.getElementById('graceSelect');
         const sel2 = document.getElementById('modalGraceSelect');
-        if (sel1) sel1.value = 'demo_30s';
-        if (sel2) sel2.value = 'demo_30s';
+        if (sel1) sel1.value = 'demo_60s';
+        if (sel2) sel2.value = 'demo_60s';
       } else {
         inactivityDays = parseInt(val);
         MAX_SECONDS = inactivityDays * 24 * 3600;
@@ -3690,10 +3690,10 @@
       updateCountdownDisplay();
       updateSaveButtonState(lastFetchedVaultInfo);
       if (!lastFetchedVaultInfo || lastFetchedVaultInfo.state === 'Unconfigured' || !hasConfiguredDestinations(lastFetchedVaultInfo)) {
-        showToast(`Timer set to ${val === 'demo_120s' ? '2m' : val + ' days'}. Will be armed on-chain once you save policy.`);
+        showToast(`Timer set to ${val === 'demo_180s' ? '3m' : val + ' days'}. Will be armed on-chain once you save policy.`);
         return;
       }
-      showToast(`Broadcasting check-in timer update (${val === 'demo_120s' ? '2m' : val + ' days'}) to NEAR...`);
+      showToast(`Broadcasting check-in timer update (${val === 'demo_180s' ? '3m' : val + ' days'}) to NEAR...`);
       dispatchNearTransaction('update_intervals', { heartbeat_interval_ns: hbNs, challenge_period_ns: cpNs });
     }
 
@@ -3705,9 +3705,9 @@
       if (sel1) sel1.value = val;
       if (sel2) sel2.value = val;
 
-      if (val === 'demo_30s') {
-        cpNs = '30000000000'; // 30 seconds
-        localStorage.setItem('aegis_grace_days', 'demo_30s');
+      if (val === 'demo_60s') {
+        cpNs = '60000000000'; // 60 seconds (1 minute)
+        localStorage.setItem('aegis_grace_days', 'demo_60s');
       } else {
         graceDays = parseInt(val);
         cpNs = (BigInt(val) * 86400n * 1000000000n).toString();
@@ -3715,10 +3715,10 @@
       }
       updateSaveButtonState(lastFetchedVaultInfo);
       if (!lastFetchedVaultInfo || lastFetchedVaultInfo.state === 'Unconfigured' || !hasConfiguredDestinations(lastFetchedVaultInfo)) {
-        showToast(`Grace window set to ${val === 'demo_30s' ? '30s' : val + ' days'}. Will be armed on-chain once you save policy.`);
+        showToast(`Grace window set to ${val === 'demo_60s' ? '1m' : val + ' days'}. Will be armed on-chain once you save policy.`);
         return;
       }
-      showToast(`Broadcasting grace period update (${val === 'demo_30s' ? '30s' : val + ' days'}) to NEAR...`);
+      showToast(`Broadcasting grace period update (${val === 'demo_60s' ? '1m' : val + ' days'}) to NEAR...`);
       dispatchNearTransaction('update_intervals', { heartbeat_interval_ns: null, challenge_period_ns: cpNs });
     }
 
@@ -3943,9 +3943,9 @@
 
       if (remainingSeconds <= 0) {
         let graceRemainingSec = 0;
-        let totalGraceSec = 30;
+        let totalGraceSec = 60;
         if (lastFetchedVaultInfo && lastFetchedVaultInfo.last_ping_ns) {
-          const totalGraceNs = BigInt(lastFetchedVaultInfo.challenge_period_ns || '30000000000');
+          const totalGraceNs = BigInt(lastFetchedVaultInfo.challenge_period_ns || '60000000000');
           totalGraceSec = Math.max(1, Number(totalGraceNs / 1000000000n));
           const fullExpiryMs = Number(
             (BigInt(lastFetchedVaultInfo.last_ping_ns) +
@@ -5767,11 +5767,11 @@
 
       const inactPref = document.getElementById('inactivitySelect')?.value || localStorage.getItem('aegis_inactivity_days') || '90';
       const gracePref = document.getElementById('graceSelect')?.value || localStorage.getItem('aegis_grace_days') || '7';
-      const selectedHbNs = inactPref === 'demo_120s'
-        ? '120000000000'
+      const selectedHbNs = inactPref === 'demo_180s'
+        ? '180000000000'
         : (BigInt(parseInt(inactPref, 10) || 90) * 86400n * 1000000000n).toString();
-      const selectedCpNs = gracePref === 'demo_30s'
-        ? '30000000000'
+      const selectedCpNs = gracePref === 'demo_60s'
+        ? '60000000000'
         : (BigInt(parseInt(gracePref, 10) || 7) * 86400n * 1000000000n).toString();
 
       const policyPayload = {
