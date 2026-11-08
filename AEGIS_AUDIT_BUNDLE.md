@@ -6494,7 +6494,7 @@ if (typeof window !== "undefined") {
                     <span class="px-3 py-2.5 text-xs font-mono font-bold text-white bg-white/[0.03] border-r border-white/[0.06] shrink-0">
                       NEAR
                     </span>
-                    <input type="text" id="panicNearAddr" value="" name="aegis_panicNearAddr_noautofill" autocomplete="new-password" data-form-type="other" readonly onfocus="if(!this.disabled)this.removeAttribute('readonly');" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="e.g. backup-wallet.testnet" class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none">
+                    <input type="text" id="panicNearAddr" value="" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="e.g. backup-wallet.testnet" class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none">
                   </div>
                 </div>
 
@@ -6508,7 +6508,7 @@ if (typeof window !== "undefined") {
                     <span class="px-3 py-2.5 text-xs font-mono font-bold text-[#F7931A] bg-white/[0.03] border-r border-white/[0.06] shrink-0">
                       BTC
                     </span>
-                    <input type="text" id="panicBtcAddr" value="" name="aegis_panicBtcAddr_noautofill" autocomplete="new-password" data-form-type="other" readonly onfocus="if(!this.disabled)this.removeAttribute('readonly');" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="e.g. tb1q..." class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none">
+                    <input type="text" id="panicBtcAddr" value="" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="e.g. tb1q..." class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none">
                   </div>
                 </div>
 
@@ -6522,7 +6522,7 @@ if (typeof window !== "undefined") {
                     <span class="px-3 py-2.5 text-xs font-mono font-bold text-[#627EEA] bg-white/[0.03] border-r border-white/[0.06] shrink-0">
                       ETH
                     </span>
-                    <input type="text" id="panicEvmAddr" value="" name="aegis_panicEvmAddr_noautofill" autocomplete="new-password" data-form-type="other" readonly onfocus="if(!this.disabled)this.removeAttribute('readonly');" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="e.g. 0x..." class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none">
+                    <input type="text" id="panicEvmAddr" value="" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="e.g. 0x..." class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none">
                   </div>
                 </div>
 
@@ -6536,7 +6536,7 @@ if (typeof window !== "undefined") {
                     <span class="px-3 py-2.5 text-xs font-mono font-bold text-[#9945FF] bg-white/[0.03] border-r border-white/[0.06] shrink-0">
                       SOL
                     </span>
-                    <input type="text" id="panicSolAddr" value="" name="aegis_panicSolAddr_noautofill" autocomplete="new-password" data-form-type="other" readonly onfocus="if(!this.disabled)this.removeAttribute('readonly');" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="e.g. Solana Base58 Address..." class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none">
+                    <input type="text" id="panicSolAddr" value="" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="e.g. Solana Base58 Address..." class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none">
                   </div>
                 </div>
               </div>
@@ -6610,7 +6610,7 @@ if (typeof window !== "undefined") {
                     <span class="px-3 py-2.5 text-xs font-mono font-bold text-white bg-white/[0.03] border-r border-white/[0.06] shrink-0">
                       NEAR
                     </span>
-                    <input type="text" id="heirNearAddr" value="" name="aegis_heirNearAddr_noautofill" autocomplete="new-password" data-form-type="other" readonly onfocus="if(!this.disabled)this.removeAttribute('readonly');" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="e.g. family.testnet" class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none">
+                    <input type="text" id="heirNearAddr" value="" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="e.g. family.testnet" class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none">
                   </div>
                 </div>
 
@@ -6624,7 +6624,7 @@ if (typeof window !== "undefined") {
                     <span class="px-3 py-2.5 text-xs font-mono font-bold text-[#F7931A] bg-white/[0.03] border-r border-white/[0.06] shrink-0">
                       BTC
                     </span>
-                    <input type="text" id="heirBtcAddr" value="" name="aegis_heirBtcAddr_noautofill" autocomplete="new-password" data-form-type="other" readonly onfocus="if(!this.disabled)this.removeAttribute('readonly');" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="e.g. tb1q..." class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none">
+                    <input type="text" id="heirBtcAddr" value="" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="e.g. tb1q..." class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none">
                   </div>
                 </div>
 
@@ -6638,7 +6638,7 @@ if (typeof window !== "undefined") {
                     <span class="px-3 py-2.5 text-xs font-mono font-bold text-[#627EEA] bg-white/[0.03] border-r border-white/[0.06] shrink-0">
                       ETH
                     </span>
-                    <input type="text" id="heirEvmAddr" value="" name="aegis_heirEvmAddr_noautofill" autocomplete="new-password" data-form-type="other" readonly onfocus="if(!this.disabled)this.removeAttribute('readonly');" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="e.g. 0x..." class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none">
+                    <input type="text" id="heirEvmAddr" value="" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="e.g. 0x..." class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none">
                   </div>
                 </div>
 
@@ -6652,7 +6652,7 @@ if (typeof window !== "undefined") {
                     <span class="px-3 py-2.5 text-xs font-mono font-bold text-[#9945FF] bg-white/[0.03] border-r border-white/[0.06] shrink-0">
                       SOL
                     </span>
-                    <input type="text" id="heirSolAddr" value="" name="aegis_heirSolAddr_noautofill" autocomplete="new-password" data-form-type="other" readonly onfocus="if(!this.disabled)this.removeAttribute('readonly');" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="e.g. Solana Base58 Address..." class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none">
+                    <input type="text" id="heirSolAddr" value="" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="e.g. Solana Base58 Address..." class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none">
                   </div>
                 </div>
               </div>
@@ -6685,9 +6685,9 @@ if (typeof window !== "undefined") {
                     </div>
                     <span id="memoByteCount" class="font-mono text-nearGreen text-xs font-bold">0 / 240 B</span>
                   </div>
-                  <input type="text" id="heirFinalMemo" name="aegis_heirFinalMemo_noautofill" autocomplete="new-password" data-form-type="other" readonly onfocus="if(!this.disabled)this.removeAttribute('readonly');" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" oninput="updateMemoByteCounter(this.value)" placeholder="e.g. Hardware wallet PIN & family vault instructions..." class="w-full bg-transparent pt-0.5 text-xs sm:text-[13px] font-mono text-white placeholder:text-[#585E6A] outline-none">
+                  <input type="text" id="heirFinalMemo" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" oninput="updateMemoByteCounter(this.value)" placeholder="e.g. Hardware wallet PIN & family vault instructions..." class="w-full bg-transparent pt-0.5 text-xs sm:text-[13px] font-mono text-white placeholder:text-[#585E6A] outline-none">
                   <div class="flex items-center gap-2 pt-1 border-t border-white/[0.06]">
-                    <input type="password" id="heirMemoPassphrase" name="aegis_memo_pass_noautofill" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" placeholder="Optional AES-256 passphrase (blank = auto-seal to Heir SOL key)" class="w-full bg-transparent text-[11px] font-mono text-white placeholder:text-[#585E6A] outline-none">
+                    <input type="password" id="heirMemoPassphrase" autocomplete="new-password" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly data-lpignore="true" data-1p-ignore="true" placeholder="Optional AES-256 passphrase (blank = auto-seal to Heir SOL key)" class="w-full bg-transparent text-[11px] font-mono text-white placeholder:text-[#585E6A] outline-none">
                     <span id="e2eeArmedStatus" class="hidden text-[10px] font-mono text-nearGreen whitespace-nowrap font-bold">🔒 Sealed</span>
                   </div>
                 </div>
@@ -6879,7 +6879,7 @@ if (typeof window !== "undefined") {
                   <span class="px-3.5 py-2.5 text-xs font-mono font-bold text-[#A6B0C3] bg-white/[0.03] border-r border-white/[0.06]">
                     @
                   </span>
-                  <input id="tgUsernameInput" type="text" value="" name="aegis_tgUsernameInput_noautofill" autocomplete="new-password" data-form-type="other" readonly onfocus="if(!this.disabled)this.removeAttribute('readonly');" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#6E788C] outline-none" placeholder="username or Chat ID">
+                  <input id="tgUsernameInput" type="text" value="" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#6E788C] outline-none" placeholder="username or Chat ID">
                 </div>
               </div>
             </div>
@@ -6916,7 +6916,7 @@ if (typeof window !== "undefined") {
                   <span class="px-3.5 py-2.5 text-xs text-[#8C929D] bg-white/[0.03] border-r border-white/[0.06]">
                     ✉
                   </span>
-                  <input id="emailAlertInput" type="email" value="" name="aegis_emailAlertInput_noautofill" autocomplete="new-password" data-form-type="other" readonly onfocus="if(!this.disabled)this.removeAttribute('readonly');" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none" placeholder="your-email@domain.com">
+                  <input id="emailAlertInput" type="text" value="" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none" placeholder="your-email@domain.com">
                 </div>
               </div>
             </div>
@@ -6999,8 +6999,8 @@ if (typeof window !== "undefined") {
             For hackathon judges or automated testing: connect directly with any NEAR Testnet account ID and `ed25519:...` private key (verifies `view_access_key` on-chain before signing).
           </p>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <input id="devAccountInput" type="text" placeholder="account.testnet" autocomplete="off" spellcheck="false" class="w-full bg-black/50 border border-white/15 rounded-xl px-3 py-2 text-xs font-mono text-white placeholder-[#6E788C] focus:outline-none focus:border-[#00F5D4]" />
-            <input id="devKeyInput" type="password" placeholder="ed25519:..." autocomplete="off" spellcheck="false" class="w-full bg-black/50 border border-white/15 rounded-xl px-3 py-2 text-xs font-mono text-white placeholder-[#6E788C] focus:outline-none focus:border-[#00F5D4]" />
+            <input id="devAccountInput" type="text" placeholder="account.testnet" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" class="w-full bg-black/50 border border-white/15 rounded-xl px-3 py-2 text-xs font-mono text-white placeholder-[#6E788C] focus:outline-none focus:border-[#00F5D4]" />
+            <input id="devKeyInput" type="password" placeholder="ed25519:..." autocomplete="new-password" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" class="w-full bg-black/50 border border-white/15 rounded-xl px-3 py-2 text-xs font-mono text-white placeholder-[#6E788C] focus:outline-none focus:border-[#00F5D4]" />
           </div>
           <button onclick="connectDevKeyPair()" type="button" class="w-full py-2 px-4 rounded-xl bg-[#00F5D4]/15 hover:bg-[#00F5D4]/25 border border-[#00F5D4]/40 text-[#00F5D4] text-xs font-mono font-bold transition cursor-pointer">
             Verify On-Chain Key &amp; Connect Account
@@ -7268,7 +7268,7 @@ if (typeof window !== "undefined") {
         </div>
         <div class="space-y-1">
           <label class="text-[#8C929D] uppercase text-[10px] font-bold">Heir Secret Key (for enc:x25519) OR Passphrase (for enc:aes256)</label>
-          <input type="password" id="decryptSecretInput" autocomplete="new-password" data-lpignore="true" placeholder="Enter passphrase or Heir Ed25519 secret key (Base58 / JSON)" class="w-full rounded-xl bg-white/[0.03] border border-white/10 px-3 py-2.5 text-xs text-white font-mono outline-none focus:border-nearGreen">
+          <input type="password" id="decryptSecretInput" autocomplete="new-password" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly data-lpignore="true" data-1p-ignore="true" placeholder="Enter passphrase or Heir Ed25519 secret key (Base58 / JSON)" class="w-full rounded-xl bg-white/[0.03] border border-white/10 px-3 py-2.5 text-xs text-white font-mono outline-none focus:border-nearGreen">
         </div>
         <div id="decryptOutputBox" class="hidden p-3.5 rounded-xl bg-nearGreenMuted border border-nearGreen/40 text-white space-y-1">
           <div class="text-[10px] uppercase text-nearGreen font-bold">Decrypted Testament Plaintext:</div>
@@ -11414,9 +11414,69 @@ if (typeof window !== "undefined") {
       showToast('Applying active policy on-chain...');
     }
 
+    // Hardened anti-autofill / anti-history dropdown lock for all sensitive wallet & testament inputs
+    function lockInputAgainstBrowserAutofill(el) {
+      if (!el || el.type === 'checkbox') return;
+      const rotateRandomName = () => {
+        el.setAttribute('name', 'aegis_rnd_' + Math.random().toString(36).slice(2) + '_' + Date.now().toString(36));
+      };
+      rotateRandomName();
+      el.setAttribute('autocomplete', el.type === 'password' ? 'new-password' : 'off');
+      el.setAttribute('aria-autocomplete', 'none');
+      el.setAttribute('list', 'aegisNoAutofillList');
+      el.setAttribute('autocorrect', 'off');
+      el.setAttribute('autocapitalize', 'off');
+      el.setAttribute('spellcheck', 'false');
+      el.setAttribute('data-form-type', 'other');
+      el.setAttribute('data-lpignore', 'true');
+      el.setAttribute('data-1p-ignore', 'true');
+      el.readOnly = true;
+
+      let unlockTimer = null;
+      const scheduleUnlock = () => {
+        if (el.disabled) return;
+        clearTimeout(unlockTimer);
+        unlockTimer = setTimeout(() => {
+          if (!el.disabled) el.readOnly = false;
+        }, 120);
+      };
+      const instantUnlock = () => {
+        if (el.disabled) return;
+        clearTimeout(unlockTimer);
+        el.readOnly = false;
+      };
+
+      // Keep readOnly=true across mousedown -> focus -> mouseup -> click -> dblclick so Chromium/WebKit
+      // AutofillAgent::ShowSuggestions aborts (IsReadOnly() === true), then unlock for typing/pasting
+      el.addEventListener('mousedown', () => {
+        if (!el.disabled) {
+          rotateRandomName();
+          el.readOnly = true;
+          scheduleUnlock();
+        }
+      });
+      el.addEventListener('focus', () => {
+        if (!el.disabled) {
+          rotateRandomName();
+          scheduleUnlock();
+        }
+      });
+      ['keydown', 'beforeinput', 'paste', 'drop', 'contextmenu'].forEach(evt => {
+        el.addEventListener(evt, instantUnlock);
+      });
+      el.addEventListener('blur', () => {
+        clearTimeout(unlockTimer);
+        rotateRandomName();
+        if (!el.disabled) el.readOnly = true;
+      });
+    }
+
     // Initialize Live On-Chain Polling and Wallet Connection on page load
     // (Explicit manual check-in only: never auto-fire wallet popups on scroll/click)
     document.addEventListener('DOMContentLoaded', () => {
+      // Attach anti-autofill lock to every input on the page
+      document.querySelectorAll('input, textarea').forEach(lockInputAgainstBrowserAutofill);
+
       initNearWallet();
       updateMultichainConnectedUI();
       renderWalletsGrid('all');
@@ -11446,6 +11506,7 @@ if (typeof window !== "undefined") {
       });
     });
   </script>
+  <datalist id="aegisNoAutofillList"></datalist>
 </body>
 </html>
 ```
