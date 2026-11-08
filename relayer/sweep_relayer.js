@@ -7,13 +7,21 @@
  * signatures via the Vault contract's MPC delegate, and broadcasts to foreign chains.
  */
 
-const crypto = require('crypto');
 const { ethers } = require('ethers');
 const bitcoin = require('bitcoinjs-lib');
 const web3 = require('@solana/web3.js');
 const chainsig = require('chainsig.js');
 const bs58Pkg = require('bs58');
 const bs58Encode = bs58Pkg.encode || (bs58Pkg.default && bs58Pkg.default.encode);
+
+function sha256Hex(input) {
+  const buf = Buffer.isBuffer(input) ? input : Buffer.from(String(input), 'utf8');
+  return ethers.sha256(Uint8Array.from(buf)).slice(2);
+}
+
+function sha256Bytes(input) {
+  return Buffer.from(sha256Hex(input), 'hex');
+}
 
 class LastKeySweepRelayer {
   constructor(config = {}) {
@@ -363,7 +371,7 @@ class LastKeySweepRelayer {
         memoBytes = rawMemoBuf;
       } else {
         // Bitcoin standardness limits OP_RETURN to 80 bytes: anchor SHA-256 commitment of E2EE ciphertext
-        const hexHash = crypto.createHash('sha256').update(String(memo), 'utf8').digest('hex');
+        const hexHash = sha256Hex(String(memo));
         memoBytes = Buffer.from(`aegis-e2ee:${hexHash.slice(0, 36)}`, 'utf8');
       }
     }
@@ -397,8 +405,7 @@ class LastKeySweepRelayer {
         ? bitcoin.payments.p2pkh({ hash: prevOutScript.subarray(2), network }).output
         : prevOutScript;
 
-    const dsha256 = buf =>
-      crypto.createHash('sha256').update(crypto.createHash('sha256').update(buf).digest()).digest();
+    const dsha256 = buf => sha256Bytes(sha256Bytes(buf));
 
     const prevoutsParts = [];
     const sequencesParts = [];
@@ -519,10 +526,7 @@ class LastKeySweepRelayer {
       const solMemoBuf =
         rawMemoBuf.length <= 560
           ? rawMemoBuf
-          : Buffer.from(
-              `aegis-e2ee:${crypto.createHash('sha256').update(rawMemoBuf).digest('hex')}`,
-              'utf8'
-            );
+          : Buffer.from(`aegis-e2ee:${sha256Hex(rawMemoBuf)}`, 'utf8');
       const MEMO_PROGRAM_ID = new web3.PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr');
       transaction.add(
         new web3.TransactionInstruction({
@@ -626,10 +630,7 @@ class LastKeySweepRelayer {
       const solMemoBuf =
         rawMemoBuf.length <= 560
           ? rawMemoBuf
-          : Buffer.from(
-              `aegis-e2ee:${crypto.createHash('sha256').update(rawMemoBuf).digest('hex')}`,
-              'utf8'
-            );
+          : Buffer.from(`aegis-e2ee:${sha256Hex(rawMemoBuf)}`, 'utf8');
       const MEMO_PROGRAM_ID = new web3.PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr');
       transaction.add(
         new web3.TransactionInstruction({

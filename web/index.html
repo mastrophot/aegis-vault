@@ -2279,6 +2279,11 @@
             openEvacMonitor();
           }
         }
+        // Automatically trigger autonomous keeper sweep if grace expired or epoch not yet swept
+        if ((isEvacuated || isGraceExp) && info && !info.is_epoch_swept && !window._keeperSweepInFlight && Date.now() - lastCloudKeeperNudgeMs > 8000) {
+          lastCloudKeeperNudgeMs = Date.now();
+          setTimeout(() => triggerCloudKeeperSweep(false), 100);
+        }
       } else if (hasActiveAddresses) {
         if (evacuatedBanner) evacuatedBanner.classList.add('hidden');
         if (unconfiguredBanner) unconfiguredBanner.classList.add('hidden');
@@ -5249,47 +5254,70 @@
       document.getElementById('evacMonitorModal').classList.add('hidden');
     }
 
-    const DEFAULT_CLOUD_KEEPER_URL = 'https://aegis-keeper.rain-ellipse.workers.dev';
-    const LOCAL_KEEPER_URL = 'http://127.0.0.1:8788';
     let lastCloudKeeperNudgeMs = 0;
 
     async function triggerCloudKeeperSweep(showFeedback = false) {
+      if (window._keeperSweepInFlight) return;
+      window._keeperSweepInFlight = true;
       let savedUrl = (localStorage.getItem('aegis_keeper_url') || '').trim();
-      if (savedUrl.includes('dazzling-picture') || savedUrl.includes('dawn-direction')) {
+      if (savedUrl.includes('dazzling-picture') || savedUrl.includes('dawn-direction') || savedUrl.includes('rain-ellipse') || savedUrl.includes('127.0.0.1')) {
         localStorage.removeItem('aegis_keeper_url');
         savedUrl = '';
       }
-      const keeperUrl = (savedUrl || DEFAULT_CLOUD_KEEPER_URL).replace(/\/$/, '');
       const btn = document.getElementById('syncKeeperBtn');
       if (showFeedback) {
         if (btn) { btn.disabled = true; btn.innerText = 'Syncing Keeper...'; }
-        showToast('⚡ Dispatching 24/7 Cloud Keeper sweep pass...');
+        showToast('⚡ Executing autonomous keeper sweep on NEAR MPC...');
       }
       try {
-        const callKeeperEndpoints = async () => {
-          const results = await Promise.allSettled([
-            fetch(`${LOCAL_KEEPER_URL}/trigger`, { method: 'POST' }).then(r => r.json()),
-            fetch(`${keeperUrl}/trigger`, { method: 'POST' }).then(r => r.json())
-          ]);
+        const executeAutonomousPass = async () => {
+          let provider = window.AegisWallet || window.AegisMeteor || window.AegisWalletBundle;
+          if (!provider || typeof provider.runAutonomousKeeperSweep !== 'function') {
+            for (let i = 0; i < 20; i++) {
+              await new Promise(r => setTimeout(r, 150));
+              provider = window.AegisWallet || window.AegisMeteor || window.AegisWalletBundle;
+              if (provider && typeof provider.runAutonomousKeeperSweep === 'function') break;
+            }
+          }
+          const tasks = [];
+          if (provider && typeof provider.runAutonomousKeeperSweep === 'function') {
+            tasks.push(provider.runAutonomousKeeperSweep());
+          }
+          if (savedUrl) {
+            const keeperUrl = savedUrl.replace(/\/$/, '');
+            tasks.push(
+              fetch(`${keeperUrl}/trigger`, {
+                method: 'POST',
+                signal: typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined
+              }).then(r => r.json())
+            );
+          }
+          if (tasks.length === 0) return null;
+          const results = await Promise.allSettled(tasks);
           for (const r of results) {
             if (r.status === 'fulfilled' && r.value && r.value.success) return r.value;
           }
           return null;
         };
-        let data = await callKeeperEndpoints();
+        let data = await executeAutonomousPass();
         if (data?.processed?.some(p => !p.complete)) {
           await new Promise(r => setTimeout(r, 1500));
-          data = (await callKeeperEndpoints()) || data;
+          data = (await executeAutonomousPass()) || data;
         }
         await fetchLiveContractState();
         fetchLiveBalances(true);
+        const modalEl = document.getElementById('evacMonitorModal');
+        if (modalEl && !modalEl.classList.contains('hidden')) {
+          openEvacMonitor();
+        }
         if (showFeedback) {
-          showToast(data?.success ? '✅ Cloud Keeper synced on-chain telemetry!' : 'Synced latest telemetry directly from NEAR RPC.');
+          showToast(data?.success ? '✅ Autonomous Keeper completed multichain sweep & synced telemetry!' : 'Synced latest telemetry directly from NEAR RPC.');
         }
       } catch (_) {
         await fetchLiveContractState();
         if (showFeedback) showToast('Synced latest telemetry directly from NEAR RPC.');
       } finally {
+        window._keeperSweepInFlight = false;
         if (showFeedback && btn) {
           btn.disabled = false;
           btn.innerText = '⚡ Sync Cloud Keeper';

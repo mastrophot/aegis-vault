@@ -9,9 +9,14 @@
  * - On-chain telemetry persistence (`record_sweep_telemetry`) + multi-tenant `web/telemetry.json` mirror
  */
 
-const fs = require('fs');
-const path = require('path');
-const crypto = require('crypto');
+let fs = null;
+let path = null;
+if (typeof process !== 'undefined' && !process.browser && typeof require !== 'undefined') {
+  try {
+    fs = require('fs');
+    path = require('path');
+  } catch (_) {}
+}
 const nearAPI = require('near-api-js');
 const { ethers } = require('ethers');
 const web3 = require('@solana/web3.js');
@@ -30,12 +35,14 @@ class AegisRelayerService {
     this.disableLocalFileCache = Boolean(config.disableLocalFileCache);
     this.credPath =
       config.credPath ||
-      (typeof __dirname !== 'undefined'
+      (typeof __dirname !== 'undefined' && path && typeof path.resolve === 'function'
         ? path.resolve(__dirname, `../.credentials/${this.relayerAccountId}.json`)
         : '');
     this.telemetryPath =
       config.telemetryPath ||
-      (typeof __dirname !== 'undefined' ? path.resolve(__dirname, '../web/telemetry.json') : '');
+      (typeof __dirname !== 'undefined' && path && typeof path.resolve === 'function'
+        ? path.resolve(__dirname, '../web/telemetry.json')
+        : '');
     this.nearRpcUrl =
       config.nearRpcUrl || process.env.NEAR_RPC_URL || 'https://test.rpc.fastnear.com';
     this.evmRpcUrl =
@@ -288,7 +295,7 @@ class AegisRelayerService {
           this._recentBlockHash
         );
         const encodedTx = tx.encode();
-        const txHashBytes = crypto.createHash('sha256').update(Buffer.from(encodedTx)).digest();
+        const txHashBytes = Buffer.from(ethers.sha256(Uint8Array.from(encodedTx)).slice(2), 'hex');
         txHashBase58 = nearAPI.utils.serialize.base_encode(txHashBytes);
         const sig = this._signerKeyPair.sign(txHashBytes);
         const signedTx = new nearAPI.transactions.SignedTransaction({
@@ -463,6 +470,9 @@ class AegisRelayerService {
    * Persist telemetry to multi-tenant `web/telemetry.json` without clobbering other vaults
    */
   writeLocalTelemetry(telemetryRecord) {
+    if (this.disableLocalFileCache || !fs || typeof fs.existsSync !== 'function' || !this.telemetryPath) {
+      return;
+    }
     let store = { vaults: {} };
     if (fs.existsSync(this.telemetryPath)) {
       try {
@@ -1267,7 +1277,7 @@ class AegisRelayerService {
   }
 }
 
-if (require.main === module) {
+if (typeof require !== 'undefined' && require.main === module) {
   const args = process.argv.slice(2);
   const service = new AegisRelayerService();
 
