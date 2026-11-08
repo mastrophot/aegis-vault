@@ -6828,7 +6828,7 @@ if (typeof window !== "undefined") {
 
     </section>
 
-    <!-- SECTION 3: Telegram & Email Notifications -->
+    <!-- SECTION 3: Telegram Push Notifications -->
     <section id="panel-alerts" class="tab-panel space-y-6 pt-6 border-t border-white/[0.08]">
       <div class="space-y-6">
 
@@ -6836,104 +6836,60 @@ if (typeof window !== "undefined") {
         <div class="space-y-1">
           <div class="flex items-center gap-2">
             <span class="w-2.5 h-2.5 rounded-full bg-nearGreen"></span>
-            <h3 class="text-lg sm:text-xl font-bold text-white tracking-tight">Push Notifications (Telegram &amp; Email)</h3>
+            <h3 class="text-lg sm:text-xl font-bold text-white tracking-tight">Telegram Push Notifications</h3>
           </div>
           <p class="text-xs sm:text-sm text-[#B0B9C9]">
-            Receive advance check-in reminders before your heartbeat timer expires.
+            Zero-metadata status reminders before your heartbeat timer or grace buffer expires.
           </p>
         </div>
 
-        <!-- Unified Notification Channels + Save Footer Card -->
+        <!-- Unified Telegram Card + Save Footer -->
         <div class="rounded-2xl bg-[#0B0D12] border border-white/[0.08] overflow-hidden shadow-card">
-          <div class="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-white/[0.08]">
-
-            <!-- Telegram Channel Column -->
-            <div class="p-6 space-y-5 flex flex-col justify-between">
-              <div class="space-y-4">
-                <div class="flex items-start justify-between gap-2">
-                  <div class="flex items-center gap-3">
-                    <div class="w-10 h-10 rounded-xl bg-[#229ED9]/10 text-[#229ED9] flex items-center justify-center font-bold shrink-0">
-                      <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69a.2.2 0 00-.05-.18c-.06-.05-.14-.03-.21-.02-.09.02-1.49.95-4.22 2.79-.4.27-.76.41-1.08.4-.36-.01-1.04-.2-1.55-.37-.63-.2-1.12-.31-1.08-.66.02-.18.27-.36.75-.55 2.93-1.28 4.88-2.12 5.86-2.54 2.79-1.19 3.37-1.4 3.75-1.4.08 0 .27.02.39.12.1.08.13.19.14.27-.01.06.01.24 0 .37z"/></svg>
-                    </div>
-                    <div>
-                      <h4 class="text-sm font-bold text-white">Telegram Bot Alerts</h4>
-                      <span class="text-xs text-[#A6B0C3]">Zero-metadata status pushes via <strong class="text-white font-mono">@aegis_vault_bot</strong></span>
-                    </div>
-                  </div>
-                  <span id="tgConnectionBadge" class="text-[10px] font-mono text-nearGreen bg-nearGreenMuted border border-nearGreen/30 px-2 py-0.5 rounded-full whitespace-nowrap">
-                    Live Bot
-                  </span>
+          <div class="p-6 space-y-5">
+            <div class="flex items-start justify-between gap-2">
+              <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-[#229ED9]/10 text-[#229ED9] flex items-center justify-center font-bold shrink-0">
+                  <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69a.2.2 0 00-.05-.18c-.06-.05-.14-.03-.21-.02-.09.02-1.49.95-4.22 2.79-.4.27-.76.41-1.08.4-.36-.01-1.04-.2-1.55-.37-.63-.2-1.12-.31-1.08-.66.02-.18.27-.36.75-.55 2.93-1.28 4.88-2.12 5.86-2.54 2.79-1.19 3.37-1.4 3.75-1.4.08 0 .27.02.39.12.1.08.13.19.14.27-.01.06.01.24 0 .37z"/></svg>
                 </div>
-
-                <div class="space-y-1.5">
-                  <div class="flex items-center justify-between gap-2">
-                    <label class="block text-xs font-mono uppercase text-[#A6B0C3] font-semibold">Telegram Username / Chat ID</label>
-                    <button type="button" onclick="openTelegramBotDeepLink()" class="text-[11px] font-mono font-bold text-[#229ED9] hover:text-[#45b6ec] transition flex items-center gap-1 cursor-pointer">
-                      <span>1. Start @aegis_vault_bot ↗</span>
-                    </button>
-                  </div>
-                  <div class="flex items-center rounded-xl bg-white/[0.02] border border-white/[0.08] focus-within:border-nearGreen transition overflow-hidden">
-                    <span class="px-3.5 py-2.5 text-xs font-mono font-bold text-[#A6B0C3] bg-white/[0.03] border-r border-white/[0.06]">
-                      @
-                    </span>
-                    <input id="tgUsernameInput" type="text" value="" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#6E788C] outline-none" placeholder="username or Chat ID">
-                  </div>
+                <div>
+                  <h4 class="text-sm font-bold text-white">Telegram Bot Alerts</h4>
+                  <span class="text-xs text-[#A6B0C3]">Direct status pushes via <strong class="text-white font-mono">@aegis_vault_bot</strong> (no wallet addresses, dates, or chains included)</span>
                 </div>
               </div>
+              <span id="tgConnectionBadge" class="text-[10px] font-mono text-nearGreen bg-nearGreenMuted border border-nearGreen/30 px-2.5 py-0.5 rounded-full whitespace-nowrap">
+                Live Bot
+              </span>
+            </div>
 
-              <div class="pt-3 border-t border-white/[0.06] flex items-center justify-between text-xs">
-                <span class="text-[#8C929D]">Test delivery:</span>
-                <button id="sendTestAlertBtn" onclick="sendTestAlert()" class="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-white font-mono text-xs border border-white/[0.08] transition flex items-center gap-1.5 cursor-pointer">
-                  <span>Send Test Ping</span>
+            <div class="space-y-1.5">
+              <div class="flex items-center justify-between gap-2">
+                <label class="block text-xs font-mono uppercase text-[#A6B0C3] font-semibold">Telegram Username / Chat ID</label>
+                <button type="button" onclick="openTelegramBotDeepLink()" class="text-xs font-mono font-bold text-[#229ED9] hover:text-[#45b6ec] transition flex items-center gap-1 cursor-pointer">
+                  <span>1. Start @aegis_vault_bot ↗</span>
                 </button>
               </div>
-            </div>
-
-            <!-- Email Channel Column -->
-            <div class="p-6 space-y-5 flex flex-col justify-between">
-              <div class="space-y-4">
-                <div class="flex items-start justify-between">
-                  <div class="flex items-center gap-3">
-                    <div class="w-10 h-10 rounded-xl bg-purple-500/10 text-purple-400 flex items-center justify-center font-bold shrink-0">
-                      <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" /></svg>
-                    </div>
-                    <div>
-                      <h4 class="text-sm font-bold text-white">Email Alerts</h4>
-                      <span class="text-xs text-[#8C929D]">Secondary channel if Telegram is muted</span>
-                    </div>
-                  </div>
-                  <span class="text-[10px] font-mono text-[#8C929D] bg-white/[0.04] px-2 py-0.5 rounded-full">
-                    Failover
-                  </span>
-                </div>
-
-                <div class="space-y-1.5">
-                  <label class="block text-xs font-mono uppercase text-[#8C929D] font-semibold">Backup Email Address</label>
-                  <div class="flex items-center rounded-xl bg-white/[0.02] border border-white/[0.08] focus-within:border-nearGreen transition overflow-hidden">
-                    <span class="px-3.5 py-2.5 text-xs text-[#8C929D] bg-white/[0.03] border-r border-white/[0.06]">
-                      ✉
-                    </span>
-                    <input id="emailAlertInput" type="text" value="" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none" placeholder="your-email@domain.com">
-                  </div>
-                </div>
-              </div>
-
-              <div class="pt-3 border-t border-white/[0.06] flex items-center justify-between text-xs">
-                <span class="text-[#8C929D]">Failover status:</span>
-                <span class="text-nearGreen font-mono font-medium">Standby &amp; Armed</span>
+              <div class="flex items-center rounded-xl bg-white/[0.02] border border-white/[0.08] focus-within:border-nearGreen transition overflow-hidden">
+                <span class="px-3.5 py-2.5 text-xs font-mono font-bold text-[#A6B0C3] bg-white/[0.03] border-r border-white/[0.06]">
+                  @
+                </span>
+                <input id="tgUsernameInput" type="text" value="" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#6E788C] outline-none" placeholder="username or Chat ID">
               </div>
             </div>
-
           </div>
 
-          <!-- Integrated Notification Action Footer -->
+          <!-- Integrated Action Footer -->
           <div class="border-t border-white/[0.08] bg-white/[0.015] p-5 flex flex-col sm:flex-row items-center justify-between gap-4">
             <div class="text-xs text-[#8C929D] text-center sm:text-left">
-              Alerts notify you before the check-in timer and grace buffer expire.
+              Click <strong class="text-white">1. Start @aegis_vault_bot</strong> once in Telegram, then save or send a test ping.
             </div>
-            <button onclick="saveAlertSettings()" class="bg-nearGreen hover:bg-nearGreenHover text-nearBlack font-extrabold py-2.5 px-6 rounded-xl text-xs sm:text-sm transition shadow-near-glow active:scale-98 whitespace-nowrap w-full sm:w-auto cursor-pointer">
-              Save Alert Preferences
-            </button>
+            <div class="flex items-center gap-3 w-full sm:w-auto justify-end">
+              <button id="sendTestAlertBtn" onclick="sendTestAlert()" class="px-4 py-2.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] text-white font-mono font-bold text-xs sm:text-sm border border-white/[0.08] transition flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer">
+                <span>Send Test Ping</span>
+              </button>
+              <button onclick="saveAlertSettings()" class="bg-nearGreen hover:bg-nearGreenHover text-nearBlack font-extrabold py-2.5 px-6 rounded-xl text-xs sm:text-sm transition shadow-near-glow active:scale-98 whitespace-nowrap cursor-pointer">
+                Save Telegram Alert
+              </button>
+            </div>
           </div>
         </div>
 
