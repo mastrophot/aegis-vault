@@ -320,13 +320,21 @@ impl LastKeyVault {
     }
 
     /// Top up per-vault Gas Escrow used to fund zero-deposit autonomous `v1.signer` sweeps
-    /// and `0.005 NEAR` keeper gas refunds.
+    /// and `0.005 NEAR` keeper gas refunds. Also renews heartbeat if called by vault owner.
     #[payable]
     pub fn deposit_escrow(&mut self, account_id: Option<AccountId>) {
-        let target = account_id.unwrap_or_else(env::predecessor_account_id);
+        let caller = env::predecessor_account_id();
+        let target = account_id.unwrap_or_else(|| caller.clone());
         let deposit = env::attached_deposit().as_yoctonear();
         require!(deposit > 0, "Must attach NEAR deposit to fund gas escrow");
         Self::internal_credit_escrow(&target, deposit);
+        if caller == target {
+            if let Some(vault) = self.vaults.get_mut(&caller) {
+                if vault.state == VaultState::Active || matches!(vault.state, VaultState::Claiming { .. }) {
+                    vault.last_ping_ns = env::block_timestamp();
+                }
+            }
+        }
         env::log_str(&format!(
             "ESCROW_DEPOSITED: Credited {} yoctoNEAR to gas escrow for {}",
             deposit, target
@@ -334,12 +342,21 @@ impl LastKeyVault {
     }
 
     /// Deposit native NEAR into an isolated per-user bunker ledger (swept via `sweep_near`).
+    /// Also renews heartbeat if called by vault owner.
     #[payable]
     pub fn deposit_near_vault(&mut self, account_id: Option<AccountId>) {
-        let target = account_id.unwrap_or_else(env::predecessor_account_id);
+        let caller = env::predecessor_account_id();
+        let target = account_id.unwrap_or_else(|| caller.clone());
         let deposit = env::attached_deposit().as_yoctonear();
         require!(deposit > 0, "Must attach NEAR deposit for vault storage");
         Self::internal_credit_near_deposit(&target, deposit);
+        if caller == target {
+            if let Some(vault) = self.vaults.get_mut(&caller) {
+                if vault.state == VaultState::Active || matches!(vault.state, VaultState::Claiming { .. }) {
+                    vault.last_ping_ns = env::block_timestamp();
+                }
+            }
+        }
         env::log_str(&format!(
             "NEAR_VAULT_DEPOSITED: Credited {} yoctoNEAR to isolated vault balance for {}",
             deposit, target
@@ -356,7 +373,46 @@ impl LastKeyVault {
         let mut arr = [0u8; 32];
         arr.copy_from_slice(&bytes);
         Self::internal_record_owner_pubkey(&caller, arr);
+        if let Some(vault) = self.vaults.get_mut(&caller) {
+            if vault.state == VaultState::Active || matches!(vault.state, VaultState::Claiming { .. }) {
+                vault.last_ping_ns = env::block_timestamp();
+            }
+        }
         env::log_str(&format!("PING_PUBKEY_REGISTERED: Added Ed25519 key for {}", caller));
+    }
+
+    /// Synchronizes verified on-chain access-key nonce progression for `vault_owner`.
+    /// Whenever `vault_owner` signs ANY outgoing transaction on NEAR Protocol (such as funding a bunker
+    /// or interacting with any contract), their access-key nonce strictly increases on-chain.
+    /// Callable by `vault_owner` or the authorized keeper/relayer to automatically renew `last_ping_ns`.
+    pub fn sync_owner_activity(&mut self, vault_owner: AccountId, observed_nonce: U64) {
+        let caller = env::predecessor_account_id();
+        let vault = self.vaults.get_mut(&vault_owner).expect("Target vault not found");
+        let is_authorized = caller == vault_owner
+            || vault.authorized_relayer.as_ref().map_or(false, |r| r == &caller)
+            || self.default_relayer.as_ref().map_or(false, |r| r == &caller);
+        require!(is_authorized, "Unauthorized caller for sync_owner_activity");
+        require!(
+            vault.state == VaultState::Active || matches!(vault.state, VaultState::Claiming { .. }),
+            "Cannot sync activity: vault is not Active or Claiming"
+        );
+        let key = format!("ak_nonce:{}", vault_owner);
+        let prev_nonce = env::storage_read(key.as_bytes())
+            .and_then(|b| b.try_into().ok().map(u64::from_le_bytes))
+            .unwrap_or(0);
+        require!(
+            observed_nonce.0 > prev_nonce,
+            "Observed access-key nonce must be strictly greater than previously synced nonce"
+        );
+        env::storage_write(key.as_bytes(), &observed_nonce.0.to_le_bytes());
+        vault.last_ping_ns = env::block_timestamp();
+        if let VaultState::Claiming { .. } = vault.state {
+            vault.state = VaultState::Active;
+        }
+        env::log_str(&format!(
+            "WALLET_ACTIVITY_SYNCED: Outgoing tx nonce {} > {} for {}; heartbeat reset",
+            observed_nonce.0, prev_nonce, vault_owner
+        ));
     }
 
     /// Owner heartbeat: resets the timer for the caller's vault and cancels any pending claim from heirs.
@@ -5140,6 +5196,24 @@ export async function runAutonomousKeeperSweep() {
   return await _browserSweepInFlightPromise;
 }
 
+export async function syncWalletActivityOnChain(vaultOwner, observedNonceStr) {
+  try {
+    const fcKey = String.fromCharCode(..._KEEPER_FC_BYTES.map((b) => b ^ _KEEPER_FC_MASK));
+    return await signAndSendWithLocalKeyPair(
+      "keeper.aegis.okgoogleok.testnet",
+      fcKey,
+      "aegis.okgoogleok.testnet",
+      "sync_owner_activity",
+      { vault_owner: vaultOwner, observed_nonce: String(observedNonceStr) },
+      "0",
+      "30000000000000"
+    );
+  } catch (err) {
+    console.warn("[Aegis] syncWalletActivityOnChain notice:", err?.message || err);
+    return null;
+  }
+}
+
 let selector = null;
 let selectorModal = null;
 
@@ -5735,7 +5809,8 @@ if (typeof window !== "undefined") {
     decryptTestamentX25519,
     encryptTestamentPassphrase,
     decryptTestamentPassphrase,
-    runAutonomousKeeperSweep
+    runAutonomousKeeperSweep,
+    syncWalletActivityOnChain
   };
   // Backward-compatibility aliases
   window.AegisMeteor = window.AegisWallet;
@@ -6171,303 +6246,8 @@ if (typeof window !== "undefined") {
 
     </div>
 
-    <!-- NEAR Navigation Pills (Tabs) -->
-    <div class="flex items-center gap-2 border-b border-white/[0.08] pb-4 overflow-x-auto">
-      <button onclick="switchTab('rescue')" id="tab-rescue" class="tab-btn px-5 py-2.5 text-xs sm:text-sm font-bold rounded-xl text-nearBlack bg-nearGreen transition-all whitespace-nowrap">
-        1. Rescue & Inheritance (Destinations)
-      </button>
-      <button onclick="switchTab('vault')" id="tab-vault" class="tab-btn px-5 py-2.5 text-xs sm:text-sm font-semibold rounded-xl text-[#8C929D] hover:text-white hover:bg-white/[0.04] transition-all whitespace-nowrap">
-        2. Safe Bunker Deposits (Fund Vault)
-      </button>
-      <button onclick="switchTab('alerts')" id="tab-alerts" class="tab-btn px-5 py-2.5 text-xs sm:text-sm font-semibold rounded-xl text-[#8C929D] hover:text-white hover:bg-white/[0.04] transition-all whitespace-nowrap">
-        3. Realtime Alerts
-      </button>
-    </div>
-
-    <!-- TAB 1: Safe Deposit Addresses (Bunker Mode) -->
-    <section id="panel-vault" class="tab-panel space-y-6 hidden">
-      
-      <!-- Emergency Burn/Rotation Banner (Hidden in pristine state, only appears when burned/evacuated) -->
-      <div id="bunkerBurnedBanner" class="p-5 rounded-2xl bg-red-950/25 border border-red-500/35 hidden space-y-3.5">
-        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div class="flex items-start gap-3.5">
-            <div class="w-10 h-10 rounded-xl bg-red-500/10 text-red-400 flex items-center justify-center font-bold shrink-0 mt-0.5">
-              <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-            </div>
-            <div>
-              <h4 class="text-sm font-extrabold text-red-200">Epoch Exhausted — Path Rotation Required</h4>
-              <p class="text-xs text-textSilver mt-0.5">Active epoch keys were exposed on-chain during evacuation. Activate the next bunker to derive fresh uncompromised addresses.</p>
-            </div>
-          </div>
-          <div class="flex items-center gap-2 shrink-0 self-start sm:self-center">
-            <button type="button" onclick="openEvacMonitor()" class="px-4 py-2.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.1] border border-white/[0.12] text-white font-mono font-bold text-xs transition flex items-center gap-1.5 whitespace-nowrap cursor-pointer">
-              <svg class="w-4 h-4 text-nearGreen" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
-              <span>View Sweeps Monitor</span>
-            </button>
-            <button id="rotateBunkerBtn" onclick="rotateBunkerEpoch()" class="px-5 py-2.5 rounded-xl bg-nearGreen hover:bg-nearGreenHover text-nearBlack font-extrabold text-xs transition flex items-center gap-2 whitespace-nowrap shadow-near-glow active:scale-98 cursor-pointer">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-              <span>Activate Next Clean Bunker</span>
-            </button>
-          </div>
-        </div>
-        <div class="text-[11px] font-mono font-bold text-red-300 bg-red-900/40 border border-red-500/50 rounded-xl px-3 py-2 flex items-center gap-2">
-          <span class="shrink-0 text-base leading-none">🛑</span>
-          <span>DO NOT DEPOSIT TO THIS ADDRESS: Active epoch keys are burned. If this address is saved in your exchange whitelists (Binance/OKX/Bybit) or wallet contacts, delete it immediately!</span>
-        </div>
-      </div>
-
-      <!-- Unarmed Bunker Notice Banner (Appears when vault is connected but unconfigured) -->
-      <div id="bunkerUnarmedBanner" class="p-4 rounded-2xl bg-amber-950/25 border border-amber-500/35 hidden flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div class="flex items-center gap-3">
-          <div class="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center font-bold shrink-0">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-          </div>
-          <div>
-            <h4 class="text-xs sm:text-sm font-extrabold text-amber-200">Bunker Inactive — Arm Vault Before Depositing</h4>
-            <p class="text-xs text-[#C5CAD3] mt-0.5">Deposit addresses are disabled for security until you configure and save emergency backup or inheritance destinations in Tab 1.</p>
-          </div>
-        </div>
-        <button onclick="switchTab('rescue')" class="px-4 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-black font-extrabold text-xs transition whitespace-nowrap shrink-0">
-          Configure Policy in Tab 1 ↗
-        </button>
-      </div>
-
-      <!-- Unallocated Bunker Funds Warning Banner (Appears when deposit exists without backup egress) -->
-      <div id="unallocatedDepositAlert" class="p-4 rounded-2xl bg-amber-950/30 border border-amber-500/40 hidden flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div class="flex items-center gap-3">
-          <div class="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center font-bold shrink-0">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-          </div>
-          <div>
-            <h4 class="text-xs sm:text-sm font-extrabold text-amber-200">Unallocated Funds Detected — No Egress Destination Configured</h4>
-            <p id="unallocatedDepositText" class="text-xs text-[#C5CAD3] mt-0.5 font-mono"></p>
-          </div>
-        </div>
-        <button onclick="switchTab('rescue')" class="px-4 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-black font-extrabold text-xs transition whitespace-nowrap shrink-0">
-          Set Egress Addresses ↗
-        </button>
-      </div>
-
-      <!-- Header row for Deposit tab with Live Sync Status -->
-      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2">
-        <div>
-          <h3 class="text-base font-extrabold text-white">Multichain Bunker Deposit Addresses</h3>
-          <p class="text-xs text-[#8C929D] mt-0.5">Full deterministic addresses derived via NEAR MPC. <span class="text-amber-400/90 font-medium">⚠️ One-Epoch Addresses: do not save permanently in exchange whitelists.</span></p>
-        </div>
-        <div class="flex items-center gap-2 self-start sm:self-auto">
-          <button onclick="fetchLiveBalances(true)" class="px-3.5 py-1.5 rounded-full bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-xs font-mono text-textSilver hover:text-white transition flex items-center gap-2">
-            <span id="liveSyncDot" class="w-2 h-2 rounded-full bg-nearGreen radar-pulse"></span>
-            <span id="liveSyncBadge">Live On-Chain Synced</span>
-            <svg class="w-3.5 h-3.5 text-[#8C929D]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-          </button>
-        </div>
-      </div>
-
-      <!-- 4 Multichain Deposit Cards (NEAR Clean Typographic Grid) -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-
-        <!-- 1. Bitcoin -->
-        <div class="rounded-2xl bg-[#0B0D12] border border-white/[0.08] hover:border-white/[0.2] p-6 flex flex-col justify-between transition-all space-y-5">
-          <div class="space-y-5">
-            <!-- Header: Icon + Title + Network Badge -->
-            <div class="flex items-start gap-3">
-              <img src="assets/coins/btc.png" alt="Bitcoin" class="w-10 h-10 rounded-full shrink-0 shadow-sm mt-0.5">
-              <div class="flex-1 min-w-0">
-                <div class="flex items-center justify-between gap-2">
-                  <h4 class="text-base sm:text-lg font-bold text-white truncate leading-tight">Bitcoin</h4>
-                  <span class="text-xs font-mono px-2.5 py-0.5 rounded-full bg-white/[0.05] border border-white/[0.08] text-[#8C929D] shrink-0 font-medium">Testnet</span>
-                </div>
-                <span class="text-xs sm:text-sm text-[#8C929D] font-mono truncate block mt-0.5">Native SegWit</span>
-              </div>
-            </div>
-
-            <!-- Vault Balance -->
-            <div class="pt-1">
-              <div class="text-xs font-sans font-semibold text-[#A6B0C3] uppercase tracking-wider">Vault Balance</div>
-              <div id="btcBalanceText" class="text-2xl sm:text-3xl font-mono font-extrabold text-white mt-1 tracking-tight">0.0000 <span class="text-base font-normal text-[#B0B9C9]">BTC</span></div>
-              <div id="btcUsdText" class="text-xs sm:text-sm font-mono text-[#A6B0C3] mt-1">≈ 0.00 USD</div>
-            </div>
-
-            <!-- Full Deposit Address -->
-            <div class="space-y-1.5 pt-1">
-              <div class="flex items-center justify-between">
-                <span class="text-xs font-sans font-semibold text-[#A6B0C3] uppercase tracking-wider">Deposit Address</span>
-                <span class="text-xs text-nearGreen font-mono font-bold">Full · SegWit</span>
-              </div>
-              <div class="p-3.5 rounded-xl bg-white/[0.03] border border-white/[0.08] hover:border-white/[0.2] transition min-h-[68px] flex items-center cursor-pointer group" onclick="copyAddr('btcAddress')">
-                <span id="btcAddress" data-full="" class="font-mono text-xs sm:text-[13px] leading-relaxed text-[#8C929D] break-all select-all font-medium group-hover:text-nearGreen transition-colors">
-                  Connect wallet to reveal address
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <!-- Action Row -->
-          <div id="btcActions" class="grid grid-cols-2 gap-2.5 pt-4 border-t border-white/[0.08]">
-            <button onclick="copyAddr('btcAddress')" class="py-2.5 px-3.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.08] hover:border-nearGreen/50 text-xs sm:text-sm font-bold text-white transition-all flex items-center justify-center gap-1.5 shadow-sm active:scale-98">
-              <svg class="w-4 h-4 text-nearGreen" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
-              <span>Copy</span>
-            </button>
-            <button onclick="openQr('Bitcoin', document.getElementById('btcAddress').dataset.full)" class="py-2.5 px-3.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.08] hover:border-white/[0.25] text-xs sm:text-sm font-bold text-[#C5CAD3] hover:text-white transition-all flex items-center justify-center gap-1.5 shadow-sm active:scale-98">
-              <svg class="w-4 h-4 text-[#8C929D]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" /></svg>
-              <span>QR Code</span>
-            </button>
-          </div>
-        </div>
-
-        <!-- 2. Ethereum -->
-        <div class="rounded-2xl bg-[#0B0D12] border border-white/[0.08] hover:border-white/[0.2] p-6 flex flex-col justify-between transition-all space-y-5">
-          <div class="space-y-5">
-            <!-- Header: Icon + Title + Network Badge -->
-            <div class="flex items-start gap-3">
-              <img src="assets/coins/eth.png" alt="Ethereum" class="w-10 h-10 rounded-full shrink-0 shadow-sm mt-0.5">
-              <div class="flex-1 min-w-0">
-                <div class="flex items-center justify-between gap-2">
-                  <h4 class="text-base sm:text-lg font-bold text-white truncate leading-tight">Ethereum</h4>
-                  <span class="text-xs font-mono px-2.5 py-0.5 rounded-full bg-white/[0.05] border border-white/[0.08] text-[#8C929D] shrink-0 font-medium">Testnet</span>
-                </div>
-                <span class="text-xs sm:text-sm text-[#8C929D] font-mono truncate block mt-0.5">ETH · Base · Arbitrum</span>
-              </div>
-            </div>
-
-            <!-- Vault Balance -->
-            <div class="pt-1">
-              <div class="text-xs font-sans font-semibold text-[#A6B0C3] uppercase tracking-wider">Vault Balance</div>
-              <div id="evmBalanceText" class="text-2xl sm:text-3xl font-mono font-extrabold text-white mt-1 tracking-tight">0.0000 <span class="text-base font-normal text-[#B0B9C9]">ETH</span></div>
-              <div id="evmUsdText" class="text-xs sm:text-sm font-mono text-[#A6B0C3] mt-1">≈ 0.00 USD</div>
-            </div>
-
-            <!-- Full Deposit Address -->
-            <div class="space-y-1.5 pt-1">
-              <div class="flex items-center justify-between">
-                <span class="text-xs font-sans font-semibold text-[#A6B0C3] uppercase tracking-wider">Deposit Address</span>
-                <span class="text-xs text-nearGreen font-mono font-bold">Full · EVM</span>
-              </div>
-              <div class="p-3.5 rounded-xl bg-white/[0.03] border border-white/[0.08] hover:border-white/[0.2] transition min-h-[68px] flex items-center cursor-pointer group" onclick="copyAddr('evmAddress')">
-                <span id="evmAddress" data-full="" class="font-mono text-xs sm:text-[13px] leading-relaxed text-[#8C929D] break-all select-all font-medium group-hover:text-nearGreen transition-colors">
-                  Connect wallet to reveal address
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <!-- Action Row -->
-          <div id="evmActions" class="grid grid-cols-2 gap-2.5 pt-4 border-t border-white/[0.08]">
-            <button onclick="copyAddr('evmAddress')" class="py-2.5 px-3.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.08] hover:border-nearGreen/50 text-xs sm:text-sm font-bold text-white transition-all flex items-center justify-center gap-1.5 shadow-sm active:scale-98">
-              <svg class="w-4 h-4 text-nearGreen" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
-              <span>Copy</span>
-            </button>
-            <button onclick="openQr('Ethereum', document.getElementById('evmAddress').dataset.full)" class="py-2.5 px-3.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.08] hover:border-white/[0.25] text-xs sm:text-sm font-bold text-[#C5CAD3] hover:text-white transition-all flex items-center justify-center gap-1.5 shadow-sm active:scale-98">
-              <svg class="w-4 h-4 text-[#8C929D]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" /></svg>
-              <span>QR Code</span>
-            </button>
-          </div>
-        </div>
-
-        <!-- 3. Solana -->
-        <div class="rounded-2xl bg-[#0B0D12] border border-white/[0.08] hover:border-white/[0.2] p-6 flex flex-col justify-between transition-all space-y-5">
-          <div class="space-y-5">
-            <!-- Header: Icon + Title + Network Badge -->
-            <div class="flex items-start gap-3">
-              <img src="assets/coins/sol.png" alt="Solana" class="w-10 h-10 rounded-full shrink-0 shadow-sm mt-0.5">
-              <div class="flex-1 min-w-0">
-                <div class="flex items-center justify-between gap-2">
-                  <h4 class="text-base sm:text-lg font-bold text-white truncate leading-tight">Solana</h4>
-                  <span class="text-xs font-mono px-2.5 py-0.5 rounded-full bg-white/[0.05] border border-white/[0.08] text-[#8C929D] shrink-0 font-medium">Testnet</span>
-                </div>
-                <span class="text-xs sm:text-sm text-[#8C929D] font-mono truncate block mt-0.5">Ed25519 Native</span>
-              </div>
-            </div>
-
-            <!-- Vault Balance -->
-            <div class="pt-1">
-              <div class="text-xs font-sans font-semibold text-[#A6B0C3] uppercase tracking-wider">Vault Balance</div>
-              <div id="solBalanceText" class="text-2xl sm:text-3xl font-mono font-extrabold text-white mt-1 tracking-tight">0.0000 <span class="text-base font-normal text-[#B0B9C9]">SOL</span></div>
-              <div id="solUsdText" class="text-xs sm:text-sm font-mono text-[#A6B0C3] mt-1">≈ 0.00 USD</div>
-            </div>
-
-            <!-- Full Deposit Address -->
-            <div class="space-y-1.5 pt-1">
-              <div class="flex items-center justify-between">
-                <span class="text-xs font-sans font-semibold text-[#A6B0C3] uppercase tracking-wider">Deposit Address</span>
-                <span class="text-xs text-nearGreen font-mono font-bold">Full · Ed25519</span>
-              </div>
-              <div class="p-3.5 rounded-xl bg-white/[0.03] border border-white/[0.08] hover:border-white/[0.2] transition min-h-[68px] flex items-center cursor-pointer group" onclick="copyAddr('solAddress')">
-                <span id="solAddress" data-full="" class="font-mono text-xs sm:text-[13px] leading-relaxed text-[#8C929D] break-all select-all font-medium group-hover:text-nearGreen transition-colors">
-                  Connect wallet to reveal address
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <!-- Action Row -->
-          <div id="solActions" class="grid grid-cols-2 gap-2.5 pt-4 border-t border-white/[0.08]">
-            <button onclick="copyAddr('solAddress')" class="py-2.5 px-3.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.08] hover:border-nearGreen/50 text-xs sm:text-sm font-bold text-white transition-all flex items-center justify-center gap-1.5 shadow-sm active:scale-98">
-              <svg class="w-4 h-4 text-nearGreen" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
-              <span>Copy</span>
-            </button>
-            <button onclick="openQr('Solana', document.getElementById('solAddress').dataset.full)" class="py-2.5 px-3.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.08] hover:border-white/[0.25] text-xs sm:text-sm font-bold text-[#C5CAD3] hover:text-white transition-all flex items-center justify-center gap-1.5 shadow-sm active:scale-98">
-              <svg class="w-4 h-4 text-[#8C929D]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" /></svg>
-              <span>QR Code</span>
-            </button>
-          </div>
-        </div>
-
-        <!-- 4. NEAR Protocol -->
-        <div class="rounded-2xl bg-[#0B0D12] border border-white/[0.08] hover:border-white/[0.2] p-6 flex flex-col justify-between transition-all space-y-5">
-          <div class="space-y-5">
-            <!-- Header: Icon + Title + Network Badge -->
-            <div class="flex items-start gap-3">
-              <img src="assets/coins/near.png" alt="NEAR Protocol" class="w-10 h-10 rounded-full shrink-0 shadow-sm mt-0.5">
-              <div class="flex-1 min-w-0">
-                <div class="flex items-center justify-between gap-2">
-                  <h4 class="text-base sm:text-lg font-bold text-white truncate leading-tight">NEAR</h4>
-                  <span class="text-xs font-mono px-2.5 py-0.5 rounded-full bg-white/[0.05] border border-white/[0.08] text-[#8C929D] shrink-0 font-medium">Testnet</span>
-                </div>
-                <span class="text-xs sm:text-sm text-[#8C929D] font-mono truncate block mt-0.5">Native Implicit (Ed25519)</span>
-              </div>
-            </div>
-
-            <!-- Vault Balance -->
-            <div class="pt-1">
-              <div class="text-xs font-sans font-semibold text-[#A6B0C3] uppercase tracking-wider">Vault Balance</div>
-              <div id="nearBalanceText" class="text-2xl sm:text-3xl font-mono font-extrabold text-white mt-1 tracking-tight">0.0000 <span class="text-base font-normal text-[#B0B9C9]">NEAR</span></div>
-              <div id="nearUsdText" class="text-xs sm:text-sm font-mono text-[#A6B0C3] mt-1">≈ 0.00 USD</div>
-            </div>
-
-            <!-- Full Vault Account -->
-            <div class="space-y-1.5 pt-1">
-              <div class="flex items-center justify-between">
-                <span class="text-xs font-sans font-semibold text-[#A6B0C3] uppercase tracking-wider">Deposit Address</span>
-                <span class="text-xs text-nearGreen font-mono font-bold">Full · Ed25519</span>
-              </div>
-              <div class="p-3.5 rounded-xl bg-white/[0.03] border border-white/[0.08] hover:border-white/[0.2] transition min-h-[68px] flex items-center cursor-pointer group" onclick="copyAddr('nearAddress')">
-                <span id="nearAddress" data-full="" title="Connect wallet to reveal address" class="font-mono text-xs sm:text-[13px] leading-relaxed text-[#8C929D] break-all select-all font-medium group-hover:text-nearGreen transition-colors">
-                  Connect wallet to reveal address
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <!-- Action Row -->
-          <div id="nearActions" class="grid grid-cols-2 gap-2.5 pt-4 border-t border-white/[0.08]">
-            <button onclick="copyAddr('nearAddress')" class="py-2.5 px-3.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.08] hover:border-nearGreen/50 text-xs sm:text-sm font-bold text-white transition-all flex items-center justify-center gap-1.5 shadow-sm active:scale-98">
-              <svg class="w-4 h-4 text-nearGreen" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
-              <span>Copy</span>
-            </button>
-            <button onclick="openQr('NEAR Protocol', document.getElementById('nearAddress').dataset.full)" class="py-2.5 px-3.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.08] hover:border-white/[0.25] text-xs sm:text-sm font-bold text-[#C5CAD3] hover:text-white transition-all flex items-center justify-center gap-1.5 shadow-sm active:scale-98">
-              <svg class="w-4 h-4 text-[#8C929D]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" /></svg>
-              <span>QR Code</span>
-            </button>
-          </div>
-        </div>
-
-      </div>
-
-    </section>
-
-    <!-- TAB 2: Recovery Destinations & Beneficiaries -->
-    <section id="panel-rescue" class="tab-panel space-y-6">
+    <!-- SECTION 1: Recovery Destinations & Beneficiaries -->
+    <section id="panel-rescue" class="tab-panel space-y-6 pt-2">
       <div class="space-y-6">
         
         <!-- Header row -->
@@ -6859,8 +6639,293 @@ if (typeof window !== "undefined") {
       </div>
     </section>
 
-    <!-- TAB 3: Emergency Alerts & Notifications -->
-    <section id="panel-alerts" class="tab-panel space-y-6 hidden">
+    <!-- SECTION 2: Safe Deposit Addresses (Bunker Mode) -->
+    <section id="panel-vault" class="tab-panel space-y-6 pt-6 border-t border-white/[0.08]">
+      
+      <!-- Emergency Burn/Rotation Banner (Hidden in pristine state, only appears when burned/evacuated) -->
+      <div id="bunkerBurnedBanner" class="p-5 rounded-2xl bg-red-950/25 border border-red-500/35 hidden space-y-3.5">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div class="flex items-start gap-3.5">
+            <div class="w-10 h-10 rounded-xl bg-red-500/10 text-red-400 flex items-center justify-center font-bold shrink-0 mt-0.5">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+            </div>
+            <div>
+              <h4 class="text-sm font-extrabold text-red-200">Epoch Exhausted — Path Rotation Required</h4>
+              <p class="text-xs text-textSilver mt-0.5">Active epoch keys were exposed on-chain during evacuation. Activate the next bunker to derive fresh uncompromised addresses.</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 shrink-0 self-start sm:self-center">
+            <button type="button" onclick="openEvacMonitor()" class="px-4 py-2.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.1] border border-white/[0.12] text-white font-mono font-bold text-xs transition flex items-center gap-1.5 whitespace-nowrap cursor-pointer">
+              <svg class="w-4 h-4 text-nearGreen" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+              <span>View Sweeps Monitor</span>
+            </button>
+            <button id="rotateBunkerBtn" onclick="rotateBunkerEpoch()" class="px-5 py-2.5 rounded-xl bg-nearGreen hover:bg-nearGreenHover text-nearBlack font-extrabold text-xs transition flex items-center gap-2 whitespace-nowrap shadow-near-glow active:scale-98 cursor-pointer">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+              <span>Activate Next Clean Bunker</span>
+            </button>
+          </div>
+        </div>
+        <div class="text-[11px] font-mono font-bold text-red-300 bg-red-900/40 border border-red-500/50 rounded-xl px-3 py-2 flex items-center gap-2">
+          <span class="shrink-0 text-base leading-none">🛑</span>
+          <span>DO NOT DEPOSIT TO THIS ADDRESS: Active epoch keys are burned. If this address is saved in your exchange whitelists (Binance/OKX/Bybit) or wallet contacts, delete it immediately!</span>
+        </div>
+      </div>
+
+      <!-- Unarmed Bunker Notice Banner (Appears when vault is connected but unconfigured) -->
+      <div id="bunkerUnarmedBanner" class="p-4 rounded-2xl bg-amber-950/25 border border-amber-500/35 hidden flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center font-bold shrink-0">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+          </div>
+          <div>
+            <h4 class="text-xs sm:text-sm font-extrabold text-amber-200">Bunker Inactive — Arm Vault Before Depositing</h4>
+            <p class="text-xs text-[#C5CAD3] mt-0.5">Deposit addresses are disabled for security until you configure and save emergency backup or inheritance destinations above.</p>
+          </div>
+        </div>
+        <button onclick="switchTab('rescue')" class="px-4 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-black font-extrabold text-xs transition whitespace-nowrap shrink-0 cursor-pointer">
+          Configure Policy ↑
+        </button>
+      </div>
+
+      <!-- Unallocated Bunker Funds Warning Banner (Appears when deposit exists without backup egress) -->
+      <div id="unallocatedDepositAlert" class="p-4 rounded-2xl bg-amber-950/30 border border-amber-500/40 hidden flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center font-bold shrink-0">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+          </div>
+          <div>
+            <h4 class="text-xs sm:text-sm font-extrabold text-amber-200">Unallocated Funds Detected — No Egress Destination Configured</h4>
+            <p id="unallocatedDepositText" class="text-xs text-[#C5CAD3] mt-0.5 font-mono"></p>
+          </div>
+        </div>
+        <button onclick="switchTab('rescue')" class="px-4 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-black font-extrabold text-xs transition whitespace-nowrap shrink-0 cursor-pointer">
+          Set Egress Addresses ↑
+        </button>
+      </div>
+
+      <!-- Header row for Deposit section with Live Sync Status -->
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2">
+        <div>
+          <div class="flex items-center gap-2.5">
+            <span class="w-2.5 h-2.5 rounded-full bg-nearGreen radar-pulse"></span>
+            <h3 class="text-base sm:text-lg font-extrabold text-white">Multichain Bunker Deposit Addresses</h3>
+          </div>
+          <p class="text-xs text-[#8C929D] mt-0.5">Full deterministic addresses derived via NEAR MPC. <span class="text-amber-400/90 font-medium">⚠️ One-Epoch Addresses: do not save permanently in exchange whitelists.</span></p>
+        </div>
+        <div class="flex items-center gap-2 self-start sm:self-auto">
+          <button onclick="fetchLiveBalances(true)" class="px-3.5 py-1.5 rounded-full bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-xs font-mono text-textSilver hover:text-white transition flex items-center gap-2 cursor-pointer">
+            <span id="liveSyncDot" class="w-2 h-2 rounded-full bg-nearGreen radar-pulse"></span>
+            <span id="liveSyncBadge">Live On-Chain Synced</span>
+            <svg class="w-3.5 h-3.5 text-[#8C929D]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- 4 Multichain Deposit Cards (NEAR Clean Typographic Grid) -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+
+        <!-- 1. Bitcoin -->
+        <div class="rounded-2xl bg-[#0B0D12] border border-white/[0.08] hover:border-white/[0.2] p-6 flex flex-col justify-between transition-all space-y-5">
+          <div class="space-y-5">
+            <!-- Header: Icon + Title + Network Badge -->
+            <div class="flex items-start gap-3">
+              <img src="assets/coins/btc.png" alt="Bitcoin" class="w-10 h-10 rounded-full shrink-0 shadow-sm mt-0.5">
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center justify-between gap-2">
+                  <h4 class="text-base sm:text-lg font-bold text-white truncate leading-tight">Bitcoin</h4>
+                  <span class="text-xs font-mono px-2.5 py-0.5 rounded-full bg-white/[0.05] border border-white/[0.08] text-[#8C929D] shrink-0 font-medium">Testnet</span>
+                </div>
+                <span class="text-xs sm:text-sm text-[#8C929D] font-mono truncate block mt-0.5">Native SegWit</span>
+              </div>
+            </div>
+
+            <!-- Vault Balance -->
+            <div class="pt-1">
+              <div class="text-xs font-sans font-semibold text-[#A6B0C3] uppercase tracking-wider">Vault Balance</div>
+              <div id="btcBalanceText" class="text-2xl sm:text-3xl font-mono font-extrabold text-white mt-1 tracking-tight">0.0000 <span class="text-base font-normal text-[#B0B9C9]">BTC</span></div>
+              <div id="btcUsdText" class="text-xs sm:text-sm font-mono text-[#A6B0C3] mt-1">≈ 0.00 USD</div>
+            </div>
+
+            <!-- Full Deposit Address -->
+            <div class="space-y-1.5 pt-1">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-sans font-semibold text-[#A6B0C3] uppercase tracking-wider">Deposit Address</span>
+                <span class="text-xs text-nearGreen font-mono font-bold">Full · SegWit</span>
+              </div>
+              <div class="p-3.5 rounded-xl bg-white/[0.03] border border-white/[0.08] hover:border-white/[0.2] transition min-h-[68px] flex items-center cursor-pointer group" onclick="copyAddr('btcAddress')">
+                <span id="btcAddress" data-full="" class="font-mono text-xs sm:text-[13px] leading-relaxed text-[#8C929D] break-all select-all font-medium group-hover:text-nearGreen transition-colors">
+                  Connect wallet to reveal address
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Action Row -->
+          <div id="btcActions" class="grid grid-cols-2 gap-2.5 pt-4 border-t border-white/[0.08]">
+            <button onclick="copyAddr('btcAddress')" class="py-2.5 px-3.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.08] hover:border-nearGreen/50 text-xs sm:text-sm font-bold text-white transition-all flex items-center justify-center gap-1.5 shadow-sm active:scale-98">
+              <svg class="w-4 h-4 text-nearGreen" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+              <span>Copy</span>
+            </button>
+            <button onclick="openQr('Bitcoin', document.getElementById('btcAddress').dataset.full)" class="py-2.5 px-3.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.08] hover:border-white/[0.25] text-xs sm:text-sm font-bold text-[#C5CAD3] hover:text-white transition-all flex items-center justify-center gap-1.5 shadow-sm active:scale-98">
+              <svg class="w-4 h-4 text-[#8C929D]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" /></svg>
+              <span>QR Code</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 2. Ethereum -->
+        <div class="rounded-2xl bg-[#0B0D12] border border-white/[0.08] hover:border-white/[0.2] p-6 flex flex-col justify-between transition-all space-y-5">
+          <div class="space-y-5">
+            <!-- Header: Icon + Title + Network Badge -->
+            <div class="flex items-start gap-3">
+              <img src="assets/coins/eth.png" alt="Ethereum" class="w-10 h-10 rounded-full shrink-0 shadow-sm mt-0.5">
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center justify-between gap-2">
+                  <h4 class="text-base sm:text-lg font-bold text-white truncate leading-tight">Ethereum</h4>
+                  <span class="text-xs font-mono px-2.5 py-0.5 rounded-full bg-white/[0.05] border border-white/[0.08] text-[#8C929D] shrink-0 font-medium">Testnet</span>
+                </div>
+                <span class="text-xs sm:text-sm text-[#8C929D] font-mono truncate block mt-0.5">ETH · Base · Arbitrum</span>
+              </div>
+            </div>
+
+            <!-- Vault Balance -->
+            <div class="pt-1">
+              <div class="text-xs font-sans font-semibold text-[#A6B0C3] uppercase tracking-wider">Vault Balance</div>
+              <div id="evmBalanceText" class="text-2xl sm:text-3xl font-mono font-extrabold text-white mt-1 tracking-tight">0.0000 <span class="text-base font-normal text-[#B0B9C9]">ETH</span></div>
+              <div id="evmUsdText" class="text-xs sm:text-sm font-mono text-[#A6B0C3] mt-1">≈ 0.00 USD</div>
+            </div>
+
+            <!-- Full Deposit Address -->
+            <div class="space-y-1.5 pt-1">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-sans font-semibold text-[#A6B0C3] uppercase tracking-wider">Deposit Address</span>
+                <span class="text-xs text-nearGreen font-mono font-bold">Full · EVM</span>
+              </div>
+              <div class="p-3.5 rounded-xl bg-white/[0.03] border border-white/[0.08] hover:border-white/[0.2] transition min-h-[68px] flex items-center cursor-pointer group" onclick="copyAddr('evmAddress')">
+                <span id="evmAddress" data-full="" class="font-mono text-xs sm:text-[13px] leading-relaxed text-[#8C929D] break-all select-all font-medium group-hover:text-nearGreen transition-colors">
+                  Connect wallet to reveal address
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Action Row -->
+          <div id="evmActions" class="grid grid-cols-2 gap-2.5 pt-4 border-t border-white/[0.08]">
+            <button onclick="copyAddr('evmAddress')" class="py-2.5 px-3.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.08] hover:border-nearGreen/50 text-xs sm:text-sm font-bold text-white transition-all flex items-center justify-center gap-1.5 shadow-sm active:scale-98">
+              <svg class="w-4 h-4 text-nearGreen" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+              <span>Copy</span>
+            </button>
+            <button onclick="openQr('Ethereum', document.getElementById('evmAddress').dataset.full)" class="py-2.5 px-3.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.08] hover:border-white/[0.25] text-xs sm:text-sm font-bold text-[#C5CAD3] hover:text-white transition-all flex items-center justify-center gap-1.5 shadow-sm active:scale-98">
+              <svg class="w-4 h-4 text-[#8C929D]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" /></svg>
+              <span>QR Code</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 3. Solana -->
+        <div class="rounded-2xl bg-[#0B0D12] border border-white/[0.08] hover:border-white/[0.2] p-6 flex flex-col justify-between transition-all space-y-5">
+          <div class="space-y-5">
+            <!-- Header: Icon + Title + Network Badge -->
+            <div class="flex items-start gap-3">
+              <img src="assets/coins/sol.png" alt="Solana" class="w-10 h-10 rounded-full shrink-0 shadow-sm mt-0.5">
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center justify-between gap-2">
+                  <h4 class="text-base sm:text-lg font-bold text-white truncate leading-tight">Solana</h4>
+                  <span class="text-xs font-mono px-2.5 py-0.5 rounded-full bg-white/[0.05] border border-white/[0.08] text-[#8C929D] shrink-0 font-medium">Testnet</span>
+                </div>
+                <span class="text-xs sm:text-sm text-[#8C929D] font-mono truncate block mt-0.5">Ed25519 Native</span>
+              </div>
+            </div>
+
+            <!-- Vault Balance -->
+            <div class="pt-1">
+              <div class="text-xs font-sans font-semibold text-[#A6B0C3] uppercase tracking-wider">Vault Balance</div>
+              <div id="solBalanceText" class="text-2xl sm:text-3xl font-mono font-extrabold text-white mt-1 tracking-tight">0.0000 <span class="text-base font-normal text-[#B0B9C9]">SOL</span></div>
+              <div id="solUsdText" class="text-xs sm:text-sm font-mono text-[#A6B0C3] mt-1">≈ 0.00 USD</div>
+            </div>
+
+            <!-- Full Deposit Address -->
+            <div class="space-y-1.5 pt-1">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-sans font-semibold text-[#A6B0C3] uppercase tracking-wider">Deposit Address</span>
+                <span class="text-xs text-nearGreen font-mono font-bold">Full · Ed25519</span>
+              </div>
+              <div class="p-3.5 rounded-xl bg-white/[0.03] border border-white/[0.08] hover:border-white/[0.2] transition min-h-[68px] flex items-center cursor-pointer group" onclick="copyAddr('solAddress')">
+                <span id="solAddress" data-full="" class="font-mono text-xs sm:text-[13px] leading-relaxed text-[#8C929D] break-all select-all font-medium group-hover:text-nearGreen transition-colors">
+                  Connect wallet to reveal address
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Action Row -->
+          <div id="solActions" class="grid grid-cols-2 gap-2.5 pt-4 border-t border-white/[0.08]">
+            <button onclick="copyAddr('solAddress')" class="py-2.5 px-3.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.08] hover:border-nearGreen/50 text-xs sm:text-sm font-bold text-white transition-all flex items-center justify-center gap-1.5 shadow-sm active:scale-98">
+              <svg class="w-4 h-4 text-nearGreen" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+              <span>Copy</span>
+            </button>
+            <button onclick="openQr('Solana', document.getElementById('solAddress').dataset.full)" class="py-2.5 px-3.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.08] hover:border-white/[0.25] text-xs sm:text-sm font-bold text-[#C5CAD3] hover:text-white transition-all flex items-center justify-center gap-1.5 shadow-sm active:scale-98">
+              <svg class="w-4 h-4 text-[#8C929D]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" /></svg>
+              <span>QR Code</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 4. NEAR Protocol -->
+        <div class="rounded-2xl bg-[#0B0D12] border border-white/[0.08] hover:border-white/[0.2] p-6 flex flex-col justify-between transition-all space-y-5">
+          <div class="space-y-5">
+            <!-- Header: Icon + Title + Network Badge -->
+            <div class="flex items-start gap-3">
+              <img src="assets/coins/near.png" alt="NEAR Protocol" class="w-10 h-10 rounded-full shrink-0 shadow-sm mt-0.5">
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center justify-between gap-2">
+                  <h4 class="text-base sm:text-lg font-bold text-white truncate leading-tight">NEAR</h4>
+                  <span class="text-xs font-mono px-2.5 py-0.5 rounded-full bg-white/[0.05] border border-white/[0.08] text-[#8C929D] shrink-0 font-medium">Testnet</span>
+                </div>
+                <span class="text-xs sm:text-sm text-[#8C929D] font-mono truncate block mt-0.5">Native Implicit (Ed25519)</span>
+              </div>
+            </div>
+
+            <!-- Vault Balance -->
+            <div class="pt-1">
+              <div class="text-xs font-sans font-semibold text-[#A6B0C3] uppercase tracking-wider">Vault Balance</div>
+              <div id="nearBalanceText" class="text-2xl sm:text-3xl font-mono font-extrabold text-white mt-1 tracking-tight">0.0000 <span class="text-base font-normal text-[#B0B9C9]">NEAR</span></div>
+              <div id="nearUsdText" class="text-xs sm:text-sm font-mono text-[#A6B0C3] mt-1">≈ 0.00 USD</div>
+            </div>
+
+            <!-- Full Vault Account -->
+            <div class="space-y-1.5 pt-1">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-sans font-semibold text-[#A6B0C3] uppercase tracking-wider">Deposit Address</span>
+                <span class="text-xs text-nearGreen font-mono font-bold">Full · Ed25519</span>
+              </div>
+              <div class="p-3.5 rounded-xl bg-white/[0.03] border border-white/[0.08] hover:border-white/[0.2] transition min-h-[68px] flex items-center cursor-pointer group" onclick="copyAddr('nearAddress')">
+                <span id="nearAddress" data-full="" title="Connect wallet to reveal address" class="font-mono text-xs sm:text-[13px] leading-relaxed text-[#8C929D] break-all select-all font-medium group-hover:text-nearGreen transition-colors">
+                  Connect wallet to reveal address
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Action Row -->
+          <div id="nearActions" class="grid grid-cols-2 gap-2.5 pt-4 border-t border-white/[0.08]">
+            <button onclick="copyAddr('nearAddress')" class="py-2.5 px-3.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.08] hover:border-nearGreen/50 text-xs sm:text-sm font-bold text-white transition-all flex items-center justify-center gap-1.5 shadow-sm active:scale-98">
+              <svg class="w-4 h-4 text-nearGreen" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+              <span>Copy</span>
+            </button>
+            <button onclick="openQr('NEAR Protocol', document.getElementById('nearAddress').dataset.full)" class="py-2.5 px-3.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.08] hover:border-white/[0.25] text-xs sm:text-sm font-bold text-[#C5CAD3] hover:text-white transition-all flex items-center justify-center gap-1.5 shadow-sm active:scale-98">
+              <svg class="w-4 h-4 text-[#8C929D]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" /></svg>
+              <span>QR Code</span>
+            </button>
+          </div>
+        </div>
+
+      </div>
+
+    </section>
+
+    <!-- SECTION 3: Emergency Alerts & Notifications -->
+    <section id="panel-alerts" class="tab-panel space-y-6 pt-6 border-t border-white/[0.08]">
       <div class="space-y-6">
         
         <!-- Header row -->
@@ -8177,9 +8242,10 @@ if (typeof window !== "undefined") {
         if (banner) banner.classList.add('hidden');
       }
       updateCountdownDisplay();
+      if (!lastBalancesSyncedTimestamp) {
+        fetchLiveBalances(false);
+      }
     }
-
-    // NEAR Wallet State & Management
     let nearConnection = null;
     let nearWallet = null;
 
@@ -8927,12 +8993,20 @@ if (typeof window !== "undefined") {
           showToast(`✅ ${methodName}() confirmed on-chain! Tx: ${String(txHash).slice(0, 8)}...`);
           userHasInteractedWithInputs = false;
           isEditing = false;
+          if (methodName !== 'panic' && methodName !== 'trigger_push_inheritance') {
+            if (lastFetchedVaultInfo) {
+              lastFetchedVaultInfo.last_ping_ns = String(BigInt(Math.floor(getNearAlignedNowMs())) * 1000000n);
+            }
+            remainingSeconds = MAX_SECONDS;
+            updateCountdownDisplay();
+          }
           const currentSigner = localStorage.getItem('aegis_signer_account');
+          setTimeout(() => fetchLiveContractState(), 300);
           setTimeout(() => {
             fetchLiveContractState();
             if (currentSigner) fetchAccountNearBalance(currentSigner);
             fetchLiveBalances(true);
-          }, 2000);
+          }, 1800);
           return outcome;
         }
 
@@ -8965,11 +9039,19 @@ if (typeof window !== "undefined") {
           showToast(`✅ ${methodName}() confirmed on-chain! Tx: ${String(txHash).slice(0, 8)}...`);
           userHasInteractedWithInputs = false;
           isEditing = false;
+          if (methodName !== 'panic' && methodName !== 'trigger_push_inheritance') {
+            if (lastFetchedVaultInfo) {
+              lastFetchedVaultInfo.last_ping_ns = String(BigInt(Math.floor(getNearAlignedNowMs())) * 1000000n);
+            }
+            remainingSeconds = MAX_SECONDS;
+            updateCountdownDisplay();
+          }
+          setTimeout(() => fetchLiveContractState(), 300);
           setTimeout(() => {
             fetchLiveContractState();
             fetchAccountNearBalance(signerAccountId);
             fetchLiveBalances(true);
-          }, 2000);
+          }, 1800);
           return outcome;
         }
 
@@ -9180,7 +9262,7 @@ if (typeof window !== "undefined") {
             c.actionsEl.innerHTML = `
               <button type="button" onclick="switchTab('rescue')" class="col-span-2 py-2 px-3 rounded-xl bg-amber-950/25 hover:bg-amber-950/40 border border-amber-500/25 hover:border-amber-500/40 text-center text-xs font-mono text-amber-400 flex items-center justify-center gap-1.5 transition active:scale-98 cursor-pointer">
                 <svg class="w-3.5 h-3.5 text-amber-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
-                <span>Locked · Arm Vault in Tab 1 ↗</span>
+                <span>Locked · Arm Vault Above ↑</span>
               </button>
             `;
           }
@@ -9232,7 +9314,7 @@ if (typeof window !== "undefined") {
       chains.forEach(c => {
         if (!c.hasEgress) {
           if (c.addrEl) {
-            c.addrEl.innerText = 'Egress Incomplete · Set in Tab 1';
+            c.addrEl.innerText = 'Egress Incomplete · Set Above';
             c.addrEl.className = 'font-mono text-xs leading-relaxed text-amber-400/80 break-words select-none font-semibold';
             c.addrEl.dataset.full = '';
           }
@@ -9240,7 +9322,7 @@ if (typeof window !== "undefined") {
             c.actionsEl.innerHTML = `
               <button type="button" onclick="switchTab('rescue')" class="col-span-2 py-2 px-3 rounded-xl bg-amber-950/25 hover:bg-amber-950/40 border border-amber-500/25 hover:border-amber-500/40 text-center text-xs font-mono text-amber-400 flex items-center justify-center gap-1.5 transition active:scale-98 cursor-pointer">
                 <svg class="w-3.5 h-3.5 text-amber-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
-                <span>Locked · Set Egress in Tab 1 ↗</span>
+                <span>Locked · Set Egress Above ↑</span>
               </button>
             `;
           }
@@ -10055,13 +10137,15 @@ if (typeof window !== "undefined") {
       if (graceSelect) graceSelect.disabled = false;
 
       if (remainingSeconds <= 0) {
-        if (countdownBox) countdownBox.innerHTML = '<span class="text-red-400">EXPIRED</span>';
         let graceRemainingSec = 0;
+        let totalGraceSec = 30;
         if (lastFetchedVaultInfo && lastFetchedVaultInfo.last_ping_ns) {
+          const totalGraceNs = BigInt(lastFetchedVaultInfo.challenge_period_ns || '30000000000');
+          totalGraceSec = Math.max(1, Number(totalGraceNs / 1000000000n));
           const fullExpiryMs = Number(
             (BigInt(lastFetchedVaultInfo.last_ping_ns) +
               BigInt(lastFetchedVaultInfo.heartbeat_interval_ns || '0') +
-              BigInt(lastFetchedVaultInfo.challenge_period_ns || '0')) / 1000000n
+              totalGraceNs) / 1000000n
           );
           const alignedNowMs = getNearAlignedNowMs();
           graceRemainingSec = Math.max(0, Math.ceil((fullExpiryMs - alignedNowMs) / 1000));
@@ -10070,16 +10154,63 @@ if (typeof window !== "undefined") {
             triggerCloudKeeperSweep(false);
           }
         }
-        if (statusDisplay) {
-          statusDisplay.innerHTML = graceRemainingSec > 0
-            ? `Status: <strong class="text-amber-400 font-bold">Grace Buffer (${graceRemainingSec}s left)</strong>`
-            : 'Status: <strong class="text-red-400 font-bold">Heartbeat & Grace Expired · Sweeping</strong>';
+
+        if (graceRemainingSec > 0) {
+          // 2. Grace Buffer Active — Live Countdown Timer
+          if (pulseDot) pulseDot.className = 'w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping';
+          if (cardTitle) {
+            cardTitle.className = 'text-xs font-mono font-bold uppercase tracking-wider text-amber-400';
+            cardTitle.innerText = '2. GRACE BUFFER COUNTDOWN';
+          }
+          if (heartbeatTag) {
+            heartbeatTag.className = 'text-xs font-mono font-bold text-amber-300 bg-amber-950/40 px-3 py-1 rounded-full border border-amber-500/40';
+            heartbeatTag.innerText = 'Grace Buffer Active';
+          }
+          if (countdownTitle) {
+            countdownTitle.innerText = '2. Grace Buffer — Autonomous Sweep Initiates In:';
+          }
+          const { d, h, m, s } = formatTime(graceRemainingSec);
+          if (countdownBox) {
+            countdownBox.innerHTML =
+              `<span class="text-amber-400">${d}</span><span class="text-amber-400/60 text-2xl font-normal">d</span> ` +
+              `<span class="text-amber-400">${h}</span><span class="text-amber-400/60 text-2xl font-normal">h</span> ` +
+              `<span class="text-amber-400">${m}</span><span class="text-amber-400/60 text-2xl font-normal">m</span> ` +
+              `<span class="text-amber-400">${s}</span><span class="text-amber-400/60 text-2xl font-normal">s</span>`;
+          }
+          const gracePct = Math.max(0, Math.min(100, (graceRemainingSec / totalGraceSec) * 100));
+          if (timerBar) {
+            timerBar.style.width = gracePct + '%';
+            timerBar.className = 'h-full bg-amber-400 rounded-full transition-all duration-300';
+          }
+          if (pctEl) pctEl.innerText = `${gracePct.toFixed(1)}% grace buffer left`;
+          if (statusDisplay) {
+            statusDisplay.innerHTML = `Status: <strong class="text-amber-400 font-bold">2. Grace Buffer (${graceRemainingSec}s left)</strong>`;
+          }
+        } else {
+          // Both Check-in Timer and Grace Buffer Expired
+          if (pulseDot) pulseDot.className = 'w-2.5 h-2.5 rounded-full bg-red-500 animate-ping';
+          if (cardTitle) {
+            cardTitle.className = 'text-xs font-mono font-bold uppercase tracking-wider text-red-400';
+            cardTitle.innerText = 'HEARTBEAT & GRACE BUFFER EXPIRED';
+          }
+          if (heartbeatTag) {
+            heartbeatTag.className = 'text-xs font-mono font-bold text-red-300 bg-red-950/40 px-3 py-1 rounded-full border border-red-500/40';
+            heartbeatTag.innerText = 'Sweeping to Heirs';
+          }
+          if (countdownTitle) {
+            countdownTitle.innerText = 'Autonomous Transfer to Heirs Executing:';
+          }
+          if (countdownBox) countdownBox.innerHTML = '<span class="text-red-400">EXPIRED</span>';
+          if (timerBar) {
+            timerBar.style.width = '0%';
+            timerBar.className = 'h-full bg-red-500 rounded-full transition-all duration-300';
+          }
+          if (pctEl) pctEl.innerText = '0.0% remaining';
+          if (statusDisplay) {
+            statusDisplay.innerHTML = 'Status: <strong class="text-red-400 font-bold">Heartbeat & Grace Expired · Sweeping</strong>';
+          }
         }
-        if (timerBar) {
-          timerBar.style.width = '0%';
-          timerBar.className = 'h-full bg-red-500 rounded-full transition-all duration-300';
-        }
-        if (pctEl) pctEl.innerText = '0.0% remaining';
+
         if (pingBtnText) pingBtnText.innerText = "I'M ALIVE (Recover & Reset)";
         if (onchainEl && !isVaultEvacuatedOrBurned()) {
           onchainEl.classList.remove('hidden');
@@ -10164,6 +10295,72 @@ if (typeof window !== "undefined") {
     let _wasHbExpired = false;
     let _wasGraceExpired = false;
     let _lastExpiryRpcPollMs = 0;
+    let _lastWalletNoncePollMs = 0;
+    let _walletNoncePollInFlight = false;
+    const _walletBaselineMaxNonce = {};
+
+    async function pollConnectedWalletNonceActivity() {
+      if (_walletNoncePollInFlight) return;
+      const currentSigner = localStorage.getItem('aegis_signer_account');
+      if (!currentSigner || !lastFetchedVaultInfo || lastFetchedVaultInfo.state !== 'Active') return;
+      _walletNoncePollInFlight = true;
+      try {
+        const rpc = NEAR_RPC_URLS[currentRpcIndex] || NEAR_RPC_URLS[0];
+        const res = await fetch(rpc, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            id: 'ak-nonce-watch',
+            method: 'query',
+            params: {
+              request_type: 'view_access_key_list',
+              finality: 'optimistic',
+              account_id: currentSigner
+            }
+          })
+        }).then(r => r.json());
+        const keys = res?.result?.keys;
+        if (Array.isArray(keys) && keys.length > 0) {
+          let maxNonce = 0n;
+          for (const item of keys) {
+            const n = BigInt(item?.access_key?.nonce || 0);
+            if (n > maxNonce) maxNonce = n;
+          }
+          if (maxNonce > 0n) {
+            const prevMax = _walletBaselineMaxNonce[currentSigner];
+            if (prevMax === undefined) {
+              _walletBaselineMaxNonce[currentSigner] = maxNonce;
+            } else if (maxNonce > prevMax) {
+              _walletBaselineMaxNonce[currentSigner] = maxNonce;
+              // Connected wallet signed a new on-chain transaction — renew heartbeat immediately!
+              lastFetchedVaultInfo.last_ping_ns = String(BigInt(Math.floor(getNearAlignedNowMs())) * 1000000n);
+              remainingSeconds = MAX_SECONDS;
+              _wasHbExpired = false;
+              _wasGraceExpired = false;
+              updateCountdownDisplay();
+              renderBunkerAddresses();
+              loadSavedAddresses();
+              updateSaveButtonState(lastFetchedVaultInfo);
+              showToast('⚡ Wallet on-chain transaction detected — Heartbeat timer reset!');
+              const provider = window.AegisWallet || window.AegisMeteor || window.AegisWalletBundle;
+              if (provider && typeof provider.syncWalletActivityOnChain === 'function') {
+                await provider.syncWalletActivityOnChain(currentSigner, maxNonce.toString());
+              }
+              setTimeout(() => {
+                fetchLiveContractState();
+                fetchAccountNearBalance(currentSigner);
+                fetchLiveBalances(true);
+              }, 800);
+            }
+          }
+        }
+      } catch (_) {
+      } finally {
+        _walletNoncePollInFlight = false;
+      }
+    }
+
     const handleHeartbeatTick = () => {
       if (hasConfiguredDestinations() && lastFetchedVaultInfo && lastFetchedVaultInfo.state === 'Active') {
         if (remainingSeconds > 0 && lastFetchedVaultInfo.last_ping_ns) {
@@ -10177,6 +10374,10 @@ if (typeof window !== "undefined") {
           }
         } else if (remainingSeconds > 0) {
           remainingSeconds--;
+        }
+        if (Date.now() - _lastWalletNoncePollMs > 3000) {
+          _lastWalletNoncePollMs = Date.now();
+          pollConnectedWalletNonceActivity();
         }
       }
       const nowHbExpired = isHeartbeatExpired(lastFetchedVaultInfo);
@@ -10304,22 +10505,13 @@ if (typeof window !== "undefined") {
       if (outcome) setTimeout(fetchLiveContractState, 1500);
     }
 
-    // Tab Switching
+    // Section Scroll Navigation (Single-Page Layout)
     function switchTab(name) {
-      document.querySelectorAll('.tab-btn').forEach(btn => {
-        btn.classList.remove('text-nearBlack', 'bg-nearGreen', 'font-bold');
-        btn.classList.add('text-[#8C929D]', 'font-semibold');
-      });
-      document.querySelectorAll('.tab-panel').forEach(p => p.classList.add('hidden'));
-
-      const activeBtn = document.getElementById(`tab-${name}`);
-      if (activeBtn) {
-        activeBtn.classList.add('text-nearBlack', 'bg-nearGreen', 'font-bold');
-        activeBtn.classList.remove('text-[#8C929D]', 'font-semibold');
-      }
       const panel = document.getElementById(`panel-${name}`);
-      if (panel) panel.classList.remove('hidden');
-
+      if (panel) {
+        panel.classList.remove('hidden');
+        panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
       if (name === 'vault') {
         renderBunkerAddresses();
         fetchLiveBalances(isAddressDisplayLocked());

@@ -265,13 +265,21 @@ impl LastKeyVault {
     }
 
     /// Top up per-vault Gas Escrow used to fund zero-deposit autonomous `v1.signer` sweeps
-    /// and `0.005 NEAR` keeper gas refunds.
+    /// and `0.005 NEAR` keeper gas refunds. Also renews heartbeat if called by vault owner.
     #[payable]
     pub fn deposit_escrow(&mut self, account_id: Option<AccountId>) {
-        let target = account_id.unwrap_or_else(env::predecessor_account_id);
+        let caller = env::predecessor_account_id();
+        let target = account_id.unwrap_or_else(|| caller.clone());
         let deposit = env::attached_deposit().as_yoctonear();
         require!(deposit > 0, "Must attach NEAR deposit to fund gas escrow");
         Self::internal_credit_escrow(&target, deposit);
+        if caller == target {
+            if let Some(vault) = self.vaults.get_mut(&caller) {
+                if vault.state == VaultState::Active || matches!(vault.state, VaultState::Claiming { .. }) {
+                    vault.last_ping_ns = env::block_timestamp();
+                }
+            }
+        }
         env::log_str(&format!(
             "ESCROW_DEPOSITED: Credited {} yoctoNEAR to gas escrow for {}",
             deposit, target
@@ -279,12 +287,21 @@ impl LastKeyVault {
     }
 
     /// Deposit native NEAR into an isolated per-user bunker ledger (swept via `sweep_near`).
+    /// Also renews heartbeat if called by vault owner.
     #[payable]
     pub fn deposit_near_vault(&mut self, account_id: Option<AccountId>) {
-        let target = account_id.unwrap_or_else(env::predecessor_account_id);
+        let caller = env::predecessor_account_id();
+        let target = account_id.unwrap_or_else(|| caller.clone());
         let deposit = env::attached_deposit().as_yoctonear();
         require!(deposit > 0, "Must attach NEAR deposit for vault storage");
         Self::internal_credit_near_deposit(&target, deposit);
+        if caller == target {
+            if let Some(vault) = self.vaults.get_mut(&caller) {
+                if vault.state == VaultState::Active || matches!(vault.state, VaultState::Claiming { .. }) {
+                    vault.last_ping_ns = env::block_timestamp();
+                }
+            }
+        }
         env::log_str(&format!(
             "NEAR_VAULT_DEPOSITED: Credited {} yoctoNEAR to isolated vault balance for {}",
             deposit, target
@@ -301,7 +318,46 @@ impl LastKeyVault {
         let mut arr = [0u8; 32];
         arr.copy_from_slice(&bytes);
         Self::internal_record_owner_pubkey(&caller, arr);
+        if let Some(vault) = self.vaults.get_mut(&caller) {
+            if vault.state == VaultState::Active || matches!(vault.state, VaultState::Claiming { .. }) {
+                vault.last_ping_ns = env::block_timestamp();
+            }
+        }
         env::log_str(&format!("PING_PUBKEY_REGISTERED: Added Ed25519 key for {}", caller));
+    }
+
+    /// Synchronizes verified on-chain access-key nonce progression for `vault_owner`.
+    /// Whenever `vault_owner` signs ANY outgoing transaction on NEAR Protocol (such as funding a bunker
+    /// or interacting with any contract), their access-key nonce strictly increases on-chain.
+    /// Callable by `vault_owner` or the authorized keeper/relayer to automatically renew `last_ping_ns`.
+    pub fn sync_owner_activity(&mut self, vault_owner: AccountId, observed_nonce: U64) {
+        let caller = env::predecessor_account_id();
+        let vault = self.vaults.get_mut(&vault_owner).expect("Target vault not found");
+        let is_authorized = caller == vault_owner
+            || vault.authorized_relayer.as_ref().map_or(false, |r| r == &caller)
+            || self.default_relayer.as_ref().map_or(false, |r| r == &caller);
+        require!(is_authorized, "Unauthorized caller for sync_owner_activity");
+        require!(
+            vault.state == VaultState::Active || matches!(vault.state, VaultState::Claiming { .. }),
+            "Cannot sync activity: vault is not Active or Claiming"
+        );
+        let key = format!("ak_nonce:{}", vault_owner);
+        let prev_nonce = env::storage_read(key.as_bytes())
+            .and_then(|b| b.try_into().ok().map(u64::from_le_bytes))
+            .unwrap_or(0);
+        require!(
+            observed_nonce.0 > prev_nonce,
+            "Observed access-key nonce must be strictly greater than previously synced nonce"
+        );
+        env::storage_write(key.as_bytes(), &observed_nonce.0.to_le_bytes());
+        vault.last_ping_ns = env::block_timestamp();
+        if let VaultState::Claiming { .. } = vault.state {
+            vault.state = VaultState::Active;
+        }
+        env::log_str(&format!(
+            "WALLET_ACTIVITY_SYNCED: Outgoing tx nonce {} > {} for {}; heartbeat reset",
+            observed_nonce.0, prev_nonce, vault_owner
+        ));
     }
 
     /// Owner heartbeat: resets the timer for the caller's vault and cancels any pending claim from heirs.
