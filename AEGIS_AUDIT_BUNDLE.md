@@ -4259,8 +4259,7 @@ class AegisRelayerService {
 
     const epoch = vault.epoch;
     const destination = state === 'Evacuated' ? vault.backup : vault.heirs;
-    const actionLabel = state === 'Inheritance' ? 'Inheritance' : 'Evacuation';
-    let sweepMemo = `Aegis ${actionLabel}: ${vaultOwner} Epoch ${epoch}`;
+    let sweepMemo = '';
 
     if (state === 'Inheritance' && vault.heir_memo && vault.heir_memo.trim()) {
       sweepMemo = vault.heir_memo.trim();
@@ -10747,6 +10746,11 @@ if (typeof window !== "undefined") {
         const decBtn = document.getElementById('monitorDecryptBtn');
         if (!card || !payloadEl) return;
 
+        if (!isInheritanceMode) {
+          card.classList.add('hidden');
+          return;
+        }
+
         const rawMemo = (
           lastFetchedVaultInfo?.heir_memo ||
           window.currentEncryptedOnChainMemo ||
@@ -10754,12 +10758,12 @@ if (typeof window !== "undefined") {
           ''
         ).trim();
 
-        if (!rawMemo && !isInheritanceMode) {
+        if (!rawMemo) {
           card.classList.add('hidden');
           return;
         }
         card.classList.remove('hidden');
-        const shownMemo = rawMemo || `Aegis Inheritance: ${currentSigner || 'vault'} Epoch ${lastFetchedVaultInfo?.epoch ?? 0}`;
+        const shownMemo = rawMemo;
         payloadEl.innerText = shownMemo;
 
         const isEnc = shownMemo.startsWith('enc:x25519:') || shownMemo.startsWith('enc:aes256:');

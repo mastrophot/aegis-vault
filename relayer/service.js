@@ -527,8 +527,7 @@ class AegisRelayerService {
 
     const epoch = vault.epoch;
     const destination = state === 'Evacuated' ? vault.backup : vault.heirs;
-    const actionLabel = state === 'Inheritance' ? 'Inheritance' : 'Evacuation';
-    let sweepMemo = `Aegis ${actionLabel}: ${vaultOwner} Epoch ${epoch}`;
+    let sweepMemo = '';
 
     if (state === 'Inheritance' && vault.heir_memo && vault.heir_memo.trim()) {
       sweepMemo = vault.heir_memo.trim();

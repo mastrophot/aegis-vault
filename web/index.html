@@ -4836,6 +4836,11 @@
         const decBtn = document.getElementById('monitorDecryptBtn');
         if (!card || !payloadEl) return;
 
+        if (!isInheritanceMode) {
+          card.classList.add('hidden');
+          return;
+        }
+
         const rawMemo = (
           lastFetchedVaultInfo?.heir_memo ||
           window.currentEncryptedOnChainMemo ||
@@ -4843,12 +4848,12 @@
           ''
         ).trim();
 
-        if (!rawMemo && !isInheritanceMode) {
+        if (!rawMemo) {
           card.classList.add('hidden');
           return;
         }
         card.classList.remove('hidden');
-        const shownMemo = rawMemo || `Aegis Inheritance: ${currentSigner || 'vault'} Epoch ${lastFetchedVaultInfo?.epoch ?? 0}`;
+        const shownMemo = rawMemo;
         payloadEl.innerText = shownMemo;
 
         const isEnc = shownMemo.startsWith('enc:x25519:') || shownMemo.startsWith('enc:aes256:');
