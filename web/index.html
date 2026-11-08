@@ -1113,8 +1113,8 @@
               Optional off-chain notification targets prior to heartbeat expiry. Core Dead-Man's Switch & MPC sweeps execute 100% autonomously on-chain without relying on Telegram or email delivery.
             </p>
           </div>
-          <div id="tgStatusBadge" class="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/[0.04] border border-white/[0.08] text-xs font-mono text-[#DFE3E8]">
-            <span class="w-2 h-2 rounded-full bg-nearGreen radar-pulse"></span>
+          <div id="tgStatusBadge" class="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/[0.04] border border-white/[0.08] text-xs font-mono text-[#DFE3E8] whitespace-nowrap shrink-0 self-start sm:self-center">
+            <span class="w-2 h-2 rounded-full bg-nearGreen radar-pulse shrink-0"></span>
             <span>Relayer Bot: <strong class="text-nearGreen">Active</strong></span>
           </div>
         </div>
@@ -2773,6 +2773,7 @@
         updateWalletDisconnectedUI();
       }
 
+      if (typeof syncAlertSettingsUI === 'function') syncAlertSettingsUI();
       renderModalConnectedSummary();
     }
 
@@ -4034,17 +4035,9 @@
       const modalGraceEl = document.getElementById('modalGraceSelect');
       if (modalGraceEl) modalGraceEl.value = savedGracePref;
       
-      const savedTg = localStorage.getItem('aegis_tg');
-      const savedEmail = localStorage.getItem('aegis_email');
-      if (savedTg) document.getElementById('tgUsernameInput').value = savedTg.replace(/^@+/, '');
-      if (savedEmail) document.getElementById('emailAlertInput').value = savedEmail;
-      const badge = document.getElementById('tgStatusBadge');
-      if (badge && (savedTg || savedEmail)) {
-        badge.innerHTML = `
-          <span class="w-2 h-2 rounded-full bg-nearGreen radar-pulse"></span>
-          <span>Relayer: <strong class="text-nearGreen">${escapeHtml(savedTg || savedEmail)}</strong></span>
-        `;
-      }
+      localStorage.removeItem('aegis_tg');
+      localStorage.removeItem('aegis_email');
+      syncAlertSettingsUI();
 
       renderBunkerAddresses();
       loadSavedAddresses();
@@ -5432,19 +5425,51 @@
     }
 
     // Alert Settings & Test Dispatch Modal
-    function saveAlertSettings() {
-      const tg = document.getElementById('tgUsernameInput').value.trim();
-      const email = document.getElementById('emailAlertInput').value.trim();
-      localStorage.setItem('aegis_tg', tg);
-      localStorage.setItem('aegis_email', email);
-      showToast('Alert preferences saved successfully');
+    function syncAlertSettingsUI() {
+      const signer = localStorage.getItem('aegis_signer_account');
+      const isLogout = localStorage.getItem('aegis_manual_logout') === 'true';
+      const tgEl = document.getElementById('tgUsernameInput');
+      const emailEl = document.getElementById('emailAlertInput');
       const badge = document.getElementById('tgStatusBadge');
+
+      if (!signer || isLogout) {
+        if (tgEl) tgEl.value = '';
+        if (emailEl) emailEl.value = '';
+        if (badge) {
+          badge.innerHTML = `
+            <span class="w-2 h-2 rounded-full bg-nearGreen radar-pulse shrink-0"></span>
+            <span>Relayer Bot: <strong class="text-nearGreen">Active</strong></span>
+          `;
+        }
+        return;
+      }
+
+      const savedTg = localStorage.getItem('aegis_tg_' + signer) || '';
+      const savedEmail = localStorage.getItem('aegis_email_' + signer) || '';
+      if (tgEl) tgEl.value = savedTg.replace(/^@+/, '');
+      if (emailEl) emailEl.value = savedEmail;
       if (badge) {
+        const targetLabel = savedTg ? ('@' + savedTg.replace(/^@+/, '')) : (savedEmail || 'Active');
         badge.innerHTML = `
-          <span class="w-2 h-2 rounded-full bg-nearGreen radar-pulse"></span>
-          <span>Relayer: <strong class="text-nearGreen">${escapeHtml(tg || email || 'Active')}</strong></span>
+          <span class="w-2 h-2 rounded-full bg-nearGreen radar-pulse shrink-0"></span>
+          <span>${(savedTg || savedEmail) ? 'Alert Target:' : 'Relayer Bot:'} <strong class="text-nearGreen">${escapeHtml(targetLabel)}</strong></span>
         `;
       }
+    }
+
+    function saveAlertSettings() {
+      const signer = localStorage.getItem('aegis_signer_account');
+      if (!signer) {
+        showToast('Connect your NEAR wallet first to save alert preferences', true);
+        openMultichainWalletModal();
+        return;
+      }
+      const tg = document.getElementById('tgUsernameInput').value.trim().replace(/^@+/, '');
+      const email = document.getElementById('emailAlertInput').value.trim();
+      localStorage.setItem('aegis_tg_' + signer, tg);
+      localStorage.setItem('aegis_email_' + signer, email);
+      showToast('Alert preferences saved successfully');
+      syncAlertSettingsUI();
     }
 
     function sendTestAlert() {
