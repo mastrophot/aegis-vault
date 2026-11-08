@@ -6866,16 +6866,10 @@ if (typeof window !== "undefined") {
     <div class="near-card border border-white/10 rounded-3xl max-w-2xl w-full p-6 sm:p-8 space-y-5 shadow-2xl relative bg-[#0B0E15] max-h-[92vh] overflow-y-auto">
       
       <!-- Modal Header -->
-      <div class="flex items-start justify-between border-b border-white/[0.08] pb-4">
-        <div class="space-y-1">
-          <div class="flex items-center gap-2 flex-wrap">
-            <span class="w-2.5 h-2.5 rounded-full bg-[#00F5D4] animate-pulse"></span>
-            <h3 class="text-lg sm:text-xl font-extrabold text-white tracking-tight">Connect NEAR Wallet</h3>
-            <span class="text-[11px] font-mono text-[#00F5D4] bg-[#00F5D4]/10 border border-[#00F5D4]/30 px-2 py-0.5 rounded-full">NEAR Protocol · Bunker Controller</span>
-          </div>
-          <p class="text-xs text-[#8E99AD] leading-relaxed">
-            Your NEAR account is the master cryptographic controller that derives deterministic Bitcoin, Ethereum, Solana &amp; NEAR bunker vaults via <code class="text-white/80">v1.signer-prod.testnet</code>.
-          </p>
+      <div class="flex items-center justify-between border-b border-white/[0.08] pb-4">
+        <div class="flex items-center gap-2.5">
+          <span class="w-2.5 h-2.5 rounded-full bg-[#00F5D4]"></span>
+          <h3 class="text-lg sm:text-xl font-extrabold text-white tracking-tight">Connect NEAR Wallet</h3>
         </div>
         <button onclick="closeMultichainWalletModal()" class="w-8 h-8 rounded-full bg-white/[0.06] hover:bg-white/[0.12] text-[#8E99AD] hover:text-white flex items-center justify-center transition shrink-0 cursor-pointer">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
@@ -6890,16 +6884,10 @@ if (typeof window !== "undefined") {
       <!-- Currently Connected Wallets Summary inside Modal -->
       <div id="modalConnectedSummary" class="hidden p-3.5 rounded-2xl bg-white/[0.02] border border-white/[0.08] space-y-2">
         <div class="flex items-center justify-between">
-          <span class="text-[11px] font-mono font-bold text-[#8E99AD] uppercase tracking-wider">Active NEAR Controller Session</span>
+          <span class="text-[11px] font-mono font-bold text-[#8E99AD] uppercase tracking-wider">Active NEAR Session</span>
           <button onclick="disconnectAllWallets()" class="text-[11px] font-mono text-red-400 hover:text-red-300 transition cursor-pointer">Disconnect Wallet</button>
         </div>
         <div id="modalConnectedList" class="space-y-1.5 text-xs font-mono"></div>
-      </div>
-
-      <!-- Footer Info -->
-      <div class="text-[11px] font-mono text-[#6E788C] flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.06] pt-3.5">
-        <span>Contract: <strong class="text-[#A6B0C3]">aegis.okgoogleok.testnet</strong></span>
-        <span class="text-[#00F5D4] font-semibold">NEP-413 · FunctionCall Access Keys</span>
       </div>
 
     </div>
@@ -8153,9 +8141,9 @@ if (typeof window !== "undefined") {
       grid.innerHTML = WALLET_DEFINITIONS.map(w => {
         const meta = _cachedSelectorModules[w.moduleId];
         const iconSrc = (meta && meta.iconUrl) ? meta.iconUrl : w.iconUrl;
-        const installed = w.isInstalled() || Boolean(meta && meta.available && !w.isWebReady);
+        const installed = Boolean(w.isInstalled());
         const dotIndicator = installed
-          ? '<span class="w-2 h-2 rounded-full bg-[#00EC97] shrink-0" title="Detected"></span>'
+          ? '<span class="w-2 h-2 rounded-full bg-[#00EC97] shrink-0" title="Extension Detected"></span>'
           : '';
         return `
           <div onclick="selectWalletToConnect('${w.id}')" class="flex items-center justify-between gap-3.5 px-4 py-3.5 rounded-2xl bg-white/[0.03] hover:bg-white/[0.07] border border-white/[0.08] hover:border-[#00F5D4]/40 transition cursor-pointer group shadow-sm active:scale-98 min-w-0 overflow-hidden">
