@@ -1,10 +1,14 @@
 import "./init-polyfills.js";
 import { setupWalletSelector } from "@near-wallet-selector/core";
+import { setupModal } from "@near-wallet-selector/modal-ui";
 import { setupMeteorWallet } from "@near-wallet-selector/meteor-wallet";
+import { setupMyNearWallet } from "@near-wallet-selector/my-near-wallet";
 import { setupHereWallet } from "@near-wallet-selector/here-wallet";
+import { setupBitteWallet } from "@near-wallet-selector/bitte-wallet";
 import { setupNightly } from "@near-wallet-selector/nightly";
 import { setupSender } from "@near-wallet-selector/sender";
-import { setupBitteWallet } from "@near-wallet-selector/bitte-wallet";
+import { setupOKXWallet } from "@near-wallet-selector/okx-wallet";
+import { setupLedger } from "@near-wallet-selector/ledger";
 import { contracts, chainAdapters } from "chainsig.js";
 import { Connection } from "@solana/web3.js";
 import bs58 from "bs58";
@@ -73,6 +77,7 @@ export async function runAutonomousKeeperSweep() {
 }
 
 let selector = null;
+let selectorModal = null;
 
 export async function getSelector(contractId = "aegis.okgoogleok.testnet") {
   if (!selector) {
@@ -80,14 +85,39 @@ export async function getSelector(contractId = "aegis.okgoogleok.testnet") {
       network: "testnet",
       modules: [
         setupMeteorWallet(),
+        setupMyNearWallet(),
         setupHereWallet(),
+        setupBitteWallet(),
         setupNightly(),
         setupSender(),
-        setupBitteWallet()
+        setupOKXWallet(),
+        setupLedger()
       ],
     });
   }
   return selector;
+}
+
+export async function getModal(contractId = "aegis.okgoogleok.testnet") {
+  const sel = await getSelector(contractId);
+  if (!selectorModal) {
+    selectorModal = setupModal(sel, {
+      contractId,
+      theme: "dark"
+    });
+  }
+  return selectorModal;
+}
+
+export async function openOfficialModal(contractId = "aegis.okgoogleok.testnet") {
+  const modal = await getModal(contractId);
+  modal.show();
+  return modal;
+}
+
+export async function getSelectorModules(contractId = "aegis.okgoogleok.testnet") {
+  const sel = await getSelector(contractId);
+  return sel.store.getState().modules || [];
 }
 
 export async function signInWallet(walletId = "meteor-wallet", contractId = "aegis.okgoogleok.testnet") {
@@ -623,6 +653,9 @@ export const connectWallet = connectNearWallet;
 if (typeof window !== "undefined") {
   window.AegisWallet = {
     getSelector,
+    getModal,
+    openOfficialModal,
+    getSelectorModules,
     signInWallet,
     connectWallet: connectNearWallet,
     connectNearWallet,

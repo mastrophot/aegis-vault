@@ -5064,11 +5064,15 @@ module.exports = { AegisRelayerService };
 ```javascript
 import "./init-polyfills.js";
 import { setupWalletSelector } from "@near-wallet-selector/core";
+import { setupModal } from "@near-wallet-selector/modal-ui";
 import { setupMeteorWallet } from "@near-wallet-selector/meteor-wallet";
+import { setupMyNearWallet } from "@near-wallet-selector/my-near-wallet";
 import { setupHereWallet } from "@near-wallet-selector/here-wallet";
+import { setupBitteWallet } from "@near-wallet-selector/bitte-wallet";
 import { setupNightly } from "@near-wallet-selector/nightly";
 import { setupSender } from "@near-wallet-selector/sender";
-import { setupBitteWallet } from "@near-wallet-selector/bitte-wallet";
+import { setupOKXWallet } from "@near-wallet-selector/okx-wallet";
+import { setupLedger } from "@near-wallet-selector/ledger";
 import { contracts, chainAdapters } from "chainsig.js";
 import { Connection } from "@solana/web3.js";
 import bs58 from "bs58";
@@ -5137,6 +5141,7 @@ export async function runAutonomousKeeperSweep() {
 }
 
 let selector = null;
+let selectorModal = null;
 
 export async function getSelector(contractId = "aegis.okgoogleok.testnet") {
   if (!selector) {
@@ -5144,14 +5149,39 @@ export async function getSelector(contractId = "aegis.okgoogleok.testnet") {
       network: "testnet",
       modules: [
         setupMeteorWallet(),
+        setupMyNearWallet(),
         setupHereWallet(),
+        setupBitteWallet(),
         setupNightly(),
         setupSender(),
-        setupBitteWallet()
+        setupOKXWallet(),
+        setupLedger()
       ],
     });
   }
   return selector;
+}
+
+export async function getModal(contractId = "aegis.okgoogleok.testnet") {
+  const sel = await getSelector(contractId);
+  if (!selectorModal) {
+    selectorModal = setupModal(sel, {
+      contractId,
+      theme: "dark"
+    });
+  }
+  return selectorModal;
+}
+
+export async function openOfficialModal(contractId = "aegis.okgoogleok.testnet") {
+  const modal = await getModal(contractId);
+  modal.show();
+  return modal;
+}
+
+export async function getSelectorModules(contractId = "aegis.okgoogleok.testnet") {
+  const sel = await getSelector(contractId);
+  return sel.store.getState().modules || [];
 }
 
 export async function signInWallet(walletId = "meteor-wallet", contractId = "aegis.okgoogleok.testnet") {
@@ -5687,6 +5717,9 @@ export const connectWallet = connectNearWallet;
 if (typeof window !== "undefined") {
   window.AegisWallet = {
     getSelector,
+    getModal,
+    openOfficialModal,
+    getSelectorModules,
     signInWallet,
     connectWallet: connectNearWallet,
     connectNearWallet,
@@ -5742,7 +5775,8 @@ if (typeof window !== "undefined") {
     window.process = window.process || { env: { NODE_ENV: 'production' }, browser: true };
     window.global = window;
   </script>
-  <!-- NEAR Wallet Selector Standalone Bundle -->
+  <!-- NEAR Wallet Selector Official Styles & Standalone Bundle -->
+  <link rel="stylesheet" href="./wallet-selector-modal.css">
   <script src="./wallet-bundle.js"></script>
   
   <script>
@@ -8149,59 +8183,49 @@ if (typeof window !== "undefined") {
     let nearConnection = null;
     let nearWallet = null;
 
-    // NEAR Protocol Wallet Definitions & Security-Hardened Connectors
+    // Official @near-wallet-selector v10.1.4 Wallet Modules & Authentic Icons
     const WALLET_DEFINITIONS = [
       {
         id: 'meteor',
+        moduleId: 'meteor-wallet',
         name: 'Meteor Wallet',
-        desc: 'Web Popup & Browser Extension',
-        chainTag: 'Web + Ext',
-        tagColor: 'text-emerald-400 bg-emerald-950/40 border-emerald-500/30',
-        icon: '<svg class="w-5 h-5 text-emerald-400" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L14.4 7.2L20 8L16 12L17 17.6L12 15L7 17.6L8 12L4 8L9.6 7.2L12 2Z"/></svg>',
+        iconUrl: 'icons/meteor.png',
         isInstalled: () => typeof window !== 'undefined' && Boolean(window.meteorWallet),
         isWebReady: true,
         connect: () => connectNearDirect('meteor')
       },
       {
         id: 'mynearwallet',
+        moduleId: 'my-near-wallet',
         name: 'MyNearWallet',
-        desc: 'Official NEAR Testnet Web Wallet',
-        chainTag: 'Web',
-        tagColor: 'text-emerald-400 bg-emerald-950/40 border-emerald-500/30',
-        icon: '<svg class="w-5 h-5 text-[#00F5D4]" viewBox="0 0 24 24" fill="currentColor"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-2 14h-2.4l-5.6-8.4V17H7V7h2.4l5.6 8.4V7H17v10z"/></svg>',
+        iconUrl: 'icons/mynearwallet.png',
         isInstalled: () => false,
         isWebReady: true,
         connect: () => connectNearDirect('mynearwallet')
       },
       {
         id: 'here',
-        name: 'HERE / HOT Wallet',
-        desc: 'Mobile QR & Telegram HOT',
-        chainTag: 'QR + Web',
-        tagColor: 'text-amber-400 bg-amber-950/40 border-amber-500/30',
-        icon: '<svg class="w-5 h-5 text-amber-400" viewBox="0 0 24 24" fill="currentColor"><path d="M4 6h16v12H4z"/></svg>',
+        moduleId: 'here-wallet',
+        name: 'HERE Wallet',
+        iconUrl: 'icons/here.png',
         isInstalled: () => false,
         isWebReady: true,
         connect: () => connectNearDirect('here')
       },
       {
         id: 'bitte',
-        name: 'Bitte AI Wallet',
-        desc: 'NEAR Passkey Web Wallet',
-        chainTag: 'Passkey',
-        tagColor: 'text-purple-400 bg-purple-950/40 border-purple-500/30',
-        icon: '<svg class="w-5 h-5 text-purple-400" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3 7h7l-5.5 4.5 2 7L12 16l-6.5 4.5 2-7L2 9h7z"/></svg>',
+        moduleId: 'bitte-wallet',
+        name: 'Bitte Wallet',
+        iconUrl: 'icons/bitte.svg',
         isInstalled: () => false,
         isWebReady: true,
         connect: () => connectNearDirect('bitte')
       },
       {
         id: 'nightly',
-        name: 'Nightly Wallet',
-        desc: 'Multichain Browser Extension',
-        chainTag: 'Extension',
-        tagColor: 'text-cyan-400 bg-cyan-950/40 border-cyan-500/30',
-        icon: '<svg class="w-5 h-5 text-indigo-400" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10"/></svg>',
+        moduleId: 'nightly',
+        name: 'Nightly',
+        iconUrl: 'icons/nightly.png',
         isInstalled: () => typeof window !== 'undefined' && Boolean(window.nightly?.near),
         isWebReady: false,
         downloadUrl: 'https://nightly.app/download',
@@ -8209,11 +8233,9 @@ if (typeof window !== "undefined") {
       },
       {
         id: 'sender',
-        name: 'Sender Wallet',
-        desc: 'NEAR Browser Extension',
-        chainTag: 'Extension',
-        tagColor: 'text-cyan-400 bg-cyan-950/40 border-cyan-500/30',
-        icon: '<svg class="w-5 h-5 text-cyan-400" viewBox="0 0 24 24" fill="currentColor"><path d="M2 12l20-9-9 20-3-8-8-3z"/></svg>',
+        moduleId: 'sender',
+        name: 'Sender',
+        iconUrl: 'icons/sender.png',
         isInstalled: () => typeof window !== 'undefined' && Boolean(window.near && window.near.isSender),
         isWebReady: false,
         downloadUrl: 'https://sender.org',
@@ -8221,17 +8243,61 @@ if (typeof window !== "undefined") {
       },
       {
         id: 'okx_near',
+        moduleId: 'okx-wallet',
         name: 'OKX Wallet',
-        desc: 'NEAR Browser Extension',
-        chainTag: 'Extension',
-        tagColor: 'text-cyan-400 bg-cyan-950/40 border-cyan-500/30',
-        icon: '<svg class="w-5 h-5 text-white" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>',
+        iconUrl: 'icons/okx.png',
         isInstalled: () => typeof window !== 'undefined' && Boolean(window.okxwallet?.near),
         isWebReady: false,
         downloadUrl: 'https://www.okx.com/web3',
         connect: () => connectNearDirect('okx_near')
+      },
+      {
+        id: 'ledger',
+        moduleId: 'ledger',
+        name: 'Ledger',
+        iconUrl: 'icons/ledger.png',
+        isInstalled: () => false,
+        isWebReady: true,
+        connect: () => connectNearDirect('ledger')
       }
     ];
+
+    let _selectorSubAttached = false;
+    let _cachedSelectorModules = {};
+
+    async function ensureSelectorStoreSubscription() {
+      try {
+        const provider = window.AegisWallet || window.AegisMeteor || window.AegisWalletBundle;
+        if (!provider || typeof provider.getSelector !== 'function') return;
+        const sel = await provider.getSelector(CONTRACT_ID);
+        if (!sel) return;
+        const mods = sel.store.getState().modules || [];
+        mods.forEach(m => {
+          if (m && m.id && m.metadata) {
+            _cachedSelectorModules[m.id] = m.metadata;
+          }
+        });
+        if (!_selectorSubAttached && sel.store.observable) {
+          _selectorSubAttached = true;
+          sel.store.observable.subscribe((state) => {
+            if (localStorage.getItem('aegis_manual_logout') === 'true') return;
+            const activeAcc = state.accounts?.find(a => a.active)?.accountId || state.accounts?.[0]?.accountId;
+            const currentStored = localStorage.getItem('aegis_signer_account');
+            if (activeAcc && activeAcc !== currentStored) {
+              localStorage.setItem('aegis_signer_account', activeAcc);
+              if (state.selectedWalletId) {
+                localStorage.setItem('aegis_wallet_type', state.selectedWalletId);
+              }
+              updateWalletConnectedUI(activeAcc);
+              updateMultichainConnectedUI();
+              fetchAccountNearBalance(activeAcc);
+              fetchLiveContractState();
+              renderBunkerAddresses();
+            }
+          });
+        }
+      } catch (_) {}
+    }
 
     function openMultichainWalletModal() {
       localStorage.removeItem('aegis_manual_logout');
@@ -8240,6 +8306,7 @@ if (typeof window !== "undefined") {
         modal.classList.remove('hidden');
         renderWalletsGrid();
         renderModalConnectedSummary();
+        ensureSelectorStoreSubscription().then(() => renderWalletsGrid());
       }
     }
 
@@ -8253,22 +8320,21 @@ if (typeof window !== "undefined") {
       if (!grid) return;
 
       grid.innerHTML = WALLET_DEFINITIONS.map(w => {
-        const installed = w.isInstalled();
-        const rightTag = installed
-          ? '<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shrink-0"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>Installed</span>'
-          : `<span class="text-[10px] font-mono px-2 py-0.5 rounded-full border ${w.tagColor} shrink-0">${w.chainTag}</span>`;
+        const meta = _cachedSelectorModules[w.moduleId];
+        const iconSrc = (meta && meta.iconUrl) ? meta.iconUrl : w.iconUrl;
+        const installed = w.isInstalled() || Boolean(meta && meta.available && !w.isWebReady);
+        const dotIndicator = installed
+          ? '<span class="w-2 h-2 rounded-full bg-[#00EC97] shrink-0" title="Detected"></span>'
+          : '';
         return `
-          <div onclick="selectWalletToConnect('${w.id}')" class="flex items-center gap-3 p-3.5 rounded-2xl bg-white/[0.03] hover:bg-white/[0.07] border border-white/[0.08] hover:border-[#00F5D4]/40 transition cursor-pointer group shadow-sm active:scale-98 min-w-0 overflow-hidden">
-            <div class="w-9 h-9 rounded-xl bg-white/[0.04] border border-white/[0.08] flex items-center justify-center shrink-0 group-hover:scale-105 transition">
-              ${w.icon}
-            </div>
-            <div class="min-w-0 flex-1">
-              <div class="flex items-center justify-between gap-2">
-                <span class="font-bold text-white text-sm truncate group-hover:text-[#00F5D4] transition">${w.name}</span>
-                ${rightTag}
+          <div onclick="selectWalletToConnect('${w.id}')" class="flex items-center justify-between gap-3.5 px-4 py-3.5 rounded-2xl bg-white/[0.03] hover:bg-white/[0.07] border border-white/[0.08] hover:border-[#00F5D4]/40 transition cursor-pointer group shadow-sm active:scale-98 min-w-0 overflow-hidden">
+            <div class="flex items-center gap-3.5 min-w-0">
+              <div class="w-9 h-9 rounded-xl bg-white/[0.05] border border-white/[0.08] flex items-center justify-center shrink-0 overflow-hidden p-1.5 group-hover:scale-105 transition">
+                <img src="${iconSrc}" alt="${w.name}" class="w-full h-full object-contain rounded-md" />
               </div>
-              <div class="text-[11px] text-[#8E99AD] truncate mt-0.5">${w.desc}</div>
+              <span class="font-bold text-white text-sm truncate group-hover:text-[#00F5D4] transition">${w.name}</span>
             </div>
+            ${dotIndicator}
           </div>
         `;
       }).join('');
@@ -8299,7 +8365,7 @@ if (typeof window !== "undefined") {
 
       // Extension-only wallets: check if extension is injected before failing silently
       if (walletDef && !walletDef.isWebReady && !walletDef.isInstalled()) {
-        showToast(`${walletDef.name} extension not detected. Opening official download page — or use Meteor / MyNearWallet / HERE / Bitte (Zero-Install).`, true);
+        showToast(`${walletDef.name} not detected. Opening official download page...`, true);
         if (walletDef.downloadUrl) {
           window.open(walletDef.downloadUrl, '_blank', 'noopener,noreferrer');
         }
@@ -8313,43 +8379,16 @@ if (typeof window !== "undefined") {
         return;
       }
 
-      // 1. MyNearWallet (Official NEAR Testnet Web Redirect with FunctionCall AccessKey)
-      if (type === 'mynearwallet') {
-        showToast('Redirecting to Official MyNearWallet Testnet...');
-        await provider.connectMyNearWallet(CONTRACT_ID);
+      await ensureSelectorStoreSubscription();
+
+      // Ledger Hardware Wallet uses Official @near-wallet-selector/modal-ui derivation UI
+      if (type === 'ledger' && typeof provider.openOfficialModal === 'function') {
+        await provider.openOfficialModal(CONTRACT_ID);
         return;
       }
 
-      // 2. OKX NEAR Extension
-      if (type === 'okx_near') {
-        try {
-          showToast('Connecting OKX NEAR Wallet...');
-          const res = await provider.connectOkxNearWallet(CONTRACT_ID);
-          if (res?.accountId) {
-            updateWalletConnectedUI(res.accountId);
-            updateMultichainConnectedUI();
-            fetchAccountNearBalance(res.accountId);
-            fetchLiveContractState();
-            renderBunkerAddresses();
-            showToast(`Connected OKX NEAR: ${res.accountId}`);
-          }
-        } catch (err) {
-          console.error('[Aegis] OKX NEAR error:', err);
-          showToast(`OKX NEAR error: ${err.message}`, true);
-        }
-        return;
-      }
-
-      // 3. Unified @near-wallet-selector modules (Meteor Web+Ext, HERE, Bitte, Nightly, Sender)
-      const moduleMap = {
-        meteor: 'meteor-wallet',
-        here: 'here-wallet',
-        nightly: 'nightly',
-        sender: 'sender',
-        bitte: 'bitte-wallet'
-      };
-      const moduleId = moduleMap[type] || 'meteor-wallet';
-      showToast(`Connecting ${walletDef ? walletDef.name : type.toUpperCase()}...`);
+      const moduleId = walletDef?.moduleId || 'meteor-wallet';
+      showToast(`Connecting ${walletDef ? walletDef.name : type}...`);
 
       try {
         const res = await provider.signInWallet(moduleId, CONTRACT_ID);
@@ -8371,6 +8410,10 @@ if (typeof window !== "undefined") {
           showToast(`Connected: ${activeAcc}`);
         }
       } catch (err) {
+        if (type === 'mynearwallet' && typeof provider.connectMyNearWallet === 'function') {
+          await provider.connectMyNearWallet(CONTRACT_ID);
+          return;
+        }
         console.error(`[Aegis] ${type} connection error:`, err);
         showToast(`Connection error: ${err.message}`, true);
       }
