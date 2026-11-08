@@ -3791,8 +3791,7 @@ class AegisRelayerService {
         const res = await fetch(url, {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json',
-            'User-Agent': 'AegisVaultRelayer/1.0'
+            'Content-Type': 'application/json'
           },
           body: JSON.stringify({
             jsonrpc: '2.0',
@@ -3826,11 +3825,11 @@ class AegisRelayerService {
 
   async ensureSignerNonceAndBlock(forceResync = false) {
     const pubKeyStr = this._signerKeyPair.getPublicKey().toString();
-    const blockStale = Date.now() - this._blockFetchedAt > 60_000;
+    const blockStale = Date.now() - this._blockFetchedAt > 45_000;
     if (forceResync || this._nextNonce === null || blockStale) {
       const keyInfo = await this.nearRpc('query', {
         request_type: 'view_access_key',
-        finality: 'final',
+        finality: 'optimistic',
         account_id: this.relayerAccountId,
         public_key: pubKeyStr
       });
@@ -3860,8 +3859,7 @@ class AegisRelayerService {
         const res = await fetch(url, {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json',
-            'User-Agent': 'AegisVaultRelayer/1.0'
+            'Content-Type': 'application/json'
           },
           body: JSON.stringify({
             jsonrpc: '2.0',
@@ -3900,8 +3898,7 @@ class AegisRelayerService {
         const res = await fetch(url, {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json',
-            'User-Agent': 'AegisVaultRelayer/1.0'
+            'Content-Type': 'application/json'
           },
           body: JSON.stringify({
             jsonrpc: '2.0',
@@ -3929,7 +3926,7 @@ class AegisRelayerService {
   async callContractActions(actionsSpec = []) {
     await this.init({ requireSigner: true });
     let lastErr;
-    for (let attempt = 0; attempt < 3; attempt++) {
+    for (let attempt = 0; attempt < 5; attempt++) {
       let txHashBase58 = '';
       try {
         await this.ensureSignerNonceAndBlock(attempt > 0);
@@ -3994,7 +3991,7 @@ class AegisRelayerService {
         lastErr = err;
         const msg = String(err?.message || err);
         if (
-          attempt < 2 &&
+          attempt < 4 &&
           (msg.includes('InvalidNonce') ||
             msg.includes('ak_nonce') ||
             msg.includes('Expired') ||
@@ -4003,7 +4000,7 @@ class AegisRelayerService {
             msg.includes('503') ||
             msg.includes('429'))
         ) {
-          await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+          await new Promise(r => setTimeout(r, 800 * (attempt + 1)));
           continue;
         }
         throw err;
@@ -4865,6 +4862,28 @@ class AegisRelayerService {
     return await this.sweepAllActionable();
   }
 
+  async runBoundedLoop(durationMinutes = 55, intervalMs = 5000) {
+    await this.init({ requireSigner: false });
+    const endAtMs = Date.now() + Math.max(1, Number(durationMinutes)) * 60 * 1000;
+    const pollMs = Math.max(2000, Number(intervalMs) || 5000);
+    console.log(
+      `🛡️  [Aegis Cloud Keeper] Active 24/7 loop started for ${durationMinutes}m (checking every ${pollMs / 1000}s)...`
+    );
+    while (Date.now() < endAtMs) {
+      const cycleStart = Date.now();
+      try {
+        await this.sweepAllActionable();
+      } catch (err) {
+        console.warn('[Aegis Cloud Keeper Cycle] Notice:', err.message);
+      }
+      const elapsed = Date.now() - cycleStart;
+      const waitMs = Math.max(500, pollMs - elapsed);
+      if (Date.now() + waitMs >= endAtMs) break;
+      await new Promise(r => setTimeout(r, waitMs));
+    }
+    console.log('✅ [Aegis Cloud Keeper] Bounded loop window completed cleanly.');
+  }
+
   /**
    * Production stateless sweep cycle using `get_actionable_vaults`:
    * - Single RPC view call when healthy (0 gas burned, 0 private key needed if 0 actionable vaults)
@@ -4939,7 +4958,19 @@ if (typeof require !== 'undefined' && require.main === module) {
   const args = process.argv.slice(2);
   const service = new AegisRelayerService();
 
-  if (args.includes('--sweep-all') || args.includes('--once')) {
+  if (args.includes('--daemon-minutes')) {
+    const mIdx = args.indexOf('--daemon-minutes');
+    const mins = Number(args[mIdx + 1] || 55);
+    const iIdx = args.indexOf('--interval-ms');
+    const intervalMs = iIdx !== -1 ? Number(args[iIdx + 1] || 5000) : 5000;
+    service
+      .runBoundedLoop(mins, intervalMs)
+      .then(() => process.exit(0))
+      .catch(err => {
+        console.error('Daemon loop error:', err.message);
+        process.exit(1);
+      });
+  } else if (args.includes('--sweep-all') || args.includes('--once')) {
     service
       .sweepAllActionable()
       .then(() => process.exit(0))
@@ -7199,6 +7230,11 @@ if (typeof window !== "undefined") {
       return `${s.slice(0, 6)}•••${s.slice(-4)}`;
     }
 
+    let nearClockOffsetMs = 0;
+    function getNearAlignedNowMs() {
+      return Date.now() + nearClockOffsetMs;
+    }
+
     function isHeartbeatExpired(info = lastFetchedVaultInfo) {
       const currentSigner = localStorage.getItem('aegis_signer_account');
       if (!currentSigner || !info) return false;
@@ -7210,7 +7246,7 @@ if (typeof window !== "undefined") {
             const hbExpiryMs = Number(
               (BigInt(info.last_ping_ns) + BigInt(info.heartbeat_interval_ns || '0')) / 1000000n
             );
-            if (Date.now() >= hbExpiryMs) return true;
+            if (getNearAlignedNowMs() >= hbExpiryMs) return true;
           } catch (_) {}
         }
       }
@@ -7228,7 +7264,7 @@ if (typeof window !== "undefined") {
               BigInt(info.heartbeat_interval_ns || '0') +
               BigInt(info.challenge_period_ns || '0')) / 1000000n
           );
-          if (Date.now() >= fullExpiryMs) return true;
+          if (getNearAlignedNowMs() >= fullExpiryMs) return true;
         } catch (_) {}
       }
       return false;
@@ -7285,7 +7321,7 @@ if (typeof window !== "undefined") {
               method: 'query',
               params: {
                 request_type: 'call_function',
-                finality: 'final',
+                finality: 'optimistic',
                 account_id: CONTRACT_ID,
                 method_name: 'get_vault_info',
                 args_base64: btoa(JSON.stringify({ account_id: currentSigner }))
@@ -7297,6 +7333,11 @@ if (typeof window !== "undefined") {
             currentRpcIndex = (currentRpcIndex + attempt) % NEAR_RPC_URLS.length;
             const decoded = new TextDecoder().decode(new Uint8Array(data.result.result));
             const vaultInfo = JSON.parse(decoded);
+            if (vaultInfo && vaultInfo.current_time_ns) {
+              try {
+                nearClockOffsetMs = Number(BigInt(vaultInfo.current_time_ns) / 1000000n) - Date.now();
+              } catch (_) {}
+            }
             console.log(`📡 [Aegis] Live NEAR RPC State fetched from ${rpcUrl} for ${currentSigner}:`, vaultInfo);
             syncUIWithOnChainState(vaultInfo, currentSigner);
             return vaultInfo;
@@ -9898,8 +9939,9 @@ if (typeof window !== "undefined") {
               BigInt(lastFetchedVaultInfo.heartbeat_interval_ns || '0') +
               BigInt(lastFetchedVaultInfo.challenge_period_ns || '0')) / 1000000n
           );
-          graceRemainingSec = Math.max(0, Math.ceil((fullExpiryMs - Date.now()) / 1000));
-          if (Date.now() >= fullExpiryMs + 1500 && Date.now() - lastCloudKeeperNudgeMs > 8000) {
+          const alignedNowMs = getNearAlignedNowMs();
+          graceRemainingSec = Math.max(0, Math.ceil((fullExpiryMs - alignedNowMs) / 1000));
+          if (alignedNowMs >= fullExpiryMs + 1000 && Date.now() - lastCloudKeeperNudgeMs > 5000) {
             lastCloudKeeperNudgeMs = Date.now();
             triggerCloudKeeperSweep(false);
           }
@@ -9998,9 +10040,20 @@ if (typeof window !== "undefined") {
     let _wasHbExpired = false;
     let _wasGraceExpired = false;
     let _lastExpiryRpcPollMs = 0;
-    countdownInterval = setInterval(() => {
+    const handleHeartbeatTick = () => {
       if (hasConfiguredDestinations() && lastFetchedVaultInfo && lastFetchedVaultInfo.state === 'Active') {
-        if (remainingSeconds > 0) remainingSeconds--;
+        if (remainingSeconds > 0 && lastFetchedVaultInfo.last_ping_ns) {
+          try {
+            const hbExpMs = Number(
+              (BigInt(lastFetchedVaultInfo.last_ping_ns) + BigInt(lastFetchedVaultInfo.heartbeat_interval_ns || '0')) / 1000000n
+            );
+            remainingSeconds = Math.max(0, Math.ceil((hbExpMs - getNearAlignedNowMs()) / 1000));
+          } catch (_) {
+            if (remainingSeconds > 0) remainingSeconds--;
+          }
+        } else if (remainingSeconds > 0) {
+          remainingSeconds--;
+        }
       }
       const nowHbExpired = isHeartbeatExpired(lastFetchedVaultInfo);
       const nowGraceExpired = isGracePeriodExpired(lastFetchedVaultInfo);
@@ -10012,14 +10065,32 @@ if (typeof window !== "undefined") {
         loadSavedAddresses();
         updateSaveButtonState(lastFetchedVaultInfo);
       }
-      if (nowGraceExpired && lastFetchedVaultInfo && lastFetchedVaultInfo.state === 'Active') {
-        if (Date.now() - _lastExpiryRpcPollMs > 4000) {
+      if (nowGraceExpired && lastFetchedVaultInfo && !lastFetchedVaultInfo.is_epoch_swept) {
+        if (Date.now() - _lastExpiryRpcPollMs > 3000) {
           _lastExpiryRpcPollMs = Date.now();
           fetchLiveContractState();
         }
       }
       updateCountdownDisplay();
-    }, 1000);
+    };
+    try {
+      const workerBlob = new Blob(['setInterval(function(){postMessage(1);},1000);'], { type: 'application/javascript' });
+      const tickWorker = new Worker(URL.createObjectURL(workerBlob));
+      tickWorker.onmessage = handleHeartbeatTick;
+    } catch (_) {
+      countdownInterval = setInterval(handleHeartbeatTick, 1000);
+    }
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) {
+        handleHeartbeatTick();
+        fetchLiveContractState();
+        fetchLiveBalances(false);
+      }
+    });
+    window.addEventListener('focus', () => {
+      handleHeartbeatTick();
+      fetchLiveContractState();
+    });
     updateCountdownDisplay();
 
     // Auto-refresh balances once every hour
@@ -10783,12 +10854,21 @@ if (typeof window !== "undefined") {
           }
           return null;
         };
-        let data = await executeAutonomousPass();
-        if (data?.processed?.some(p => !p.complete)) {
-          await new Promise(r => setTimeout(r, 1500));
+        let data = null;
+        for (let pass = 0; pass < 4; pass++) {
           data = (await executeAutonomousPass()) || data;
+          await fetchLiveContractState();
+          if (lastFetchedVaultInfo && lastFetchedVaultInfo.is_epoch_swept) {
+            break;
+          }
+          const needsMore =
+            data?.processed?.some(p => !p.complete) ||
+            ((isGracePeriodExpired(lastFetchedVaultInfo) || isVaultEvacuatedOrBurned()) &&
+              lastFetchedVaultInfo &&
+              !lastFetchedVaultInfo.is_epoch_swept);
+          if (!needsMore) break;
+          await new Promise(r => setTimeout(r, 2500));
         }
-        await fetchLiveContractState();
         fetchLiveBalances(true);
         const modalEl = document.getElementById('evacMonitorModal');
         if (modalEl && !modalEl.classList.contains('hidden')) {

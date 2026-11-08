@@ -2,7 +2,7 @@ name: Aegis Autonomous Relayer Keeper
 
 on:
   schedule:
-    # Serverless cloud keeper (every 5 minutes); telemetry is stored directly on-chain
+    # Self-healing watchdog cron (every 5m) + continuous 5-second cloud keeper loop
     - cron: '*/5 * * * *'
   workflow_dispatch:
 
@@ -13,9 +13,10 @@ concurrency:
 jobs:
   run-relayer-keeper:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 60
     permissions:
       contents: read
+      actions: write
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -29,7 +30,7 @@ jobs:
       - name: Install Dependencies
         run: npm ci
 
-      - name: Execute Stateless Autonomous Sweep Cycle
+      - name: Execute Continuous 5s Autonomous Sweep Loop
         env:
           CONTRACT_ID: aegis.okgoogleok.testnet
           RELAYER_ACCOUNT_ID: keeper.aegis.okgoogleok.testnet
@@ -38,4 +39,11 @@ jobs:
           SOLANA_RPC_URL: https://solana-devnet.api.onfinality.io/public
           EVM_RPC_URL: https://ethereum-sepolia-rpc.publicnode.com
         run: |
-          node relayer/service.js --sweep-all
+          node relayer/service.js --daemon-minutes 55 --interval-ms 5000
+
+      - name: Chain Next 24/7 Keeper Window
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh workflow run relayer-keeper.yml --ref main || true

@@ -1715,6 +1715,11 @@
       return `${s.slice(0, 6)}•••${s.slice(-4)}`;
     }
 
+    let nearClockOffsetMs = 0;
+    function getNearAlignedNowMs() {
+      return Date.now() + nearClockOffsetMs;
+    }
+
     function isHeartbeatExpired(info = lastFetchedVaultInfo) {
       const currentSigner = localStorage.getItem('aegis_signer_account');
       if (!currentSigner || !info) return false;
@@ -1726,7 +1731,7 @@
             const hbExpiryMs = Number(
               (BigInt(info.last_ping_ns) + BigInt(info.heartbeat_interval_ns || '0')) / 1000000n
             );
-            if (Date.now() >= hbExpiryMs) return true;
+            if (getNearAlignedNowMs() >= hbExpiryMs) return true;
           } catch (_) {}
         }
       }
@@ -1744,7 +1749,7 @@
               BigInt(info.heartbeat_interval_ns || '0') +
               BigInt(info.challenge_period_ns || '0')) / 1000000n
           );
-          if (Date.now() >= fullExpiryMs) return true;
+          if (getNearAlignedNowMs() >= fullExpiryMs) return true;
         } catch (_) {}
       }
       return false;
@@ -1801,7 +1806,7 @@
               method: 'query',
               params: {
                 request_type: 'call_function',
-                finality: 'final',
+                finality: 'optimistic',
                 account_id: CONTRACT_ID,
                 method_name: 'get_vault_info',
                 args_base64: btoa(JSON.stringify({ account_id: currentSigner }))
@@ -1813,6 +1818,11 @@
             currentRpcIndex = (currentRpcIndex + attempt) % NEAR_RPC_URLS.length;
             const decoded = new TextDecoder().decode(new Uint8Array(data.result.result));
             const vaultInfo = JSON.parse(decoded);
+            if (vaultInfo && vaultInfo.current_time_ns) {
+              try {
+                nearClockOffsetMs = Number(BigInt(vaultInfo.current_time_ns) / 1000000n) - Date.now();
+              } catch (_) {}
+            }
             console.log(`📡 [Aegis] Live NEAR RPC State fetched from ${rpcUrl} for ${currentSigner}:`, vaultInfo);
             syncUIWithOnChainState(vaultInfo, currentSigner);
             return vaultInfo;
@@ -4414,8 +4424,9 @@
               BigInt(lastFetchedVaultInfo.heartbeat_interval_ns || '0') +
               BigInt(lastFetchedVaultInfo.challenge_period_ns || '0')) / 1000000n
           );
-          graceRemainingSec = Math.max(0, Math.ceil((fullExpiryMs - Date.now()) / 1000));
-          if (Date.now() >= fullExpiryMs + 1500 && Date.now() - lastCloudKeeperNudgeMs > 8000) {
+          const alignedNowMs = getNearAlignedNowMs();
+          graceRemainingSec = Math.max(0, Math.ceil((fullExpiryMs - alignedNowMs) / 1000));
+          if (alignedNowMs >= fullExpiryMs + 1000 && Date.now() - lastCloudKeeperNudgeMs > 5000) {
             lastCloudKeeperNudgeMs = Date.now();
             triggerCloudKeeperSweep(false);
           }
@@ -4514,9 +4525,20 @@
     let _wasHbExpired = false;
     let _wasGraceExpired = false;
     let _lastExpiryRpcPollMs = 0;
-    countdownInterval = setInterval(() => {
+    const handleHeartbeatTick = () => {
       if (hasConfiguredDestinations() && lastFetchedVaultInfo && lastFetchedVaultInfo.state === 'Active') {
-        if (remainingSeconds > 0) remainingSeconds--;
+        if (remainingSeconds > 0 && lastFetchedVaultInfo.last_ping_ns) {
+          try {
+            const hbExpMs = Number(
+              (BigInt(lastFetchedVaultInfo.last_ping_ns) + BigInt(lastFetchedVaultInfo.heartbeat_interval_ns || '0')) / 1000000n
+            );
+            remainingSeconds = Math.max(0, Math.ceil((hbExpMs - getNearAlignedNowMs()) / 1000));
+          } catch (_) {
+            if (remainingSeconds > 0) remainingSeconds--;
+          }
+        } else if (remainingSeconds > 0) {
+          remainingSeconds--;
+        }
       }
       const nowHbExpired = isHeartbeatExpired(lastFetchedVaultInfo);
       const nowGraceExpired = isGracePeriodExpired(lastFetchedVaultInfo);
@@ -4528,14 +4550,32 @@
         loadSavedAddresses();
         updateSaveButtonState(lastFetchedVaultInfo);
       }
-      if (nowGraceExpired && lastFetchedVaultInfo && lastFetchedVaultInfo.state === 'Active') {
-        if (Date.now() - _lastExpiryRpcPollMs > 4000) {
+      if (nowGraceExpired && lastFetchedVaultInfo && !lastFetchedVaultInfo.is_epoch_swept) {
+        if (Date.now() - _lastExpiryRpcPollMs > 3000) {
           _lastExpiryRpcPollMs = Date.now();
           fetchLiveContractState();
         }
       }
       updateCountdownDisplay();
-    }, 1000);
+    };
+    try {
+      const workerBlob = new Blob(['setInterval(function(){postMessage(1);},1000);'], { type: 'application/javascript' });
+      const tickWorker = new Worker(URL.createObjectURL(workerBlob));
+      tickWorker.onmessage = handleHeartbeatTick;
+    } catch (_) {
+      countdownInterval = setInterval(handleHeartbeatTick, 1000);
+    }
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) {
+        handleHeartbeatTick();
+        fetchLiveContractState();
+        fetchLiveBalances(false);
+      }
+    });
+    window.addEventListener('focus', () => {
+      handleHeartbeatTick();
+      fetchLiveContractState();
+    });
     updateCountdownDisplay();
 
     // Auto-refresh balances once every hour
@@ -5299,12 +5339,21 @@
           }
           return null;
         };
-        let data = await executeAutonomousPass();
-        if (data?.processed?.some(p => !p.complete)) {
-          await new Promise(r => setTimeout(r, 1500));
+        let data = null;
+        for (let pass = 0; pass < 4; pass++) {
           data = (await executeAutonomousPass()) || data;
+          await fetchLiveContractState();
+          if (lastFetchedVaultInfo && lastFetchedVaultInfo.is_epoch_swept) {
+            break;
+          }
+          const needsMore =
+            data?.processed?.some(p => !p.complete) ||
+            ((isGracePeriodExpired(lastFetchedVaultInfo) || isVaultEvacuatedOrBurned()) &&
+              lastFetchedVaultInfo &&
+              !lastFetchedVaultInfo.is_epoch_swept);
+          if (!needsMore) break;
+          await new Promise(r => setTimeout(r, 2500));
         }
-        await fetchLiveContractState();
         fetchLiveBalances(true);
         const modalEl = document.getElementById('evacMonitorModal');
         if (modalEl && !modalEl.classList.contains('hidden')) {

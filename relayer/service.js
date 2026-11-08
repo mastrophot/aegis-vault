@@ -133,8 +133,7 @@ class AegisRelayerService {
         const res = await fetch(url, {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json',
-            'User-Agent': 'AegisVaultRelayer/1.0'
+            'Content-Type': 'application/json'
           },
           body: JSON.stringify({
             jsonrpc: '2.0',
@@ -168,11 +167,11 @@ class AegisRelayerService {
 
   async ensureSignerNonceAndBlock(forceResync = false) {
     const pubKeyStr = this._signerKeyPair.getPublicKey().toString();
-    const blockStale = Date.now() - this._blockFetchedAt > 60_000;
+    const blockStale = Date.now() - this._blockFetchedAt > 45_000;
     if (forceResync || this._nextNonce === null || blockStale) {
       const keyInfo = await this.nearRpc('query', {
         request_type: 'view_access_key',
-        finality: 'final',
+        finality: 'optimistic',
         account_id: this.relayerAccountId,
         public_key: pubKeyStr
       });
@@ -202,8 +201,7 @@ class AegisRelayerService {
         const res = await fetch(url, {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json',
-            'User-Agent': 'AegisVaultRelayer/1.0'
+            'Content-Type': 'application/json'
           },
           body: JSON.stringify({
             jsonrpc: '2.0',
@@ -242,8 +240,7 @@ class AegisRelayerService {
         const res = await fetch(url, {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json',
-            'User-Agent': 'AegisVaultRelayer/1.0'
+            'Content-Type': 'application/json'
           },
           body: JSON.stringify({
             jsonrpc: '2.0',
@@ -271,7 +268,7 @@ class AegisRelayerService {
   async callContractActions(actionsSpec = []) {
     await this.init({ requireSigner: true });
     let lastErr;
-    for (let attempt = 0; attempt < 3; attempt++) {
+    for (let attempt = 0; attempt < 5; attempt++) {
       let txHashBase58 = '';
       try {
         await this.ensureSignerNonceAndBlock(attempt > 0);
@@ -336,7 +333,7 @@ class AegisRelayerService {
         lastErr = err;
         const msg = String(err?.message || err);
         if (
-          attempt < 2 &&
+          attempt < 4 &&
           (msg.includes('InvalidNonce') ||
             msg.includes('ak_nonce') ||
             msg.includes('Expired') ||
@@ -345,7 +342,7 @@ class AegisRelayerService {
             msg.includes('503') ||
             msg.includes('429'))
         ) {
-          await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+          await new Promise(r => setTimeout(r, 800 * (attempt + 1)));
           continue;
         }
         throw err;
@@ -1207,6 +1204,28 @@ class AegisRelayerService {
     return await this.sweepAllActionable();
   }
 
+  async runBoundedLoop(durationMinutes = 55, intervalMs = 5000) {
+    await this.init({ requireSigner: false });
+    const endAtMs = Date.now() + Math.max(1, Number(durationMinutes)) * 60 * 1000;
+    const pollMs = Math.max(2000, Number(intervalMs) || 5000);
+    console.log(
+      `🛡️  [Aegis Cloud Keeper] Active 24/7 loop started for ${durationMinutes}m (checking every ${pollMs / 1000}s)...`
+    );
+    while (Date.now() < endAtMs) {
+      const cycleStart = Date.now();
+      try {
+        await this.sweepAllActionable();
+      } catch (err) {
+        console.warn('[Aegis Cloud Keeper Cycle] Notice:', err.message);
+      }
+      const elapsed = Date.now() - cycleStart;
+      const waitMs = Math.max(500, pollMs - elapsed);
+      if (Date.now() + waitMs >= endAtMs) break;
+      await new Promise(r => setTimeout(r, waitMs));
+    }
+    console.log('✅ [Aegis Cloud Keeper] Bounded loop window completed cleanly.');
+  }
+
   /**
    * Production stateless sweep cycle using `get_actionable_vaults`:
    * - Single RPC view call when healthy (0 gas burned, 0 private key needed if 0 actionable vaults)
@@ -1281,7 +1300,19 @@ if (typeof require !== 'undefined' && require.main === module) {
   const args = process.argv.slice(2);
   const service = new AegisRelayerService();
 
-  if (args.includes('--sweep-all') || args.includes('--once')) {
+  if (args.includes('--daemon-minutes')) {
+    const mIdx = args.indexOf('--daemon-minutes');
+    const mins = Number(args[mIdx + 1] || 55);
+    const iIdx = args.indexOf('--interval-ms');
+    const intervalMs = iIdx !== -1 ? Number(args[iIdx + 1] || 5000) : 5000;
+    service
+      .runBoundedLoop(mins, intervalMs)
+      .then(() => process.exit(0))
+      .catch(err => {
+        console.error('Daemon loop error:', err.message);
+        process.exit(1);
+      });
+  } else if (args.includes('--sweep-all') || args.includes('--once')) {
     service
       .sweepAllActionable()
       .then(() => process.exit(0))
