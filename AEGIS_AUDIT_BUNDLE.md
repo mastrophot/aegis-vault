@@ -6251,11 +6251,12 @@ if (typeof window !== "undefined") {
           </div>
         </div>
 
-        <!-- 2-Column Multichain Routing Panel -->
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- Unified Multichain Policy Card (Routing Columns + Save Policy Footer) -->
+        <div class="rounded-2xl bg-[#0B0D12] border border-white/[0.08] overflow-hidden shadow-card">
+          <div class="grid grid-cols-1 lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x divide-white/[0.08]">
 
-          <!-- Left Column: Emergency Panic Destination (Emergency Egress) -->
-          <div class="rounded-2xl bg-[#0B0D12] border border-white/[0.08] hover:border-white/[0.14] p-6 transition-all flex flex-col justify-between">
+            <!-- Left Column: Emergency Panic Destination (Emergency Egress) -->
+            <div class="p-6 flex flex-col justify-between">
             <div class="space-y-5">
               <div class="flex items-start justify-between gap-3 border-b border-white/[0.06] pb-4">
                 <div class="space-y-1">
@@ -6335,151 +6336,152 @@ if (typeof window !== "undefined") {
           </div>
 
           <!-- Right Column: Family Push Inheritance (Heirs) -->
-          <div class="rounded-2xl bg-[#0B0D12] border border-white/[0.08] hover:border-white/[0.14] p-6 transition-all flex flex-col justify-between">
-            <div class="space-y-5">
-              <div class="flex items-start justify-between gap-3 border-b border-white/[0.06] pb-4">
-                <div class="space-y-1">
-                  <div class="flex items-center gap-2">
-                    <span class="w-2 h-2 rounded-full bg-nearGreen"></span>
-                    <h4 class="text-sm font-bold text-white tracking-tight">2. Family Inheritance Destinations</h4>
+            <div class="p-6 flex flex-col justify-between">
+              <div class="space-y-5">
+                <div class="flex items-start justify-between gap-3 border-b border-white/[0.06] pb-4">
+                  <div class="space-y-1">
+                    <div class="flex items-center gap-2">
+                      <span class="w-2 h-2 rounded-full bg-nearGreen"></span>
+                      <h4 class="text-sm font-bold text-white tracking-tight">2. Family Inheritance Destinations</h4>
+                    </div>
+                    <p class="text-xs sm:text-sm text-[#B0B9C9] min-h-[40px] flex items-center">
+                      Autonomous transfer executes if heartbeat expires. Heirs do not need to sign.
+                    </p>
                   </div>
-                  <p class="text-xs sm:text-sm text-[#B0B9C9] min-h-[40px] flex items-center">
-                    Autonomous transfer executes if heartbeat expires. Heirs do not need to sign.
-                  </p>
-                </div>
-                <span class="text-[10px] font-mono font-bold text-nearGreen bg-nearGreenMuted border border-nearGreen/30 px-2.5 py-0.5 rounded-full whitespace-nowrap">
-                  Push Model
-                </span>
-              </div>
-
-              <!-- 4 Chain Rows for Heirs -->
-              <div class="space-y-4">
-                
-                <!-- NEAR -->
-                <div class="space-y-1.5">
-                  <div class="flex items-center justify-between text-xs">
-                    <label class="text-[#8C929D] font-mono text-[11px] uppercase font-semibold">Family NEAR Account</label>
-                    <span class="text-[10px] text-white/40 font-mono">Testnet ID</span>
-                  </div>
-                  <div class="flex items-center rounded-xl bg-white/[0.02] border border-white/[0.08] focus-within:border-nearGreen transition overflow-hidden">
-                    <span class="px-3 py-2.5 text-xs font-mono font-bold text-white bg-white/[0.03] border-r border-white/[0.06] shrink-0">
-                      NEAR
-                    </span>
-                    <input type="text" id="heirNearAddr" value="" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="e.g. family.testnet" class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none">
-                  </div>
+                  <span class="text-[10px] font-mono font-bold text-nearGreen bg-nearGreenMuted border border-nearGreen/30 px-2.5 py-0.5 rounded-full whitespace-nowrap">
+                    Push Model
+                  </span>
                 </div>
 
-                <!-- Bitcoin -->
-                <div class="space-y-1.5">
-                  <div class="flex items-center justify-between text-xs">
-                    <label class="text-[#8C929D] font-mono text-[11px] uppercase font-semibold">Family Bitcoin Address</label>
-                    <span class="text-[10px] text-white/40 font-mono">Native SegWit (P2WPKH)</span>
+                <!-- 4 Chain Rows for Heirs -->
+                <div class="space-y-4">
+                  
+                  <!-- NEAR -->
+                  <div class="space-y-1.5">
+                    <div class="flex items-center justify-between text-xs">
+                      <label class="text-[#8C929D] font-mono text-[11px] uppercase font-semibold">Family NEAR Account</label>
+                      <span class="text-[10px] text-white/40 font-mono">Testnet ID</span>
+                    </div>
+                    <div class="flex items-center rounded-xl bg-white/[0.02] border border-white/[0.08] focus-within:border-nearGreen transition overflow-hidden">
+                      <span class="px-3 py-2.5 text-xs font-mono font-bold text-white bg-white/[0.03] border-r border-white/[0.06] shrink-0">
+                        NEAR
+                      </span>
+                      <input type="text" id="heirNearAddr" value="" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="e.g. family.testnet" class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none">
+                    </div>
                   </div>
-                  <div class="flex items-center rounded-xl bg-white/[0.02] border border-white/[0.08] focus-within:border-nearGreen transition overflow-hidden">
-                    <span class="px-3 py-2.5 text-xs font-mono font-bold text-[#F7931A] bg-white/[0.03] border-r border-white/[0.06] shrink-0">
-                      BTC
-                    </span>
-                    <input type="text" id="heirBtcAddr" value="" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="e.g. tb1q..." class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none">
-                  </div>
-                </div>
 
-                <!-- Ethereum / EVM -->
-                <div class="space-y-1.5">
-                  <div class="flex items-center justify-between text-xs">
-                    <label class="text-[#8C929D] font-mono text-[11px] uppercase font-semibold">Family Ethereum / EVM Address</label>
-                    <span class="text-[10px] text-white/40 font-mono">EVM / Base / Arbitrum</span>
+                  <!-- Bitcoin -->
+                  <div class="space-y-1.5">
+                    <div class="flex items-center justify-between text-xs">
+                      <label class="text-[#8C929D] font-mono text-[11px] uppercase font-semibold">Family Bitcoin Address</label>
+                      <span class="text-[10px] text-white/40 font-mono">Native SegWit (P2WPKH)</span>
+                    </div>
+                    <div class="flex items-center rounded-xl bg-white/[0.02] border border-white/[0.08] focus-within:border-nearGreen transition overflow-hidden">
+                      <span class="px-3 py-2.5 text-xs font-mono font-bold text-[#F7931A] bg-white/[0.03] border-r border-white/[0.06] shrink-0">
+                        BTC
+                      </span>
+                      <input type="text" id="heirBtcAddr" value="" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="e.g. tb1q..." class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none">
+                    </div>
                   </div>
-                  <div class="flex items-center rounded-xl bg-white/[0.02] border border-white/[0.08] focus-within:border-nearGreen transition overflow-hidden">
-                    <span class="px-3 py-2.5 text-xs font-mono font-bold text-[#627EEA] bg-white/[0.03] border-r border-white/[0.06] shrink-0">
-                      ETH
-                    </span>
-                    <input type="text" id="heirEvmAddr" value="" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="e.g. 0x..." class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none">
-                  </div>
-                </div>
 
-                <!-- Solana -->
-                <div class="space-y-1.5">
-                  <div class="flex items-center justify-between text-xs">
-                    <label class="text-[#8C929D] font-mono text-[11px] uppercase font-semibold">Family Solana Address</label>
-                    <span class="text-[10px] text-white/40 font-mono">Ed25519 Native</span>
+                  <!-- Ethereum / EVM -->
+                  <div class="space-y-1.5">
+                    <div class="flex items-center justify-between text-xs">
+                      <label class="text-[#8C929D] font-mono text-[11px] uppercase font-semibold">Family Ethereum / EVM Address</label>
+                      <span class="text-[10px] text-white/40 font-mono">EVM / Base / Arbitrum</span>
+                    </div>
+                    <div class="flex items-center rounded-xl bg-white/[0.02] border border-white/[0.08] focus-within:border-nearGreen transition overflow-hidden">
+                      <span class="px-3 py-2.5 text-xs font-mono font-bold text-[#627EEA] bg-white/[0.03] border-r border-white/[0.06] shrink-0">
+                        ETH
+                      </span>
+                      <input type="text" id="heirEvmAddr" value="" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="e.g. 0x..." class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none">
+                    </div>
                   </div>
-                  <div class="flex items-center rounded-xl bg-white/[0.02] border border-white/[0.08] focus-within:border-nearGreen transition overflow-hidden">
-                    <span class="px-3 py-2.5 text-xs font-mono font-bold text-[#9945FF] bg-white/[0.03] border-r border-white/[0.06] shrink-0">
-                      SOL
-                    </span>
-                    <input type="text" id="heirSolAddr" value="" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="e.g. Solana Base58 Address..." class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none">
-                  </div>
-                </div>
 
-                <!-- Optional Note to Heirs -->
-                <div class="space-y-1.5 pt-2 border-t border-white/[0.06]">
-                  <div class="flex items-center justify-between text-xs">
-                    <label class="text-[#8C929D] font-mono text-[11px] uppercase font-semibold">Message to Heirs (Optional)</label>
-                    <span id="memoByteCount" class="text-[10px] text-nearGreen font-mono font-bold">0 / 240 B</span>
+                  <!-- Solana -->
+                  <div class="space-y-1.5">
+                    <div class="flex items-center justify-between text-xs">
+                      <label class="text-[#8C929D] font-mono text-[11px] uppercase font-semibold">Family Solana Address</label>
+                      <span class="text-[10px] text-white/40 font-mono">Ed25519 Native</span>
+                    </div>
+                    <div class="flex items-center rounded-xl bg-white/[0.02] border border-white/[0.08] focus-within:border-nearGreen transition overflow-hidden">
+                      <span class="px-3 py-2.5 text-xs font-mono font-bold text-[#9945FF] bg-white/[0.03] border-r border-white/[0.06] shrink-0">
+                        SOL
+                      </span>
+                      <input type="text" id="heirSolAddr" value="" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="e.g. Solana Base58 Address..." class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none">
+                    </div>
                   </div>
-                  <div class="flex items-center rounded-xl bg-white/[0.02] border border-white/[0.08] focus-within:border-nearGreen transition overflow-hidden">
-                    <span class="px-3 py-2.5 text-xs font-mono font-bold text-nearGreen bg-white/[0.03] border-r border-white/[0.06] shrink-0">
-                      NOTE
-                    </span>
-                    <input type="text" id="heirFinalMemo" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" oninput="updateMemoByteCounter(this.value)" placeholder="e.g. Optional note for your family..." class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none">
+
+                  <!-- Optional Note to Heirs -->
+                  <div class="space-y-1.5 pt-2 border-t border-white/[0.06]">
+                    <div class="flex items-center justify-between text-xs">
+                      <label class="text-[#8C929D] font-mono text-[11px] uppercase font-semibold">Message to Heirs (Optional)</label>
+                      <span id="memoByteCount" class="text-[10px] text-nearGreen font-mono font-bold">0 / 240 B</span>
+                    </div>
+                    <div class="flex items-center rounded-xl bg-white/[0.02] border border-white/[0.08] focus-within:border-nearGreen transition overflow-hidden">
+                      <span class="px-3 py-2.5 text-xs font-mono font-bold text-nearGreen bg-white/[0.03] border-r border-white/[0.06] shrink-0">
+                        NOTE
+                      </span>
+                      <input type="text" id="heirFinalMemo" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" oninput="updateMemoByteCounter(this.value)" placeholder="e.g. Optional note for your family..." class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:text-[#585E6A] outline-none">
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
+
           </div>
 
-        </div>
-
-        <!-- Security Cooldown Status & Action Footer -->
-        <div class="rounded-2xl bg-[#0B0D12] border border-white/[0.08] p-5 space-y-4">
-          
-          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div class="space-y-0.5">
-              <div class="text-xs sm:text-sm font-bold text-white flex items-center gap-2">
-                <span id="addressStatusDot" class="w-2 h-2 rounded-full bg-nearGreen"></span>
-                <span>Policy Enforcement:</span>
-                <span id="addressStatusBadge" class="text-nearGreen font-mono font-bold">Active & Enforced</span>
-              </div>
-              <p class="text-xs text-[#8C929D]">
-                Fund redirection to arbitrary addresses is rejected by smart contract logic.
-              </p>
-            </div>
-
-            <div class="flex items-center gap-3">
-              <button id="cancelUpdateBtn" onclick="cancelAddressCooldown()" class="cancel-policy-btn hidden px-4 py-2.5 rounded-xl bg-red-950/40 hover:bg-red-950/60 text-red-400 font-mono font-bold text-xs border border-red-500/30 transition">
-                Cancel & Revert Update
-              </button>
-              <button id="applyPolicyBtn" onclick="applyAddressPolicy()" class="apply-policy-btn hidden px-4 py-2.5 rounded-xl bg-nearGreen hover:bg-nearGreenHover text-nearBlack font-mono font-bold text-xs transition shadow-near-glow whitespace-nowrap cursor-pointer">
-                Apply Policy
-              </button>
-              <button id="savePolicyBtn" onclick="saveAddresses()" class="save-policy-btn bg-nearGreen hover:bg-nearGreenHover text-nearBlack font-extrabold py-2.5 px-6 rounded-xl text-xs sm:text-sm transition shadow-near-glow active:scale-98 whitespace-nowrap cursor-pointer">
-                Save Policy
-              </button>
-            </div>
-          </div>
-
-          <!-- Pre-Save Warning -->
-          <div id="preSaveWarning" class="p-3.5 rounded-xl bg-amber-950/20 border border-amber-500/30 text-xs text-amber-200/90 flex items-start gap-3 hidden">
-            <svg class="w-4 h-4 text-amber-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-            <div class="space-y-0.5 leading-relaxed">
-              <span class="font-bold text-amber-300">Security Rule:</span> Modifying active addresses activates a strict 72-hour timelock to prevent theft if a device is compromised. Initial setup is immediate.
-            </div>
-          </div>
-
-          <!-- Cooldown Warning Alert (Clean Typographic Bar) -->
-          <div id="cooldownAlertBanner" class="p-4 rounded-xl bg-amber-950/25 border border-amber-500/40 text-xs text-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hidden">
-            <div class="flex items-center gap-3">
-              <span class="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse shrink-0"></span>
+          <!-- Security Cooldown Status & Action Footer (Integrated inside the same Policy Card) -->
+          <div class="border-t border-white/[0.08] bg-white/[0.015] p-5 space-y-4">
+            
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div class="space-y-0.5">
-                <div class="font-mono font-bold text-amber-300">3-Day Security Timelock in Progress (71h 59m remaining)</div>
-                <div class="text-[11px] text-amber-200/80">Pending addresses activate automatically once the delay elapses. Click Cancel to revert.</div>
+                <div class="text-xs sm:text-sm font-bold text-white flex items-center gap-2">
+                  <span id="addressStatusDot" class="w-2 h-2 rounded-full bg-nearGreen"></span>
+                  <span>Policy Enforcement:</span>
+                  <span id="addressStatusBadge" class="text-nearGreen font-mono font-bold">Active & Enforced</span>
+                </div>
+                <p class="text-xs text-[#8C929D]">
+                  Fund redirection to arbitrary addresses is rejected by smart contract logic.
+                </p>
+              </div>
+
+              <div class="flex items-center gap-3">
+                <button id="cancelUpdateBtn" onclick="cancelAddressCooldown()" class="cancel-policy-btn hidden px-4 py-2.5 rounded-xl bg-red-950/40 hover:bg-red-950/60 text-red-400 font-mono font-bold text-xs border border-red-500/30 transition">
+                  Cancel & Revert Update
+                </button>
+                <button id="applyPolicyBtn" onclick="applyAddressPolicy()" class="apply-policy-btn hidden px-4 py-2.5 rounded-xl bg-nearGreen hover:bg-nearGreenHover text-nearBlack font-mono font-bold text-xs transition shadow-near-glow whitespace-nowrap cursor-pointer">
+                  Apply Policy
+                </button>
+                <button id="savePolicyBtn" onclick="saveAddresses()" class="save-policy-btn bg-nearGreen hover:bg-nearGreenHover text-nearBlack font-extrabold py-2.5 px-6 rounded-xl text-xs sm:text-sm transition shadow-near-glow active:scale-98 whitespace-nowrap cursor-pointer">
+                  Save Policy
+                </button>
               </div>
             </div>
-            <button onclick="cancelAddressCooldown()" class="px-3.5 py-1.5 rounded-lg bg-red-950/50 hover:bg-red-900/60 text-red-300 font-mono text-[11px] border border-red-500/30 transition whitespace-nowrap self-start sm:self-auto">
-              Revert Immediately
-            </button>
-          </div>
 
+            <!-- Pre-Save Warning -->
+            <div id="preSaveWarning" class="p-3.5 rounded-xl bg-amber-950/20 border border-amber-500/30 text-xs text-amber-200/90 flex items-start gap-3 hidden">
+              <svg class="w-4 h-4 text-amber-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+              <div class="space-y-0.5 leading-relaxed">
+                <span class="font-bold text-amber-300">Security Rule:</span> Modifying active addresses activates a strict 72-hour timelock to prevent theft if a device is compromised. Initial setup is immediate.
+              </div>
+            </div>
+
+            <!-- Cooldown Warning Alert (Clean Typographic Bar) -->
+            <div id="cooldownAlertBanner" class="p-4 rounded-xl bg-amber-950/25 border border-amber-500/40 text-xs text-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hidden">
+              <div class="flex items-center gap-3">
+                <span class="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse shrink-0"></span>
+                <div class="space-y-0.5">
+                  <div class="font-mono font-bold text-amber-300">3-Day Security Timelock in Progress (71h 59m remaining)</div>
+                  <div class="text-[11px] text-amber-200/80">Pending addresses activate automatically once the delay elapses. Click Cancel to revert.</div>
+                </div>
+              </div>
+              <button onclick="cancelAddressCooldown()" class="px-3.5 py-1.5 rounded-lg bg-red-950/50 hover:bg-red-900/60 text-red-300 font-mono text-[11px] border border-red-500/30 transition whitespace-nowrap self-start sm:self-auto">
+                Revert Immediately
+              </button>
+            </div>
+
+          </div>
         </div>
 
       </div>
