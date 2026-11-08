@@ -429,20 +429,24 @@
         </div>
 
         <!-- Unallocated Funds Alert in Rescue Policy Tab -->
-        <div id="unallocatedPolicyAlert" class="p-4 rounded-xl bg-amber-950/30 border border-amber-500/40 hidden items-center gap-3 text-amber-200">
-          <div class="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center font-bold shrink-0">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-          </div>
-          <div>
-            <div class="font-bold text-amber-200 text-xs">Action Required: Unallocated Deposit Funds</div>
-            <div id="unallocatedPolicyText" class="text-xs text-[#C5CAD3] mt-0.5 font-mono"></div>
+        <div id="unallocatedPolicyAlert" class="p-4 rounded-xl bg-amber-950/30 border border-amber-500/40 hidden text-amber-200">
+          <div class="flex items-center gap-3 w-full">
+            <div class="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center font-bold shrink-0">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+            </div>
+            <div>
+              <div class="font-bold text-amber-200 text-xs">Action Required: Unallocated Deposit Funds</div>
+              <div id="unallocatedPolicyText" class="text-xs text-[#C5CAD3] mt-0.5 font-mono"></div>
+            </div>
           </div>
         </div>
 
         <!-- Initial Unconfigured Banner (Hidden if addresses exist) -->
-        <div id="unconfiguredBanner" class="hidden p-4 rounded-xl bg-amber-950/20 border border-amber-500/30 text-xs items-center gap-3 text-amber-200">
-          <svg class="w-4 h-4 text-amber-400 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-          <span>No destination addresses entered yet. Enter your backup and family wallets below, then click <strong>Save Policy</strong>. Initial setup activates immediately without timelock.</span>
+        <div id="unconfiguredBanner" class="hidden p-4 rounded-xl bg-amber-950/20 border border-amber-500/30 text-xs text-amber-200">
+          <div class="flex items-center gap-3 w-full">
+            <svg class="w-4 h-4 text-amber-400 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+            <span>No destination addresses entered yet. Enter your backup and family wallets below, then click <strong>Save Policy</strong>. Initial setup activates immediately without timelock.</span>
+          </div>
         </div>
 
         <!-- Armed & Synchronized Banner (Shown when destinations are saved on-chain) -->
@@ -837,35 +841,39 @@
       </div>
 
       <!-- Unarmed Bunker Notice Banner (Appears when vault is connected but unconfigured) -->
-      <div id="bunkerUnarmedBanner" class="p-4 rounded-2xl bg-amber-950/25 border border-amber-500/35 hidden flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div class="flex items-center gap-3">
-          <div class="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center font-bold shrink-0">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+      <div id="bunkerUnarmedBanner" class="p-4 sm:p-5 rounded-2xl bg-amber-950/25 border border-amber-500/35 hidden">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 w-full">
+          <div class="flex items-center gap-3.5">
+            <div class="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-400 flex items-center justify-center font-bold shrink-0">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+            </div>
+            <div>
+              <h4 class="text-xs sm:text-sm font-extrabold text-amber-200">Bunker Inactive — Arm Vault Before Depositing</h4>
+              <p class="text-xs text-[#C5CAD3] mt-0.5">Deposit addresses are disabled for security until you configure and save emergency backup or inheritance destinations above.</p>
+            </div>
           </div>
-          <div>
-            <h4 class="text-xs sm:text-sm font-extrabold text-amber-200">Bunker Inactive — Arm Vault Before Depositing</h4>
-            <p class="text-xs text-[#C5CAD3] mt-0.5">Deposit addresses are disabled for security until you configure and save emergency backup or inheritance destinations above.</p>
-          </div>
+          <button onclick="switchTab('rescue')" class="px-4 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-black font-extrabold text-xs transition whitespace-nowrap shrink-0 self-start sm:self-center cursor-pointer">
+            Configure Policy ↑
+          </button>
         </div>
-        <button onclick="switchTab('rescue')" class="px-4 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-black font-extrabold text-xs transition whitespace-nowrap shrink-0 cursor-pointer">
-          Configure Policy ↑
-        </button>
       </div>
 
       <!-- Unallocated Bunker Funds Warning Banner (Appears when deposit exists without backup egress) -->
-      <div id="unallocatedDepositAlert" class="p-4 rounded-2xl bg-amber-950/30 border border-amber-500/40 hidden flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div class="flex items-center gap-3">
-          <div class="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center font-bold shrink-0">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+      <div id="unallocatedDepositAlert" class="p-4 sm:p-5 rounded-2xl bg-amber-950/30 border border-amber-500/40 hidden">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 w-full">
+          <div class="flex items-center gap-3.5">
+            <div class="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-400 flex items-center justify-center font-bold shrink-0">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+            </div>
+            <div>
+              <h4 class="text-xs sm:text-sm font-extrabold text-amber-200">Unallocated Funds Detected — No Egress Destination Configured</h4>
+              <p id="unallocatedDepositText" class="text-xs text-[#C5CAD3] mt-0.5 font-mono"></p>
+            </div>
           </div>
-          <div>
-            <h4 class="text-xs sm:text-sm font-extrabold text-amber-200">Unallocated Funds Detected — No Egress Destination Configured</h4>
-            <p id="unallocatedDepositText" class="text-xs text-[#C5CAD3] mt-0.5 font-mono"></p>
-          </div>
+          <button onclick="switchTab('rescue')" class="px-4 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-black font-extrabold text-xs transition whitespace-nowrap shrink-0 self-start sm:self-center cursor-pointer">
+            Set Egress Addresses ↑
+          </button>
         </div>
-        <button onclick="switchTab('rescue')" class="px-4 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-black font-extrabold text-xs transition whitespace-nowrap shrink-0 cursor-pointer">
-          Set Egress Addresses ↑
-        </button>
       </div>
 
       <!-- Header row for Deposit section with Live Sync Status -->
