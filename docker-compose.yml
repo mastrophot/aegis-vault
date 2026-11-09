@@ -1,7 +1,7 @@
 services:
-  aegis-relayer:
+  lastkey-relayer:
     build: .
-    container_name: aegis-relayer-keeper
+    container_name: lastkey-relayer-keeper
     restart: always
     ports:
       - "8080:8080"

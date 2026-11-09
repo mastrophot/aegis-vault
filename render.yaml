@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: aegis-relayer-keeper
+    name: lastkey-relayer-keeper
     env: node
     plan: free
     region: frankfurt

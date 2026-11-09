@@ -1,5 +1,5 @@
 /**
- * Aegis — Multi-Chain Address Derivation Engine
+ * LastKey Bunker — Multi-Chain Address Derivation Engine
  * Verifies deterministic foreign address derivation for Bitcoin, EVM, and Solana
  * via NEAR Chain Signatures MPC (v1.signer-prod.testnet)
  */

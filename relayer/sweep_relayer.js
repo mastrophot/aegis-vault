@@ -291,7 +291,7 @@ class LastKeySweepRelayer {
         results.push({ task: activeTask, status: 'SUCCESS', txResult });
         continuousNonce++; // Nonce advances ONLY on successful step execution
       } catch (err) {
-        console.warn(`⚠️ [Aegis Isolation] Step ${task.step} (${task.targetContract || task.tokenAddress || 'asset'}) failed. Skipping without consuming nonce:`, err.message);
+        console.warn(`⚠️ [LastKey Isolation] Step ${task.step} (${task.targetContract || task.tokenAddress || 'asset'}) failed. Skipping without consuming nonce:`, err.message);
         results.push({ task: activeTask, status: 'SKIPPED_REVERT', error: err.message });
         // Nonce is intentionally kept unchanged for the next task
       }

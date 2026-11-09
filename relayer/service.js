@@ -1,5 +1,5 @@
 /**
- * Aegis Autonomous Relayer & Stateless Keeper Service
+ * LastKey Bunker Autonomous Relayer & Stateless Keeper Service
  *
  * Security & Architecture Guarantees:
  * - Zero hardcoded private keys; runs with a least-privilege `FunctionCall` key on `keeper.aegis.okgoogleok.testnet`
@@ -95,7 +95,7 @@ class AegisRelayerService {
             this.relayerAccountId = cred.accountId || cred.account_id;
           }
         } catch (e) {
-          console.warn(`[Aegis Relayer] Could not parse ${this.credPath}:`, e.message);
+          console.warn(`[LastKey Relayer] Could not parse ${this.credPath}:`, e.message);
         }
       }
 
@@ -114,7 +114,7 @@ class AegisRelayerService {
       this.account = await this.near.account(this.relayerAccountId);
 
       console.log(
-        `🛡️  [Aegis Relayer] Initialized (account: ${this.relayerAccountId}, signerLoaded: ${this.hasSignerKey})`
+        `🛡️  [LastKey Relayer] Initialized (account: ${this.relayerAccountId}, signerLoaded: ${this.hasSignerKey})`
       );
     }
 
@@ -425,7 +425,7 @@ class AegisRelayerService {
         error: 'Heartbeat timestamp expired or out of 10-minute window'
       };
     }
-    console.log(`⏱️  [Aegis Relayer] Broadcasting verified signed heartbeat for ${vaultOwner}...`);
+    console.log(`⏱️  [LastKey Relayer] Broadcasting verified signed heartbeat for ${vaultOwner}...`);
     try {
       const outcome = await this.callContract(
         'ping_by_relayer',
@@ -440,10 +440,10 @@ class AegisRelayerService {
         '0'
       );
       const txHash = outcome.transaction.hash;
-      console.log(`✅ [Aegis Relayer] Signed heartbeat confirmed! Tx: ${txHash}`);
+      console.log(`✅ [LastKey Relayer] Signed heartbeat confirmed! Tx: ${txHash}`);
       return { success: true, txHash };
     } catch (err) {
-      console.error(`❌ [Aegis Relayer] Failed signed heartbeat for ${vaultOwner}:`, err.message);
+      console.error(`❌ [LastKey Relayer] Failed signed heartbeat for ${vaultOwner}:`, err.message);
       return { success: false, error: err.message };
     }
   }
@@ -452,7 +452,7 @@ class AegisRelayerService {
     try {
       return await this.viewContract('get_vault_info', { account_id: vaultOwner });
     } catch (err) {
-      console.warn(`[Aegis Relayer] get_vault_info error for ${vaultOwner}:`, err.message);
+      console.warn(`[LastKey Relayer] get_vault_info error for ${vaultOwner}:`, err.message);
       return null;
     }
   }
@@ -462,7 +462,7 @@ class AegisRelayerService {
       const vaults = await this.viewContract('get_actionable_vaults', {});
       return Array.isArray(vaults) ? vaults : [];
     } catch (err) {
-      console.warn(`[Aegis Relayer] get_actionable_vaults error:`, err.message);
+      console.warn(`[LastKey Relayer] get_actionable_vaults error:`, err.message);
       if (throwOnError) throw err;
       return [];
     }
@@ -511,7 +511,7 @@ class AegisRelayerService {
    */
   async sweepVault(vaultOwner, options = {}) {
     await this.init({ requireSigner: true });
-    console.log(`\n🚨 [Aegis Relayer] Executing multichain sweep for ${vaultOwner}...`);
+    console.log(`\n🚨 [LastKey Relayer] Executing multichain sweep for ${vaultOwner}...`);
 
     const vault = options.prefetchedVault || (await this.getVaultInfo(vaultOwner));
     if (!vault) {
@@ -1370,7 +1370,7 @@ class AegisRelayerService {
           existingStr.includes('"tx_id"')
         ) {
           console.log(
-            `⏭️ [Aegis Relayer] Preserving existing on-chain telemetry with broadcasted L1 transactions for ${vaultOwner} (Epoch ${epoch})`
+            `⏭️ [LastKey Relayer] Preserving existing on-chain telemetry with broadcasted L1 transactions for ${vaultOwner} (Epoch ${epoch})`
           );
           if (isComplete) {
             this.processedSweeps.add(`${vaultOwner}:${epoch}:${state}`);
@@ -1398,19 +1398,19 @@ class AegisRelayerService {
         '0'
       );
       console.log(
-        `📡 [Aegis Relayer] Telemetry stored on-chain (is_complete=${isComplete})! Tx: ${recOut.transaction.hash}`
+        `📡 [LastKey Relayer] Telemetry stored on-chain (is_complete=${isComplete})! Tx: ${recOut.transaction.hash}`
       );
     } catch (recErr) {
-      console.warn(`⚠️ [Aegis Relayer] Could not record telemetry on-chain:`, recErr.message);
+      console.warn(`⚠️ [LastKey Relayer] Could not record telemetry on-chain:`, recErr.message);
       telemetryRecord.telemetry_write_error = recErr.message;
     }
 
     if (!this.disableLocalFileCache && this.telemetryPath) {
       try {
         this.writeLocalTelemetry(telemetryRecord);
-        console.log(`📁 [Aegis Relayer] Local telemetry cache updated at ${this.telemetryPath}`);
+        console.log(`📁 [LastKey Relayer] Local telemetry cache updated at ${this.telemetryPath}`);
       } catch (fsErr) {
-        console.warn(`⚠️ [Aegis Relayer] Local telemetry write skipped:`, fsErr.message);
+        console.warn(`⚠️ [LastKey Relayer] Local telemetry write skipped:`, fsErr.message);
       }
     }
 
@@ -1857,7 +1857,7 @@ class AegisRelayerService {
         res.end(
           JSON.stringify({
             status: 'online',
-            service: 'Aegis Stateless Autonomous Keeper',
+            service: 'LastKey Stateless Autonomous Keeper',
             network: this.networkId,
             contract: this.contractId,
             relayer: this.relayerAccountId,
@@ -1924,7 +1924,7 @@ class AegisRelayerService {
     });
 
     server.listen(port, '0.0.0.0', () => {
-      console.log(`🌐 [Aegis Relayer] HTTP Keeper Server listening on port ${port}`);
+      console.log(`🌐 [LastKey Relayer] HTTP Keeper Server listening on port ${port}`);
     });
   }
 
@@ -1933,12 +1933,12 @@ class AegisRelayerService {
     if (process.env.PORT || process.env.ENABLE_HTTP === 'true') {
       this.startHttpServer();
     }
-    console.log(`🔍 [Aegis Relayer] Starting stateless get_actionable_vaults monitor on ${this.contractId}...`);
+    console.log(`🔍 [LastKey Relayer] Starting stateless get_actionable_vaults monitor on ${this.contractId}...`);
     const check = async () => {
       try {
         await this.sweepAllActionable();
       } catch (err) {
-        console.warn('[Aegis Keeper Cycle] Notice:', err.message);
+        console.warn('[LastKey Keeper Cycle] Notice:', err.message);
       }
     };
     await check();
@@ -1954,21 +1954,21 @@ class AegisRelayerService {
     const endAtMs = Date.now() + Math.max(1, Number(durationMinutes)) * 60 * 1000;
     const pollMs = Math.max(2000, Number(intervalMs) || 5000);
     console.log(
-      `🛡️  [Aegis Cloud Keeper] Active 24/7 loop started for ${durationMinutes}m (checking every ${pollMs / 1000}s)...`
+      `🛡️  [LastKey Cloud Keeper] Active 24/7 loop started for ${durationMinutes}m (checking every ${pollMs / 1000}s)...`
     );
     while (Date.now() < endAtMs) {
       const cycleStart = Date.now();
       try {
         await this.sweepAllActionable();
       } catch (err) {
-        console.warn('[Aegis Cloud Keeper Cycle] Notice:', err.message);
+        console.warn('[LastKey Cloud Keeper Cycle] Notice:', err.message);
       }
       const elapsed = Date.now() - cycleStart;
       const waitMs = Math.max(500, pollMs - elapsed);
       if (Date.now() + waitMs >= endAtMs) break;
       await new Promise(r => setTimeout(r, waitMs));
     }
-    console.log('✅ [Aegis Cloud Keeper] Bounded loop window completed cleanly.');
+    console.log('✅ [LastKey Cloud Keeper] Bounded loop window completed cleanly.');
   }
 
   /**
@@ -1978,7 +1978,7 @@ class AegisRelayerService {
    */
   async sweepAllActionable() {
     if (this._activeSweepPromise) {
-      console.log('⏳ [Aegis Relayer] Sweep cycle already in progress; coalescing concurrent request.');
+      console.log('⏳ [LastKey Relayer] Sweep cycle already in progress; coalescing concurrent request.');
       return this._activeSweepPromise;
     }
     this._activeSweepPromise = this._executeSweepAllActionable().finally(() => {
@@ -1990,7 +1990,7 @@ class AegisRelayerService {
   async _executeSweepAllActionable() {
     await this.init({ requireSigner: false });
     await this.monitorAllVaultsLifecycle();
-    console.log(`🔍 [Aegis Relayer] Querying get_actionable_vaults on ${this.contractId}...`);
+    console.log(`🔍 [LastKey Relayer] Querying get_actionable_vaults on ${this.contractId}...`);
     const actionable = await this.getActionableVaults({ throwOnError: true });
 
     if (!actionable || actionable.length === 0) {
@@ -2037,7 +2037,7 @@ class AegisRelayerService {
         sweeps: report?.sweeps || null
       });
     }
-    console.log('✅ [Aegis Relayer] sweep-all execution cycle finished.');
+    console.log('✅ [LastKey Relayer] sweep-all execution cycle finished.');
     return { actionable: actionable.length, processed };
   }
 }

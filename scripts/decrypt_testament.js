@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Offline Zero-Server CLI Decryption Helper for Aegis E2EE Heir Testaments
+ * Offline Zero-Server CLI Decryption Helper for LastKey Bunker E2EE Heir Testaments
  *
  * Supports:
  * 1) `enc:x25519:<base64>` — decrypts using Heir's Solana / NEAR Ed25519 secret key

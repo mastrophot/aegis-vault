@@ -17,7 +17,7 @@ const bitcoin = require('bitcoinjs-lib');
 
 async function runSweepSimulation() {
   console.log('====================================================');
-  console.log('🛡️  AEGIS HARDENED MULTICHAIN RELAYER TEST SUITE');
+  console.log('🛡️  LASTKEY BUNKER HARDENED MULTICHAIN RELAYER TEST SUITE');
   console.log('====================================================\n');
 
   const relayer = new LastKeySweepRelayer({ networkId: 'testnet' });
@@ -153,7 +153,7 @@ async function runSweepSimulation() {
     fromOwnerPubkey: vault.sol.address,
     toRecipientPubkey: '11111111111111111111111111111111',
     amountTokens: 5000000000n, // 5,000 USDC
-    memo: 'Aegis SPL Transfer'
+    memo: 'LastKey SPL Transfer'
   });
   console.log(`   • Recipient ATA:         ${solSplSweep.recipientAta} (Created via Idempotent Instruction)`);
   console.log(`   • Raw Payload Hex (Ed25519): ${solSplSweep.rawPayloadHex.slice(0, 40)}...`);
@@ -181,7 +181,7 @@ async function runSweepSimulation() {
     fromAccount: 'aegis.okgoogleok.testnet',
     toAccount: 'mastrophot.testnet',
     balanceYocto: '10000000000000000000000000', // 10 NEAR
-    memo: 'Aegis NEAR Evacuation'
+    memo: 'LastKey NEAR Evacuation'
   });
 
   console.log(`   • From Account:          ${nearSweep.fromAccount}`);
@@ -210,7 +210,7 @@ async function runSweepSimulation() {
       { address: '0x6982508145454Ce325dDbE47a25d4ec3d2311933', amount: 1000000000000000000000000000n }
     ],
     nativeWeiBalance: ethers.parseEther('1.25'),
-    memo: 'Aegis Zero-Asset Evacuation'
+    memo: 'LastKey Zero-Asset Evacuation'
   });
 
   console.log(`   • Evacuation Steps Planned: ${evacuationPlan.length}`);

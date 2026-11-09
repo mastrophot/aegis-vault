@@ -1,5 +1,5 @@
 /**
- * Aegis Cloudflare Worker: 24/7 Stateless Autonomous Keeper (`nodejs_compat`)
+ * LastKey Bunker Cloudflare Worker: 24/7 Stateless Autonomous Keeper (`nodejs_compat`)
  *
  * - Lazy-loads heavy multichain crypto libraries (`ethers`, `bitcoinjs-lib`, `@solana/web3.js`, `chainsig.js`)
  *   inside request/cron handlers so Worker cold-start CPU stays <5ms
@@ -94,7 +94,7 @@ export default {
       return new Response(
         JSON.stringify({
           status: 'online',
-          worker: 'aegis-keeper',
+          worker: 'lastkey-keeper',
           contract: env.CONTRACT_ID || 'aegis.okgoogleok.testnet',
           relayer: env.RELAYER_ACCOUNT_ID || 'keeper.aegis.okgoogleok.testnet',
           signerConfigured: Boolean(env.RELAYER_PRIVATE_KEY)

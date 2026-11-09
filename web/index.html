@@ -1472,7 +1472,7 @@
                 nearClockOffsetMs = Number(BigInt(vaultInfo.current_time_ns) / 1000000n) - Date.now();
               } catch (_) {}
             }
-            console.log(`📡 [Aegis] Live NEAR RPC State fetched from ${rpcUrl} for ${currentSigner}:`, vaultInfo);
+            console.log(`📡 [LastKey] Live NEAR RPC State fetched from ${rpcUrl} for ${currentSigner}:`, vaultInfo);
             syncUIWithOnChainState(vaultInfo, currentSigner);
             return vaultInfo;
           } else if (data.result && (data.result.error || data.result.result === null)) {
@@ -1481,10 +1481,10 @@
             syncUIWithOnChainState(null, currentSigner);
             return null;
           } else {
-            console.warn(`[Aegis] RPC notice from ${rpcUrl}:`, data.error || 'Empty response');
+            console.warn(`[LastKey] RPC notice from ${rpcUrl}:`, data.error || 'Empty response');
           }
         } catch (err) {
-          console.warn(`[Aegis] RPC error from ${rpcUrl}:`, err.message);
+          console.warn(`[LastKey] RPC error from ${rpcUrl}:`, err.message);
         }
       }
       // If network errors occur, preserve existing state to prevent flickering
@@ -2367,7 +2367,7 @@
           await provider.connectMyNearWallet(CONTRACT_ID);
           return;
         }
-        console.error(`[Aegis] ${type} connection error:`, err);
+        console.error(`[LastKey] ${type} connection error:`, err);
         showToast(`Connection error: ${err.message}`, true);
       }
     }
@@ -2543,7 +2543,7 @@
           window.history.replaceState({}, document.title, url.pathname + (url.search ? url.search : '') + url.hash);
         }
       } catch (e) {
-        console.warn('[Aegis] URL callback parse notice:', e);
+        console.warn('[LastKey] URL callback parse notice:', e);
       }
     }
 
@@ -2620,7 +2620,7 @@
           });
           return;
         } catch (err) {
-          console.warn('[Aegis] Wallet selector init notice:', err);
+          console.warn('[LastKey] Wallet selector init notice:', err);
         }
       }
 
@@ -2884,7 +2884,7 @@
 
       showToast(`Broadcasting on-chain ${methodName}() to NEAR Testnet...`);
       try {
-        console.log(`[Aegis On-Chain] Dispatching ${methodName} on ${CONTRACT_ID} with args:`, args);
+        console.log(`[LastKey On-Chain] Dispatching ${methodName} on ${CONTRACT_ID} with args:`, args);
 
         const attachedDeposit = String(depositOverride || '0');
         const provider = window.AegisWallet || window.AegisMeteor || window.AegisWalletBundle;
@@ -2901,7 +2901,7 @@
             return outcome;
           }
           const txHash = outcome?.transaction?.hash || outcome?.transaction_outcome?.id || 'Confirmed';
-          console.log(`✅ [Aegis] NEAR transaction confirmed: ${txHash}`, outcome);
+          console.log(`✅ [LastKey] NEAR transaction confirmed: ${txHash}`, outcome);
           showToast(`✅ ${methodName}() confirmed on-chain! Tx: ${String(txHash).slice(0, 8)}...`);
           userHasInteractedWithInputs = false;
           isEditing = false;
@@ -2947,7 +2947,7 @@
           });
 
           const txHash = outcome?.transaction?.hash || outcome?.transaction_outcome?.id || 'Confirmed';
-          console.log(`✅ [Aegis] KeyPair transaction confirmed: ${txHash}`, outcome);
+          console.log(`✅ [LastKey] KeyPair transaction confirmed: ${txHash}`, outcome);
           showToast(`✅ ${methodName}() confirmed on-chain! Tx: ${String(txHash).slice(0, 8)}...`);
           userHasInteractedWithInputs = false;
           isEditing = false;
@@ -2971,7 +2971,7 @@
         openMultichainWalletModal();
         throw new Error('Wallet not connected');
       } catch (err) {
-        console.error(`❌ [Aegis] Failed to dispatch ${methodName}:`, err);
+        console.error(`❌ [LastKey] Failed to dispatch ${methodName}:`, err);
         if (err.message && (err.message.includes('No NEAR wallet connected') || err.message === 'Wallet not connected')) {
           showToast('Please connect your NEAR wallet first!', true);
           openMultichainWalletModal();

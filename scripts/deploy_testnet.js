@@ -1,5 +1,5 @@
 /**
- * Aegis Vault Testnet Deployment Script
+ * LastKey Bunker Testnet Deployment Script
  * 
  * 1. Generates an Ed25519 KeyPair
  * 2. Creates a unique testnet account via NEAR Testnet Faucet
@@ -51,11 +51,11 @@ async function createTestnetAccount(accountId, publicKey) {
 
 async function deploy() {
   console.log('====================================================');
-  console.log('🚀 AEGIS VAULT TESTNET DEPLOYMENT ENGINE');
+  console.log('🚀 LASTKEY BUNKER TESTNET DEPLOYMENT ENGINE');
   console.log('====================================================\n');
 
   const randomSuffix = Math.floor(1000 + Math.random() * 9000);
-  const accountId = process.env.CONTRACT_ID || `aegis-vault-${randomSuffix}.testnet`;
+  const accountId = process.env.CONTRACT_ID || `lastkey-bunker-${randomSuffix}.testnet`;
   const wasmPath = path.resolve(__dirname, '../contracts/vault/target/wasm32-unknown-unknown/release/lastkey_vault.wasm');
 
   if (!fs.existsSync(wasmPath)) {

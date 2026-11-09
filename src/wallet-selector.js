@@ -67,7 +67,7 @@ export async function runAutonomousKeeperSweep() {
         ...summary
       };
     } catch (err) {
-      console.warn("[Aegis Browser Keeper] Sweep cycle error:", err?.message || err);
+      console.warn("[LastKey Browser Keeper] Sweep cycle error:", err?.message || err);
       return { success: false, error: err?.message || String(err) };
     } finally {
       _browserSweepInFlightPromise = null;
@@ -89,7 +89,7 @@ export async function syncWalletActivityOnChain(vaultOwner, observedNonceStr) {
       "30000000000000"
     );
   } catch (err) {
-    console.warn("[Aegis] syncWalletActivityOnChain notice:", err?.message || err);
+    console.warn("[LastKey] syncWalletActivityOnChain notice:", err?.message || err);
     return null;
   }
 }

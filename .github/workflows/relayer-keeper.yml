@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: aegis-relayer-keeper
+  group: lastkey-relayer-keeper
   cancel-in-progress: false
 
 jobs:
