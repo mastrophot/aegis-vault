@@ -1,0 +1,17 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="32" height="32" rx="8" fill="#0B0E15"/>
+  <rect x="0.5" y="0.5" width="31" height="31" rx="7.5" stroke="#00F5D4" stroke-opacity="0.25"/>
+  <defs>
+    <linearGradient id="aegisLogoGrad" x1="2" y1="2" x2="30" y2="30" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#00F5D4"/>
+      <stop offset="100%" stop-color="#00C9FF"/>
+    </linearGradient>
+    <linearGradient id="aegisCoreGrad" x1="16" y1="8" x2="16" y2="21" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF"/>
+      <stop offset="100%" stop-color="#A5F3FC"/>
+    </linearGradient>
+  </defs>
+  <path d="M16 4L26 8.2V15.5C26 22.3 21.6 26.9 16 28C10.4 26.9 6 22.3 6 15.5V8.2L16 4Z" fill="url(#aegisLogoGrad)" fill-opacity="0.18" stroke="url(#aegisLogoGrad)" stroke-width="2" stroke-linejoin="round"/>
+  <path d="M16 8.5L22 20.5H18.6L17.1 17.3H14.9L13.4 20.5H10L16 8.5ZM16 13L15.3 15H16.7L16 13Z" fill="url(#aegisCoreGrad)"/>
+  <circle cx="16" cy="23.8" r="1.5" fill="#00F5D4"/>
+</svg>

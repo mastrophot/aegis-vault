@@ -6975,6 +6975,8 @@ if (typeof window !== "undefined") {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Aegis — Multichain MPC Dead-Man's Switch · Built on NEAR Protocol</title>
+  <link rel="icon" type="image/svg+xml" href="./favicon.svg">
+  <link rel="shortcut icon" href="./favicon.svg">
   
   <!-- NEAR Protocol Brand Typography: Manrope & JetBrains Mono -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
