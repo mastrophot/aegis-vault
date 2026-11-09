@@ -236,7 +236,19 @@
   </header>
 
   <!-- Main Content Space -->
-  <main class="max-w-7xl mx-auto w-full px-4 sm:px-8 py-8 sm:py-10 space-y-8 flex-1">
+  <main class="max-w-7xl mx-auto w-full px-4 sm:px-8 py-6 sm:py-8 space-y-6 flex-1">
+
+    <!-- Top Bunker Value Proposition Brief -->
+    <div class="space-y-1.5 px-0.5">
+      <div class="flex flex-wrap items-center gap-2.5">
+        <span class="w-2.5 h-2.5 rounded-full bg-nearGreen radar-pulse"></span>
+        <h1 class="text-base sm:text-lg font-extrabold text-white tracking-tight">Zero-Signature Crypto Bunker &amp; Automatic Inheritance</h1>
+        <span class="text-[11px] font-mono px-2.5 py-0.5 rounded-md bg-nearGreen/10 text-nearGreen border border-nearGreen/25 font-bold">Public Keys Hidden</span>
+      </div>
+      <p class="text-xs sm:text-[13px] text-[#A6B0C3] leading-relaxed max-w-5xl">
+        Regular wallets permanently expose their cryptographic public key on-chain every time they sign a transaction. Your <strong class="text-white font-semibold">Aegis Bunker</strong> addresses only receive deposits and never sign a single outgoing transaction — until <strong class="text-white font-semibold">Emergency Panic</strong> sweeps 100% of funds to your backup wallet or <strong class="text-white font-semibold">Automatic Inheritance</strong> transfers them to your family if your timer expires.
+      </p>
+    </div>
 
     <!-- Hero Operational HUD (Clean & Compact) -->
     <div class="near-card p-6 sm:p-7">
@@ -263,7 +275,7 @@
 
           <div>
             <div id="countdownTitle" class="text-xs font-sans text-textGray font-medium">
-              Zero-Signature Cold Bunker &amp; Automatic Family Inheritance:
+              Time remaining before automatic inheritance:
             </div>
             <div id="countdownBox" class="text-3xl sm:text-4xl md:text-5xl font-sans font-extrabold text-white tracking-tight mt-1.5 flex items-baseline gap-2">
               Arm Your Bunker
@@ -638,14 +650,11 @@
       <!-- Header row for Deposit section with Live Sync Status -->
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2">
         <div>
-          <div class="flex flex-wrap items-center gap-2.5">
+          <div class="flex items-center gap-2.5">
             <span class="w-2.5 h-2.5 rounded-full bg-nearGreen radar-pulse"></span>
             <h3 class="text-base sm:text-lg font-extrabold text-white">Your Bunker Deposit Addresses</h3>
-            <span class="text-[11px] font-mono px-2.5 py-0.5 rounded-md bg-nearGreen/10 text-nearGreen border border-nearGreen/25 font-bold">Zero-Signature Bunker · Public Keys Hidden</span>
           </div>
-          <p class="text-xs text-[#A6B0C3] mt-1 max-w-3xl leading-relaxed">
-            Send funds here for cold protection. Why a <span class="text-white font-semibold">Bunker</span>? Every time a regular wallet signs an outgoing transaction, it permanently exposes its cryptographic public key on the blockchain — making reused addresses vulnerable to key-recovery and future quantum attacks. Your Aegis Bunker addresses <span class="text-nearGreen font-semibold">only receive deposits and never sign a single transaction</span> while storing your funds. Once evacuated via Panic or Inheritance, the used address is permanently retired and rotated to a fresh Bunker.
-          </p>
+          <p class="text-xs text-[#8C929D] mt-0.5">Send funds to these addresses to store them inside your Bunker.</p>
         </div>
         <div class="flex items-center gap-2 self-start sm:self-auto">
           <button onclick="fetchLiveBalances(true)" class="px-3.5 py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-xs font-sans font-semibold text-textSilver hover:text-white transition flex items-center gap-2 cursor-pointer">
@@ -2643,7 +2652,7 @@
         heartbeatTag.className = 'text-xs font-sans font-semibold text-[#A6B0C3] bg-white/[0.04] px-3 py-1 rounded-lg border border-white/[0.08]';
         heartbeatTag.innerText = 'Wallet Not Connected';
       }
-      if (countdownTitle) countdownTitle.innerText = 'Zero-Signature Cold Bunker & Automatic Family Inheritance:';
+      if (countdownTitle) countdownTitle.innerText = 'Time remaining before automatic inheritance:';
       if (countdownBox) countdownBox.innerText = 'Arm Your Bunker';
       if (statusDisplay) statusDisplay.innerHTML = 'Status: <strong class="text-white font-semibold">Connect wallet to arm your Bunker</strong>';
       if (timerBar) {
@@ -3830,7 +3839,7 @@
           cardTitle.className = 'text-xs font-sans font-bold tracking-wide text-[#A6B0C3]';
           cardTitle.innerText = "Bunker Dead-Man's Switch · Check-In Timer";
         }
-        if (countdownTitle) countdownTitle.innerText = 'Zero-Signature Cold Bunker & Automatic Family Inheritance:';
+        if (countdownTitle) countdownTitle.innerText = 'Time remaining before automatic inheritance:';
         if (countdownBox) countdownBox.innerText = 'Arm Your Bunker';
         if (statusDisplay) statusDisplay.innerHTML = 'Status: <strong class="text-white font-semibold">Connect wallet to arm your Bunker</strong>';
         if (timerBar) {
@@ -3947,7 +3956,7 @@
           heartbeatTag.className = 'text-xs font-sans font-semibold text-amber-400/90 bg-amber-950/30 px-3 py-1 rounded-lg border border-amber-500/30';
           heartbeatTag.innerText = 'Bunker Unarmed';
         }
-        if (countdownTitle) countdownTitle.innerText = 'Zero-Signature Cold Bunker & Automatic Family Inheritance:';
+        if (countdownTitle) countdownTitle.innerText = 'Time remaining before automatic inheritance:';
         if (countdownBox) countdownBox.innerText = 'Arm Your Bunker';
         if (statusDisplay) statusDisplay.innerHTML = 'Status: <strong class="text-amber-400 font-bold">Bunker Unarmed (Save Wallets Below)</strong>';
         if (timerBar) {
