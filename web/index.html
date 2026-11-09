@@ -522,15 +522,31 @@
 
                   <!-- Optional Note to Heirs -->
                   <div class="space-y-1.5 pt-2 border-t border-white/[0.06]">
-                    <div class="flex items-center justify-between text-xs">
-                      <label class="text-[#8C929D] font-sans font-medium">Optional note for recipient</label>
-                      <span id="memoByteCount" class="text-[11px] text-[#8E99AD] font-mono">0 / 240 B</span>
+                    <div class="flex items-center justify-between gap-2 text-xs flex-wrap">
+                      <div class="flex items-center gap-1.5">
+                        <label class="text-[#8C929D] font-sans font-medium">Optional note for recipient</label>
+                        <span id="e2eeArmedStatus" class="hidden text-[10px] font-mono font-semibold text-nearGreen bg-nearGreen/10 border border-nearGreen/30 px-1.5 py-0.5 rounded">🔒 Encrypted</span>
+                      </div>
+                      <div class="flex items-center gap-2">
+                        <div class="inline-flex items-center rounded-lg bg-white/[0.03] border border-white/[0.08] p-0.5 text-[10px] font-sans font-bold">
+                          <button type="button" id="testamentModePlainBtn" onclick="setTestamentMode('plaintext')" class="px-2 py-0.5 rounded-md bg-nearGreen text-nearBlack transition cursor-pointer">Public</button>
+                          <button type="button" id="testamentModeE2eeBtn" onclick="setTestamentMode('e2ee')" class="px-2 py-0.5 rounded-md text-[#8C929D] hover:text-white transition cursor-pointer">🔒 E2EE</button>
+                        </div>
+                        <button type="button" onclick="openDecryptModal()" class="text-[10px] font-sans font-semibold text-[#8E99AD] hover:text-nearGreen underline underline-offset-2 transition cursor-pointer" title="Decrypt an encrypted E2EE testament locally">Decrypt</button>
+                        <span id="memoByteCount" class="text-[11px] text-[#8E99AD] font-mono">0 / 240 B</span>
+                      </div>
                     </div>
                     <div class="flex items-center rounded-xl bg-white/[0.02] border border-white/[0.08] focus-within:border-nearGreen transition overflow-hidden">
                       <span class="w-16 text-center py-2.5 text-xs font-sans font-bold text-nearGreen bg-white/[0.03] border-r border-white/[0.06] shrink-0">
                         Note
                       </span>
                       <input type="text" id="heirFinalMemo" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" oninput="updateMemoByteCounter(this.value)" placeholder="Enter optional note for recipient..." class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-sans text-white placeholder:text-[#585E6A] outline-none">
+                    </div>
+                    <div id="heirMemoPassphraseRow" class="hidden flex items-center rounded-xl bg-white/[0.02] border border-nearGreen/25 focus-within:border-nearGreen transition overflow-hidden">
+                      <span class="w-16 text-center py-2 text-[11px] font-sans font-bold text-nearGreen bg-white/[0.03] border-r border-white/[0.06] shrink-0">
+                        E2EE Key
+                      </span>
+                      <input type="password" id="heirMemoPassphrase" autocomplete="new-password" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly data-lpignore="true" data-1p-ignore="true" placeholder="AES-256 passphrase (or leave empty for X25519 Solana key)" class="w-full bg-transparent px-3.5 py-2 text-xs font-mono text-white placeholder:font-sans placeholder:text-[#585E6A] outline-none">
                     </div>
                   </div>
                 </div>
@@ -5441,10 +5457,10 @@
 
     // Destination Policies & 72h Timelock
 
-    window.testamentMode = 'plaintext';
+    window.testamentMode = localStorage.getItem('aegis_testament_mode') === 'e2ee' ? 'e2ee' : 'plaintext';
 
     function setTestamentMode(mode, persist = true) {
-      window.testamentMode = 'plaintext';
+      window.testamentMode = mode === 'e2ee' ? 'e2ee' : 'plaintext';
       if (persist) {
         localStorage.setItem('aegis_testament_mode', window.testamentMode);
         isEditing = true;
@@ -5452,35 +5468,22 @@
       }
       const e2eeBtn = document.getElementById('testamentModeE2eeBtn');
       const plainBtn = document.getElementById('testamentModePlainBtn');
-      const labelEl = document.getElementById('testamentInputModeLabel');
       const passRow = document.getElementById('heirMemoPassphraseRow');
-      const descTitle = document.getElementById('testamentDescTitle');
-      const descBody = document.getElementById('testamentDescBody');
       const memoInput = document.getElementById('heirFinalMemo');
 
       if (window.testamentMode === 'plaintext') {
-        if (e2eeBtn) e2eeBtn.className = 'px-2 py-0.5 rounded-full text-[#8C929D] hover:text-white transition cursor-pointer';
-        if (plainBtn) plainBtn.className = 'px-2 py-0.5 rounded-full bg-nearGreen text-nearBlack transition cursor-pointer';
-        if (labelEl) labelEl.innerText = 'Public On-Chain Note (Readable on Etherscan UTF-8 & Solscan Memo)';
+        if (e2eeBtn) e2eeBtn.className = 'px-2 py-0.5 rounded-md text-[#8C929D] hover:text-white transition cursor-pointer';
+        if (plainBtn) plainBtn.className = 'px-2 py-0.5 rounded-md bg-nearGreen text-nearBlack transition cursor-pointer';
         if (passRow) passRow.classList.add('hidden');
-        if (descTitle) descTitle.innerText = 'Direct Plaintext On-Chain Delivery (EVM Calldata & Solana SPL Memo)';
-        if (descBody) {
-          descBody.innerHTML = 'Transmitted as raw UTF-8 text inside Ethereum <code>Input Data (UTF-8)</code> and Solana <code>Instruction #2 (Memo Program v2)</code>. Readable directly on Etherscan &amp; Solscan without decryption (do not put raw seed phrases in Public mode).';
-        }
         if (memoInput && !memoInput.value) {
           memoInput.placeholder = 'Enter optional note for recipient...';
         }
       } else {
-        if (e2eeBtn) e2eeBtn.className = 'px-2 py-0.5 rounded-full bg-nearGreen text-nearBlack transition cursor-pointer';
-        if (plainBtn) plainBtn.className = 'px-2 py-0.5 rounded-full text-[#8C929D] hover:text-white transition cursor-pointer';
-        if (labelEl) labelEl.innerText = 'Private Note to Heirs (Zero Plaintext On-Chain)';
+        if (e2eeBtn) e2eeBtn.className = 'px-2 py-0.5 rounded-md bg-nearGreen text-nearBlack transition cursor-pointer';
+        if (plainBtn) plainBtn.className = 'px-2 py-0.5 rounded-md text-[#8C929D] hover:text-white transition cursor-pointer';
         if (passRow) passRow.classList.remove('hidden');
-        if (descTitle) descTitle.innerText = 'Client-Side X25519 / AES-256-GCM Sealed Box';
-        if (descBody) {
-          descBody.innerHTML = 'Encrypted locally in your browser before touching NEAR RPC. Stored as <code>enc:x25519:...</code> or <code>enc:aes256:...</code> in EVM Calldata &amp; Solana SPL Memo; decryptable offline only by your heir. Switch to <strong>📄 Public Text</strong> to make raw words readable directly on Etherscan &amp; Solscan.';
-        }
         if (memoInput && !memoInput.value && !(lastFetchedVaultInfo?.heir_memo?.startsWith('enc:'))) {
-          memoInput.placeholder = 'Enter optional note for recipient...';
+          memoInput.placeholder = 'Enter private note (encrypted locally before on-chain seal)...';
         }
       }
     }
@@ -5979,7 +5982,7 @@
       });
 
       // Protect user inputs from being overwritten while typing or pasting
-      inputIds.forEach(id => {
+      [...inputIds, 'heirMemoPassphrase'].forEach(id => {
         const el = document.getElementById(id);
         if (el) {
           const markUserActive = () => {

@@ -93,8 +93,8 @@
 * [`relayer/service.js`](relayer/service.js) & [`relayer/sweep_relayer.js`](relayer/sweep_relayer.js): Stateless multichain sweep engine — automated native sweeps across Bitcoin (multi-UTXO SegWit PSBT + `OP_RETURN` anchor), EVM (dynamic gas estimation + EIP-1559 fee clamp), Solana (Base58 Ed25519 signature), and NEAR (isolated + implicit bunker), plus verifiable builders for ERC-20, ERC-721, and Solana SPL/Token-2022 sweeps with honeypot fault isolation.
 * [`workers/keeper/`](workers/keeper/): Serverless Cloudflare Worker (`nodejs_compat`) running at the edge for instant `<1s` `POST /trigger` sweeps and scheduled autonomous checks.
 * [`.github/workflows/relayer-keeper.yml`](.github/workflows/relayer-keeper.yml): Autonomous 24/7 GitHub Actions cloud keeper (`*/5 * * * *` chained 55m windows, 3s polling) powered by the restricted `FunctionCall` key on `keeper.aegis.okgoogleok.testnet` and `TELEGRAM_BOT_TOKEN` secret.
-* [`src/wallet-selector.js`](src/wallet-selector.js) & [`web/index.html`](web/index.html): Static zero-backend Web3 interface with NEAR Wallet Selector (`@near-wallet-selector/core v10.1.4`), live MPC address derivation, Judge Demo Mode (`3m + 1m`), and real-time on-chain evacuation telemetry.
-* [`scripts/test_sweep_flow.js`](scripts/test_sweep_flow.js): End-to-end cryptographic test suite validating all multichain sweep pipelines.
+* [`src/wallet-selector.js`](src/wallet-selector.js) & [`web/index.html`](web/index.html): Static zero-backend Web3 interface with NEAR Wallet Selector (`@near-wallet-selector/core v10.1.4`), live MPC address derivation, client-side E2EE Heir Testament encryption (`AES-256-GCM` / `X25519`), Judge Demo Mode (`3m + 1m`), and real-time on-chain evacuation telemetry.
+* [`scripts/test_sweep_flow.js`](scripts/test_sweep_flow.js) & [`scripts/decrypt_testament.js`](scripts/decrypt_testament.js): End-to-end cryptographic test suite validating all multichain sweep pipelines and offline zero-server E2EE testament decryption CLI.
 
 ---
 
@@ -138,6 +138,7 @@ Every component of **LastKey Bunker** can be deterministically verified in under
 | **Keeper Key Compromise** | Dedicated `keeper.aegis.okgoogleok.testnet` uses restricted `FunctionCall` key (`0` transfer rights, whitelisted methods only) | On-Chain Access Key |
 | **Keeper Gas Depletion & Drain** | `0`-deposit `request_sweep_signature` funded via Per-Vault `gas_escrow` / Sponsor Pool (capped at 8 calls/epoch) + `0.005 NEAR` keeper refund | [`contracts/vault/src/lib.rs`](contracts/vault/src/lib.rs) |
 | **Unauthorized Policy / Timer Takeover** | 72-hour timelock on any destination address or timer modification once sealed, with instant owner `cancel_policy()` and non-blocking inheritance expiry | [`contracts/vault/src/lib.rs`](contracts/vault/src/lib.rs) |
+| **On-Chain Note Privacy Leak** | Optional client-side `AES-256-GCM` (`PBKDF2-SHA256`) & `X25519` (`enc:aes256:` / `enc:x25519:`) testament sealing in browser memory + offline CLI decryption | [`src/wallet-selector.js`](src/wallet-selector.js), [`scripts/decrypt_testament.js`](scripts/decrypt_testament.js) |
 | **Telegram Metadata & Token Exposure** | Server-side `TELEGRAM_BOT_TOKEN` in GitHub Secrets, anonymous SHA-256 `/start v1_<tag>` linking, encrypted `cid_enc`, and zero-metadata alert strings | [`relayer/service.js`](relayer/service.js) |
 | **Delayed Sweep After Rotation** | `rotate_bunker()` snapshots `{state, destination}` in `archive:{owner}:{epoch}` so late sweeps remain cryptographically verifiable | [`contracts/vault/src/lib.rs`](contracts/vault/src/lib.rs) |
 
