@@ -1537,6 +1537,7 @@ class AegisRelayerService {
           alertState = JSON.parse(vInfo.alert_state) || {};
         } catch (_) {}
       }
+      if (alertState.tg_linked === false) return false;
       if (evtKey === 'panic' && alertState.panic_ep === scopeOrEpoch) return false;
       if (evtKey === 'inheritance' && alertState.inh_ep === scopeOrEpoch) return false;
 
@@ -1758,24 +1759,35 @@ class AegisRelayerService {
 
         // 3. Autonomous Telegram Linking & All 7 Alerts
         if (tk) {
-          let chatId = this._decryptChatId(alertState.cid_enc, tk, acc);
+          let chatId = alertState.tg_linked === false ? null : this._decryptChatId(alertState.cid_enc, tk, acc);
           if (tagEntry) {
-            const newCidEnc = this._encryptChatId(tagEntry.chatId, tk, acc);
-            chatId = tagEntry.chatId;
-            if (alertState.cid_enc !== newCidEnc || alertState.last_start_uid !== tagEntry.updateId) {
-              await this._sendTelegramText(tk, chatId, messages.test);
-              alertState.tg_linked = true;
-              alertState.cid_enc = newCidEnc;
-              alertState.last_start_uid = tagEntry.updateId;
-              if (!hadExistingAlertState) {
-                if (v.last_cancelled_timelock_ns) {
-                  alertState.cancelled_tl = String(v.last_cancelled_timelock_ns);
+            const isPreviouslyUnlinkedStart =
+              alertState.tg_linked === false &&
+              alertState.tg_unlinked_uid &&
+              String(tagEntry.updateId) === String(alertState.tg_unlinked_uid);
+            if (!isPreviouslyUnlinkedStart) {
+              const newCidEnc = this._encryptChatId(tagEntry.chatId, tk, acc);
+              chatId = tagEntry.chatId;
+              if (
+                alertState.cid_enc !== newCidEnc ||
+                alertState.last_start_uid !== tagEntry.updateId ||
+                alertState.tg_linked === false
+              ) {
+                await this._sendTelegramText(tk, chatId, messages.test);
+                alertState.tg_linked = true;
+                alertState.cid_enc = newCidEnc;
+                alertState.last_start_uid = tagEntry.updateId;
+                delete alertState.tg_unlinked_uid;
+                if (!hadExistingAlertState) {
+                  if (v.last_cancelled_timelock_ns) {
+                    alertState.cancelled_tl = String(v.last_cancelled_timelock_ns);
+                  }
+                  if (v.is_epoch_swept && state === 'Evacuated') alertState.panic_ep = v.epoch;
+                  if (v.is_epoch_swept && state === 'Inheritance') alertState.inh_ep = v.epoch;
                 }
-                if (v.is_epoch_swept && state === 'Evacuated') alertState.panic_ep = v.epoch;
-                if (v.is_epoch_swept && state === 'Inheritance') alertState.inh_ep = v.epoch;
+                alertDirty = true;
+                console.log(`📲 [Telegram Keeper] Linked Telegram alerts for ${acc}`);
               }
-              alertDirty = true;
-              console.log(`📲 [Telegram Keeper] Linked Telegram alerts for ${acc}`);
             }
           }
 

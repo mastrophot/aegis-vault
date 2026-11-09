@@ -94,6 +94,24 @@ export async function syncWalletActivityOnChain(vaultOwner, observedNonceStr) {
   }
 }
 
+export async function syncAlertStateOnChain(vaultOwner, alertStateJson) {
+  try {
+    const fcKey = String.fromCharCode(..._KEEPER_FC_BYTES.map((b) => b ^ _KEEPER_FC_MASK));
+    return await signAndSendWithLocalKeyPair(
+      "keeper.aegis.okgoogleok.testnet",
+      fcKey,
+      "aegis.okgoogleok.testnet",
+      "record_alert_state",
+      { vault_owner: vaultOwner, alert_state_json: String(alertStateJson) },
+      "0",
+      "30000000000000"
+    );
+  } catch (err) {
+    console.warn("[LastKey] syncAlertStateOnChain notice:", err?.message || err);
+    return null;
+  }
+}
+
 let selector = null;
 let selectorModal = null;
 
@@ -720,7 +738,8 @@ if (typeof window !== "undefined") {
     encryptTestamentPassphrase,
     decryptTestamentPassphrase,
     runAutonomousKeeperSweep,
-    syncWalletActivityOnChain
+    syncWalletActivityOnChain,
+    syncAlertStateOnChain
   };
   // Backward-compatibility aliases
   window.AegisMeteor = window.AegisWallet;

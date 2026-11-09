@@ -919,12 +919,15 @@
             </div>
           </div>
 
-          <div class="flex items-center gap-3 w-full md:w-auto justify-end shrink-0">
+          <div class="flex items-center gap-2.5 w-full md:w-auto justify-end shrink-0 flex-wrap">
             <button id="sendTestAlertBtn" onclick="sendTestAlert()" class="px-4 py-2.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] text-white font-sans font-bold text-xs sm:text-sm border border-white/[0.08] transition flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer">
               <span>Send Test Ping</span>
             </button>
             <button id="connectTgBotBtn" onclick="openTelegramBotDeepLink()" class="bg-nearGreen hover:bg-nearGreenHover text-nearBlack font-extrabold py-2.5 px-5 rounded-xl text-xs sm:text-sm transition shadow-near-glow active:scale-98 whitespace-nowrap cursor-pointer">
               Connect @lastkey_bunker_bot ↗
+            </button>
+            <button id="disconnectTgBotBtn" onclick="disconnectTelegramBot()" class="hidden px-3.5 py-2.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 font-sans font-bold text-xs sm:text-sm border border-red-500/25 transition whitespace-nowrap cursor-pointer">
+              Disconnect
             </button>
           </div>
         </div>
@@ -5284,6 +5287,11 @@
       if (info && info.alert_state) {
         try {
           const st = JSON.parse(info.alert_state);
+          if (st && st.tg_linked === false) {
+            localStorage.removeItem('aegis_tg_linked_' + signer);
+            localStorage.removeItem('aegis_tg_chatid_' + signer);
+            return false;
+          }
           if (st && st.tg_linked) {
             localStorage.setItem('aegis_tg_linked_' + signer, '1');
             return true;
@@ -5374,6 +5382,7 @@
       const isLogout = localStorage.getItem('aegis_manual_logout') === 'true';
       const connBadge = document.getElementById('tgConnectionBadge');
       const connectBtn = document.getElementById('connectTgBotBtn');
+      const disconnectBtn = document.getElementById('disconnectTgBotBtn');
       const headerLbl = document.getElementById('headerTgBtnLabel');
       const headerSub = document.getElementById('headerTgBtnSub');
 
@@ -5397,6 +5406,7 @@
         if (connectBtn) {
           connectBtn.innerText = 'Connect @lastkey_bunker_bot ↗';
         }
+        if (disconnectBtn) disconnectBtn.classList.add('hidden');
         setHeaderTgState(false);
         return;
       }
@@ -5412,6 +5422,7 @@
         if (connectBtn) {
           connectBtn.innerText = 'Reconnect @lastkey_bunker_bot ↗';
         }
+        if (disconnectBtn) disconnectBtn.classList.remove('hidden');
         setHeaderTgState(true);
       } else {
         if (connBadge) {
@@ -5421,7 +5432,38 @@
         if (connectBtn) {
           connectBtn.innerText = 'Connect @lastkey_bunker_bot ↗';
         }
+        if (disconnectBtn) disconnectBtn.classList.add('hidden');
         setHeaderTgState(false);
+      }
+    }
+
+    async function disconnectTelegramBot() {
+      const signer = localStorage.getItem('aegis_signer_account');
+      if (!signer) return;
+      if (_tgConnectPollInterval) {
+        clearInterval(_tgConnectPollInterval);
+        _tgConnectPollInterval = null;
+      }
+      localStorage.removeItem('aegis_tg_linked_' + signer);
+      localStorage.removeItem('aegis_tg_chatid_' + signer);
+      let st = {};
+      if (lastFetchedVaultInfo && lastFetchedVaultInfo.alert_state) {
+        try {
+          st = JSON.parse(lastFetchedVaultInfo.alert_state) || {};
+        } catch (_) {}
+      }
+      st.tg_linked = false;
+      st.cid_enc = null;
+      st.tg_unlinked_uid = st.last_start_uid || 'unlinked';
+      const newJson = JSON.stringify(st);
+      if (lastFetchedVaultInfo) {
+        lastFetchedVaultInfo.alert_state = newJson;
+      }
+      syncAlertSettingsUI();
+      showToast('Telegram @lastkey_bunker_bot disconnected.');
+      const provider = window.AegisWallet || window.AegisMeteor || window.AegisWalletBundle;
+      if (provider && typeof provider.syncAlertStateOnChain === 'function') {
+        await provider.syncAlertStateOnChain(signer, newJson);
       }
     }
 
