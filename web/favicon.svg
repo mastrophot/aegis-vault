@@ -6,12 +6,12 @@
       <stop stop-color="#00F5D4"/>
       <stop offset="100%" stop-color="#00C9FF"/>
     </linearGradient>
-    <linearGradient id="aegisCoreGrad" x1="16" y1="8" x2="16" y2="21" gradientUnits="userSpaceOnUse">
+    <linearGradient id="aegisCoreGrad" x1="16" y1="7" x2="16" y2="25" gradientUnits="userSpaceOnUse">
       <stop stop-color="#FFFFFF"/>
       <stop offset="100%" stop-color="#A5F3FC"/>
     </linearGradient>
   </defs>
   <path d="M16 4L26 8.2V15.5C26 22.3 21.6 26.9 16 28C10.4 26.9 6 22.3 6 15.5V8.2L16 4Z" fill="url(#aegisLogoGrad)" fill-opacity="0.18" stroke="url(#aegisLogoGrad)" stroke-width="2" stroke-linejoin="round"/>
-  <path d="M11.5 8.5H15.2V17.4H21.2V20.8H11.5V8.5Z" fill="url(#aegisCoreGrad)"/>
-  <circle cx="16" cy="23.8" r="1.5" fill="#00F5D4"/>
+  <path fill-rule="evenodd" clip-rule="evenodd" d="M16 7.4a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6zm0 2.2a1.6 1.6 0 1 1 0 3.2 1.6 1.6 0 0 1 0-3.2z" fill="url(#aegisCoreGrad)"/>
+  <path d="M14.8 14.5h2.4v2.9h2.8v1.7h-2.8v1.3h2.1v1.7h-2.1v.9c0 .7-.5 1.2-1.2 1.2s-1.2-.5-1.2-1.2v-8.5z" fill="url(#aegisCoreGrad)"/>
 </svg>
