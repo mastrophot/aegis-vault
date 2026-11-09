@@ -5036,6 +5036,11 @@
         const decBtn = document.getElementById('monitorDecryptBtn');
         if (!card || !payloadEl) return;
 
+        if (!isInheritance) {
+          card.classList.add('hidden');
+          return;
+        }
+
         const rawMemo = (
           lastFetchedVaultInfo?.heir_memo ||
           window.currentEncryptedOnChainMemo ||
