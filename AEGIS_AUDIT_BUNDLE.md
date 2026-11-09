@@ -7239,7 +7239,7 @@ if (typeof window !== "undefined") {
                 Bunker #1
               </span>
               <span id="heartbeatTag" class="text-xs font-sans font-semibold text-[#A6B0C3] bg-white/[0.04] px-3 py-1 rounded-lg border border-white/[0.08]">
-                Wallet Not Connected
+                Bunker Open · Connect Wallet
               </span>
             </div>
           </div>
@@ -7249,7 +7249,7 @@ if (typeof window !== "undefined") {
               Time remaining before automatic inheritance:
             </div>
             <div id="countdownBox" class="text-3xl sm:text-4xl md:text-5xl font-sans font-extrabold text-white tracking-tight mt-1.5 flex items-baseline gap-2">
-              Arm Your Bunker
+              Seal Your Bunker
             </div>
           </div>
 
@@ -7259,7 +7259,7 @@ if (typeof window !== "undefined") {
               <div id="timerBar" class="bg-white/20 h-full w-full transition-all duration-1000 ease-out"></div>
             </div>
             <div class="flex justify-between text-xs text-textGray font-sans">
-              <span id="statusDisplay">Status: <strong class="text-white font-semibold">Connect wallet to arm your Bunker</strong></span>
+              <span id="statusDisplay">Status: <strong class="text-white font-semibold">Bunker Doors Open — Connect wallet to seal</strong></span>
               <span id="timerPctDisplay" class="font-mono">100.0% remaining</span>
             </div>
           </div>
@@ -7285,7 +7285,7 @@ if (typeof window !== "undefined") {
         <div class="lg:col-span-5 flex flex-col gap-4 lg:pl-6 lg:border-l border-white/[0.08]">
           <button id="pingMainBtn" onclick="handlePingMainBtnClick()" class="w-full bg-nearGreen hover:bg-nearGreenHover text-nearBlack font-extrabold py-3.5 px-6 rounded-xl text-sm sm:text-base transition shadow-near-glow active:scale-98 flex items-center justify-center gap-2 cursor-pointer">
             <svg id="pingMainBtnIcon" class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L14.4 7.2L20 8L16 12L17 17.6L12 15L7 17.6L8 12L4 8L9.6 7.2L12 2Z"/></svg>
-            <span id="pingMainBtnText">Connect Wallet to Arm Bunker</span>
+            <span id="pingMainBtnText">Connect Wallet to Seal Bunker</span>
           </button>
           <div id="onchainPingOption" class="hidden"></div>
 
@@ -7501,11 +7501,11 @@ if (typeof window !== "undefined") {
               <div class="space-y-0.5">
                 <div class="text-xs sm:text-sm font-bold text-white flex items-center gap-2">
                   <span id="addressStatusDot" class="w-2 h-2 rounded-full bg-[#8E99AD]"></span>
-                  <span>Vault Protection:</span>
-                  <span id="addressStatusBadge" class="text-[#8E99AD] font-sans font-bold">Wallet Not Connected</span>
+                  <span>Bunker Status:</span>
+                  <span id="addressStatusBadge" class="text-[#8E99AD] font-sans font-bold">Bunker Doors Open · Connect Wallet</span>
                 </div>
                 <p id="addressStatusDesc" class="text-xs text-[#8C929D]">
-                  Connect your NEAR wallet above to set your backup and family wallets.
+                  Connect your NEAR wallet above, enter your backup or family wallets, and seal your Bunker.
                 </p>
               </div>
 
@@ -7517,7 +7517,7 @@ if (typeof window !== "undefined") {
                   Apply Policy
                 </button>
                 <button id="savePolicyBtn" onclick="saveAddresses()" class="save-policy-btn bg-nearGreen hover:bg-nearGreenHover text-nearBlack font-extrabold py-2.5 px-6 rounded-xl text-xs sm:text-sm transition shadow-near-glow active:scale-98 whitespace-nowrap cursor-pointer">
-                  Save Policy
+                  Seal Bunker
                 </button>
               </div>
             </div>
@@ -7561,8 +7561,8 @@ if (typeof window !== "undefined") {
               <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
             </div>
             <div>
-              <h4 class="text-sm font-extrabold text-red-200">Epoch Exhausted — Path Rotation Required</h4>
-              <p class="text-xs text-textSilver mt-0.5">Active epoch keys were exposed on-chain during evacuation. Activate the next bunker to derive fresh uncompromised addresses.</p>
+              <h4 class="text-sm font-extrabold text-red-200">Bunker Unsealed — Public Keys Exposed On-Chain</h4>
+              <p class="text-xs text-textSilver mt-0.5">Sweeping your funds required an outgoing signature, permanently exposing this Bunker's public keys on the blockchain. Seal a fresh Bunker to generate clean, unexposed addresses.</p>
             </div>
           </div>
           <div class="flex items-center gap-2 shrink-0 self-start sm:self-center">
@@ -7572,13 +7572,13 @@ if (typeof window !== "undefined") {
             </button>
             <button id="rotateBunkerBtn" onclick="rotateBunkerEpoch()" class="px-5 py-2.5 rounded-xl bg-nearGreen hover:bg-nearGreenHover text-nearBlack font-extrabold text-xs transition flex items-center gap-2 whitespace-nowrap shadow-near-glow active:scale-98 cursor-pointer">
               <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-              <span>Activate Next Clean Bunker</span>
+              <span>Seal Fresh Bunker</span>
             </button>
           </div>
         </div>
         <div class="text-[11px] font-mono font-bold text-red-300 bg-red-900/40 border border-red-500/50 rounded-xl px-3 py-2 flex items-center gap-2">
           <span class="shrink-0 text-base leading-none">🛑</span>
-          <span>DO NOT DEPOSIT TO THIS ADDRESS: Active epoch keys are burned. If this address is saved in your exchange whitelists (Binance/OKX/Bybit) or wallet contacts, delete it immediately!</span>
+          <span>DO NOT DEPOSIT TO THIS UNSEALED BUNKER: Its public keys were exposed during evacuation. If saved in exchange whitelists (Binance/OKX/Bybit) or wallet contacts, delete it immediately!</span>
         </div>
       </div>
 
@@ -7590,12 +7590,12 @@ if (typeof window !== "undefined") {
               <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
             </div>
             <div>
-              <h4 class="text-xs sm:text-sm font-extrabold text-amber-200">Vault Inactive — Save Wallets Above First</h4>
-              <p class="text-xs text-[#C5CAD3] mt-0.5">Deposit addresses unlock as soon as you save your backup or family wallets above.</p>
+              <h4 class="text-xs sm:text-sm font-extrabold text-amber-200">Bunker Doors Open — Save Wallets Above to Seal</h4>
+              <p class="text-xs text-[#C5CAD3] mt-0.5">Cold deposit addresses unlock as soon as you save your backup or family wallets above and seal the Bunker.</p>
             </div>
           </div>
           <button onclick="switchTab('rescue')" class="px-4 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-black font-extrabold text-xs transition whitespace-nowrap shrink-0 self-start sm:self-center cursor-pointer">
-            Save Wallets Above ↑
+            Seal Bunker Above ↑
           </button>
         </div>
       </div>
@@ -8921,8 +8921,8 @@ if (typeof window !== "undefined") {
           badge.innerText = isGraceOnly
             ? 'Grace Buffer (Addresses Locked)'
             : (isInheritance
-                ? (isEpochSwept ? 'Inherited (Transferred to Heirs)' : 'Inheritance (Sweep in Progress)')
-                : (isEpochSwept ? 'Evacuated (Keys Burned)' : 'Evacuating (Sweep in Progress)'));
+                ? (isEpochSwept ? '⚠️ Bunker Unsealed · Transferred to Family (Keys Exposed)' : 'Bunker Unsealed · Inheritance Sweep in Progress')
+                : (isEpochSwept ? '⚠️ Bunker Unsealed · Evacuated (Public Keys Exposed)' : 'Bunker Unsealed · Emergency Sweep in Progress'));
           badge.className = isGraceOnly
             ? 'text-amber-400 font-mono font-bold'
             : (isInheritance ? 'text-purple-400 font-mono font-bold' : 'text-red-400 font-mono font-bold');
@@ -8964,15 +8964,15 @@ if (typeof window !== "undefined") {
           if (activeSummary) activeSummary.innerHTML = parts.join(' · ') || 'Active on-chain destinations loaded.';
         }
         if (tabRescue) {
-          tabRescue.innerHTML = `1. Rescue & Inheritance <span class="ml-1.5 px-2 py-0.5 text-[10px] bg-nearGreen text-nearBlack rounded-full font-bold">ARMED</span>`;
+          tabRescue.innerHTML = `1. Rescue & Inheritance <span class="ml-1.5 px-2 py-0.5 text-[10px] bg-nearGreen text-nearBlack rounded-full font-bold">SEALED</span>`;
         }
         const desc = document.getElementById('addressStatusDesc');
         if (badge && !info.pending_policy) {
-          badge.innerText = 'Saved & Protected';
+          badge.innerText = '🔒 Bunker Sealed & Armed (Public Keys Hidden)';
           badge.className = 'text-nearGreen font-mono font-bold';
         }
         if (dot && !info.pending_policy) dot.className = 'w-2.5 h-2.5 rounded-full bg-nearGreen shadow-near-glow';
-        if (desc && !info.pending_policy) desc.innerText = 'Your funds can only be sent to the backup or family wallets saved above.';
+        if (desc && !info.pending_policy) desc.innerText = 'Zero outgoing signatures made. Funds can only exit to your saved backup or family wallets.';
       } else {
         const desc = document.getElementById('addressStatusDesc');
         if (activeBanner) activeBanner.classList.add('hidden');
@@ -8985,11 +8985,11 @@ if (typeof window !== "undefined") {
           tabRescue.innerText = `1. Rescue & Inheritance (Destinations)`;
         }
         if (badge && !info.pending_policy) {
-          badge.innerText = 'Not Set Yet';
+          badge.innerText = '🔓 Bunker Doors Open (Unsealed)';
           badge.className = 'text-amber-300 font-mono font-bold';
         }
         if (dot && !info.pending_policy) dot.className = 'w-2.5 h-2.5 rounded-full bg-amber-400';
-        if (desc && !info.pending_policy) desc.innerText = 'Enter your backup or family wallets above and click Save Policy.';
+        if (desc && !info.pending_policy) desc.innerText = 'Enter your backup or family wallets above and click Seal Bunker.';
       }
 
       updateSaveButtonState(info);
@@ -9666,11 +9666,11 @@ if (typeof window !== "undefined") {
       }
       if (heartbeatTag) {
         heartbeatTag.className = 'text-xs font-sans font-semibold text-[#A6B0C3] bg-white/[0.04] px-3 py-1 rounded-lg border border-white/[0.08]';
-        heartbeatTag.innerText = 'Wallet Not Connected';
+        heartbeatTag.innerText = 'Bunker Open · Connect Wallet';
       }
       if (countdownTitle) countdownTitle.innerText = 'Time remaining before automatic inheritance:';
-      if (countdownBox) countdownBox.innerText = 'Arm Your Bunker';
-      if (statusDisplay) statusDisplay.innerHTML = 'Status: <strong class="text-white font-semibold">Connect wallet to arm your Bunker</strong>';
+      if (countdownBox) countdownBox.innerText = 'Seal Your Bunker';
+      if (statusDisplay) statusDisplay.innerHTML = 'Status: <strong class="text-white font-semibold">Bunker Doors Open — Connect wallet to seal</strong>';
       if (timerBar) {
         timerBar.style.width = '100%';
         timerBar.className = 'h-full bg-white/20 rounded-full transition-all duration-300';
@@ -9679,7 +9679,7 @@ if (typeof window !== "undefined") {
       if (pingBtn) {
         pingBtn.className = 'w-full bg-nearGreen hover:bg-nearGreenHover text-nearBlack font-extrabold py-3.5 px-6 rounded-xl text-sm sm:text-base transition shadow-near-glow active:scale-98 flex items-center justify-center gap-2 cursor-pointer';
       }
-      if (pingBtnText) pingBtnText.innerText = 'Connect Wallet to Arm Bunker';
+      if (pingBtnText) pingBtnText.innerText = 'Connect Wallet to Seal Bunker';
       const hbNoticeReset = document.getElementById('heartbeatTimelockNotice');
       if (hbNoticeReset) hbNoticeReset.classList.add('hidden');
 
@@ -10024,8 +10024,8 @@ if (typeof window !== "undefined") {
         );
         const isEpochSwept = Boolean(lastFetchedVaultInfo && lastFetchedVaultInfo.is_epoch_swept);
         const burnedMsg = isInheritance
-          ? `Vault Inherited · Deposits Disabled`
-          : `Vault Evacuated · Deposits Disabled`;
+          ? `Bunker Unsealed · Inherited (Keys Exposed)`
+          : `Bunker Unsealed · Evacuated (Keys Exposed)`;
         chains.forEach(c => {
           if (c.addrEl) {
             c.addrEl.innerText = burnedMsg;
@@ -10038,7 +10038,7 @@ if (typeof window !== "undefined") {
             c.actionsEl.innerHTML = `
               <div class="col-span-2 py-2.5 px-3 rounded-xl ${isInheritance ? 'bg-purple-950/30 border border-purple-500/20 text-purple-300' : 'bg-red-950/30 border border-red-500/20 text-red-400'} text-center text-xs font-mono flex items-center justify-center gap-1.5 select-none">
                 <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
-                <span>${isInheritance ? (isEpochSwept ? 'Vault Closed · Assets Transferred' : 'Vault Closed · Transfer in Progress') : (isEpochSwept ? 'Vault Closed · Assets Swept' : 'Vault Closed · Sweep in Progress')}</span>
+                <span>${isInheritance ? (isEpochSwept ? 'Bunker Unsealed · Transferred to Family' : 'Bunker Unsealed · Transfer in Progress') : (isEpochSwept ? 'Bunker Unsealed · Assets Swept' : 'Bunker Unsealed · Sweep in Progress')}</span>
               </div>
             `;
           }
@@ -10052,8 +10052,8 @@ if (typeof window !== "undefined") {
           const bannerText = banner.querySelector('p');
           if (bannerTitle) {
             bannerTitle.innerText = isInheritance
-              ? 'Inheritance Finalized — Path Rotation Required'
-              : 'Epoch Exhausted — Path Rotation Required';
+              ? 'Bunker Unsealed (Inherited) — Seal a Fresh Bunker'
+              : 'Bunker Unsealed (Evacuated) — Public Keys Exposed On-Chain';
             bannerTitle.className = isInheritance
               ? 'text-sm font-extrabold text-purple-200'
               : 'text-sm font-extrabold text-red-200';
@@ -10061,11 +10061,11 @@ if (typeof window !== "undefined") {
           if (bannerText) {
             bannerText.innerText = isInheritance
               ? (isEpochSwept
-                  ? 'Active vault assets were autonomously transferred to designated heirs. Deposits are permanently disabled for this epoch. Activate the next clean bunker to derive fresh uncompromised addresses.'
-                  : 'Autonomous inheritance triggered. Cloud Keeper sweep is in progress. Activate the next clean bunker to derive fresh uncompromised addresses.')
+                  ? 'Assets were transferred to your designated family wallets. Because an outgoing signature exposed this Bunker\'s public keys on-chain, it is permanently retired. Seal a fresh Bunker for new storage.'
+                  : 'Autonomous inheritance triggered; Cloud Keeper sweep is in progress. Seal a fresh Bunker to derive clean, unexposed addresses.')
               : (isEpochSwept
-                  ? 'Active epoch keys were exposed on-chain during evacuation. Activate the next bunker to derive fresh uncompromised addresses.'
-                  : 'Emergency evacuation triggered; Cloud Keeper sweep is in progress. Activate the next bunker to derive fresh uncompromised addresses.');
+                  ? 'Sweeping your funds required an outgoing signature, permanently exposing this Bunker\'s public keys on the blockchain. Seal a fresh Bunker to derive clean, unexposed addresses.'
+                  : 'Emergency evacuation triggered; Cloud Keeper sweep is in progress. Seal a fresh Bunker to derive clean, unexposed addresses.');
           }
         }
         if (unarmedBanner) unarmedBanner.classList.add('hidden');
@@ -10114,15 +10114,15 @@ if (typeof window !== "undefined") {
 
         chains.forEach(c => {
           if (c.addrEl) {
-            c.addrEl.innerText = 'Save backup or family wallets above to unlock';
+            c.addrEl.innerText = 'Bunker Doors Open — Save wallets above to seal & reveal';
             c.addrEl.className = 'font-mono text-xs leading-relaxed text-amber-400/80 break-words select-none font-semibold';
             c.addrEl.dataset.full = '';
           }
           if (c.actionsEl) {
             c.actionsEl.innerHTML = `
               <button type="button" onclick="switchTab('rescue')" class="col-span-2 py-2 px-3 rounded-xl bg-amber-950/25 hover:bg-amber-950/40 border border-amber-500/25 hover:border-amber-500/40 text-center text-xs font-mono text-amber-400 flex items-center justify-center gap-1.5 transition active:scale-98 cursor-pointer">
-                <svg class="w-3.5 h-3.5 text-amber-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
-                <span>Locked · Save Wallets Above ↑</span>
+                <svg class="w-3.5 h-3.5 text-amber-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+                <span>Bunker Open · Seal Above ↑</span>
               </button>
             `;
           }
@@ -10650,7 +10650,7 @@ if (typeof window !== "undefined") {
       saveBtns.forEach(btn => {
         if (!localStorage.getItem('aegis_signer_account')) {
           btn.disabled = true;
-          btn.innerHTML = `<span>Save Policy</span>`;
+          btn.innerHTML = `<span>Seal Bunker</span>`;
           btn.className = 'save-policy-btn bg-white/[0.04] text-white/30 border border-white/[0.08] font-bold py-2 px-5 rounded-xl text-xs cursor-not-allowed opacity-50 whitespace-nowrap';
           return;
         }
@@ -10662,7 +10662,7 @@ if (typeof window !== "undefined") {
           btn.innerHTML = `
             <span class="flex items-center gap-1.5 ${isGraceOnly ? 'text-amber-400' : (isInheritance ? 'text-purple-400' : 'text-red-400')}">
               <svg class="w-3.5 h-3.5 ${isGraceOnly ? 'text-amber-400' : (isInheritance ? 'text-purple-400' : 'text-red-400')} shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
-              <span>${isGraceOnly ? 'Heartbeat Expired (Check-in First)' : (isInheritance ? 'Inheritance Finalized (Inactive)' : 'Bunker Evacuated (Inactive)')}</span>
+              <span>${isGraceOnly ? 'Heartbeat Expired (Check-in First)' : (isInheritance ? 'Bunker Unsealed · Inherited' : 'Bunker Unsealed · Keys Exposed')}</span>
             </span>
           `;
           btn.className = `save-policy-btn ${isGraceOnly ? 'bg-amber-950/30 border border-amber-500/30 text-amber-400' : (isInheritance ? 'bg-purple-950/30 border border-purple-500/30 text-purple-400' : 'bg-red-950/30 border border-red-500/30 text-red-400')} font-bold py-2 px-5 rounded-xl text-xs cursor-not-allowed opacity-80 whitespace-nowrap`;
@@ -10674,7 +10674,7 @@ if (typeof window !== "undefined") {
           btn.innerHTML = `
             <span class="flex items-center gap-1.5 text-nearGreen">
               <svg class="w-3.5 h-3.5 text-nearGreen shrink-0" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
-              <span>Policy Saved & Armed</span>
+              <span>Bunker Sealed & Armed</span>
             </span>
           `;
           btn.className = 'save-policy-btn bg-nearGreen/15 hover:bg-nearGreen/25 text-nearGreen border border-nearGreen/40 font-bold py-2 px-5 rounded-xl text-xs transition active:scale-98 whitespace-nowrap cursor-pointer';
@@ -10694,10 +10694,10 @@ if (typeof window !== "undefined") {
             (norm(onChainHeirSol) && norm(hSol) !== norm(onChainHeirSol))
           );
           if (isModifyingExisting) {
-            btn.innerHTML = `Save Policy (72h Cooldown)`;
+            btn.innerHTML = `Update Bunker Policy (72h Cooldown)`;
             btn.className = 'save-policy-btn bg-amber-400 hover:bg-amber-300 text-black font-extrabold py-2 px-5 rounded-xl text-xs transition shadow-sm active:scale-98 whitespace-nowrap cursor-pointer';
           } else {
-            btn.innerHTML = `Save Policy (⚡ Instant)`;
+            btn.innerHTML = `Seal Bunker (⚡ Instant)`;
             btn.className = 'save-policy-btn bg-nearGreen hover:bg-nearGreenHover text-nearBlack font-extrabold py-2 px-5 rounded-xl text-xs transition shadow-near-glow active:scale-98 whitespace-nowrap cursor-pointer';
           }
         }
@@ -10855,9 +10855,13 @@ if (typeof window !== "undefined") {
           cardTitle.className = 'text-xs font-sans font-bold tracking-wide text-[#A6B0C3]';
           cardTitle.innerText = "Bunker Dead-Man's Switch · Check-In Timer";
         }
+        if (heartbeatTag) {
+          heartbeatTag.className = 'text-xs font-sans font-semibold text-[#A6B0C3] bg-white/[0.04] px-3 py-1 rounded-lg border border-white/[0.08]';
+          heartbeatTag.innerText = 'Bunker Open · Connect Wallet';
+        }
         if (countdownTitle) countdownTitle.innerText = 'Time remaining before automatic inheritance:';
-        if (countdownBox) countdownBox.innerText = 'Arm Your Bunker';
-        if (statusDisplay) statusDisplay.innerHTML = 'Status: <strong class="text-white font-semibold">Connect wallet to arm your Bunker</strong>';
+        if (countdownBox) countdownBox.innerText = 'Seal Your Bunker';
+        if (statusDisplay) statusDisplay.innerHTML = 'Status: <strong class="text-white font-semibold">Bunker Doors Open — Connect wallet to seal</strong>';
         if (timerBar) {
           timerBar.style.width = '100%';
           timerBar.className = 'h-full bg-white/20 rounded-full transition-all duration-300';
@@ -10866,7 +10870,7 @@ if (typeof window !== "undefined") {
         if (pingBtn) {
           pingBtn.className = 'w-full bg-nearGreen hover:bg-nearGreenHover text-nearBlack font-extrabold py-3.5 px-6 rounded-xl text-sm sm:text-base transition shadow-near-glow active:scale-98 flex items-center justify-center gap-2 cursor-pointer';
         }
-        if (pingBtnText) pingBtnText.innerText = 'Connect Wallet to Arm Bunker';
+        if (pingBtnText) pingBtnText.innerText = 'Connect Wallet to Seal Bunker';
         const inactSelect = document.getElementById('inactivitySelect');
         const graceSelect = document.getElementById('graceSelect');
         if (inactSelect) { inactSelect.disabled = false; inactSelect.title = ''; }
@@ -10888,26 +10892,26 @@ if (typeof window !== "undefined") {
         if (pulseDot) pulseDot.className = isInheritance ? 'w-2.5 h-2.5 rounded-full bg-purple-500 animate-pulse' : 'w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse';
         if (cardTitle) {
           cardTitle.className = isInheritance ? 'text-xs font-sans font-bold tracking-wide text-purple-400' : 'text-xs font-sans font-bold tracking-wide text-red-400';
-          cardTitle.innerText = isInheritance ? 'Automatic Inheritance · Transferred' : 'Bunker Evacuated · Keys Burned';
+          cardTitle.innerText = isInheritance ? 'Bunker Unsealed · Transferred to Family' : 'Bunker Unsealed · Public Keys Exposed';
         }
         if (heartbeatTag) {
           heartbeatTag.className = isInheritance
             ? 'text-xs font-sans font-semibold text-purple-300 bg-purple-950/40 px-3 py-1 rounded-lg border border-purple-500/30'
             : 'text-xs font-sans font-semibold text-red-400 bg-red-950/40 px-3 py-1 rounded-lg border border-red-500/30';
-          heartbeatTag.innerText = isInheritance ? 'Inheritance Executed · Inactive' : 'Vault Evacuated · Inactive';
+          heartbeatTag.innerText = isInheritance ? '⚠️ Bunker Unsealed · Inherited' : '⚠️ Bunker Unsealed · Keys Exposed';
         }
         if (countdownTitle) {
-          countdownTitle.innerText = isInheritance ? 'Heir transfer executed · rotation required:' : 'Bunker evacuated · rotation required:';
+          countdownTitle.innerText = isInheritance ? 'Outgoing signature exposed public keys · seal a fresh Bunker:' : 'Outgoing signature exposed public keys · seal a fresh Bunker:';
         }
         if (countdownBox) {
           countdownBox.innerHTML = isInheritance
-            ? '<span class="text-purple-400 font-extrabold tracking-wider">INHERITED</span>'
-            : '<span class="text-red-400 font-extrabold tracking-wider">EVACUATED</span>';
+            ? '<span class="text-purple-400 font-extrabold tracking-wider">UNSEALED · INHERITED</span>'
+            : '<span class="text-red-400 font-extrabold tracking-wider">UNSEALED · EVACUATED</span>';
         }
         if (statusDisplay) {
           statusDisplay.innerHTML = isInheritance
-            ? 'Status: <strong class="text-purple-400 font-bold">Transferred to Heirs (Bunker Closed)</strong>'
-            : 'Status: <strong class="text-red-400 font-bold">Evacuated (Keys Burned)</strong>';
+            ? 'Status: <strong class="text-purple-400 font-bold">Bunker Unsealed (Assets Transferred · Keys Exposed)</strong>'
+            : 'Status: <strong class="text-red-400 font-bold">Bunker Unsealed (Public Keys Exposed — Do Not Reuse)</strong>';
         }
         if (timerBar) {
           timerBar.style.width = '0%';
@@ -10916,7 +10920,7 @@ if (typeof window !== "undefined") {
             : 'h-full bg-red-500 rounded-full transition-all duration-300';
         }
         if (pctEl) {
-          pctEl.innerText = isInheritance ? '0.0% · Transferred to Heirs' : '0.0% · Vault Burned';
+          pctEl.innerText = isInheritance ? '0.0% · Bunker Unsealed' : '0.0% · Keys Exposed';
         }
 
         if (pingBtn) {
@@ -10930,7 +10934,7 @@ if (typeof window !== "undefined") {
           pingBtnIcon.setAttribute('stroke-width', '2.5');
         }
         if (pingBtnText) {
-          pingBtnText.innerText = `Activate Clean Bunker (Epoch ${nextEpoch})`;
+          pingBtnText.innerText = `Seal Fresh Bunker (Epoch ${nextEpoch})`;
         }
 
         // Header Panic Button: Disabled
@@ -10943,10 +10947,10 @@ if (typeof window !== "undefined") {
           headerPanic.className = 'h-9 px-3.5 sm:px-4 rounded-xl bg-red-950/20 text-red-500/50 border border-red-500/20 text-xs sm:text-sm font-sans font-bold tracking-wide cursor-not-allowed opacity-40 flex items-center gap-2 shrink-0 whitespace-nowrap';
         }
         if (panicLabel) {
-          panicLabel.innerText = isInheritance ? 'INHERITANCE EXECUTED' : 'VAULT EVACUATED';
+          panicLabel.innerText = isInheritance ? 'BUNKER UNSEALED' : 'BUNKER EVACUATED';
         }
         if (panicLabelMobile) {
-          panicLabelMobile.innerText = isInheritance ? 'INHERITED' : 'EVACUATED';
+          panicLabelMobile.innerText = isInheritance ? 'UNSEALED' : 'EVACUATED';
         }
         if (panicDot) {
           panicDot.className = isInheritance ? 'w-2 h-2 rounded-full bg-purple-500/40 shrink-0' : 'w-2 h-2 rounded-full bg-red-500/40 shrink-0';
@@ -10970,16 +10974,16 @@ if (typeof window !== "undefined") {
         }
         if (heartbeatTag) {
           heartbeatTag.className = 'text-xs font-sans font-semibold text-amber-400/90 bg-amber-950/30 px-3 py-1 rounded-lg border border-amber-500/30';
-          heartbeatTag.innerText = 'Bunker Unarmed';
+          heartbeatTag.innerText = '🔓 Bunker Doors Open';
         }
         if (countdownTitle) countdownTitle.innerText = 'Time remaining before automatic inheritance:';
-        if (countdownBox) countdownBox.innerText = 'Arm Your Bunker';
-        if (statusDisplay) statusDisplay.innerHTML = 'Status: <strong class="text-amber-400 font-bold">Bunker Unarmed (Save Wallets Below)</strong>';
+        if (countdownBox) countdownBox.innerText = 'Seal Your Bunker';
+        if (statusDisplay) statusDisplay.innerHTML = 'Status: <strong class="text-amber-400 font-bold">Bunker Doors Open (Save Wallets Below to Seal)</strong>';
         if (timerBar) {
           timerBar.style.width = '100%';
           timerBar.className = 'h-full bg-amber-400/50 rounded-full transition-all duration-300';
         }
-        if (pctEl) pctEl.innerText = 'Waiting for wallets';
+        if (pctEl) pctEl.innerText = 'Waiting to seal';
 
         if (pingBtn) {
           pingBtn.className = 'w-full bg-amber-400 hover:bg-amber-300 text-black font-extrabold py-3.5 px-6 rounded-xl text-sm sm:text-base transition shadow-sm active:scale-98 flex items-center justify-center gap-2 cursor-pointer';
@@ -10992,7 +10996,7 @@ if (typeof window !== "undefined") {
           pingBtnIcon.setAttribute('stroke-width', '2');
         }
         if (pingBtnText) {
-          pingBtnText.innerText = 'Save Wallets Below to Arm Bunker';
+          pingBtnText.innerText = 'Save Wallets Below to Seal Bunker';
         }
 
         const headerPanic = document.getElementById('headerPanicBtn');
@@ -11003,8 +11007,8 @@ if (typeof window !== "undefined") {
           headerPanic.disabled = true;
           headerPanic.className = 'h-9 px-3.5 sm:px-4 rounded-xl bg-amber-950/20 text-amber-500/50 border border-amber-500/20 text-xs sm:text-sm font-sans font-bold tracking-wide cursor-not-allowed opacity-40 flex items-center gap-2 shrink-0 whitespace-nowrap';
         }
-        if (panicLabel) panicLabel.innerText = 'BUNKER UNARMED';
-        if (panicLabelMobile) panicLabelMobile.innerText = 'UNARMED';
+        if (panicLabel) panicLabel.innerText = 'BUNKER OPEN';
+        if (panicLabelMobile) panicLabelMobile.innerText = 'OPEN';
         if (panicDot) panicDot.className = 'w-2 h-2 rounded-full bg-amber-500/40 shrink-0';
 
         const inactSelect = document.getElementById('inactivitySelect');
@@ -11022,8 +11026,8 @@ if (typeof window !== "undefined") {
         cardTitle.innerText = "Bunker Dead-Man's Switch · Check-In Timer";
       }
       if (heartbeatTag) {
-        heartbeatTag.className = 'text-xs font-sans font-semibold text-textGray bg-nearElevated px-3 py-1 rounded-lg border border-nearBorder';
-        heartbeatTag.innerText = 'Bunker Armed · Active';
+        heartbeatTag.className = 'text-xs font-sans font-semibold text-nearGreen bg-nearGreenMuted px-3 py-1 rounded-lg border border-nearGreen/30';
+        heartbeatTag.innerText = '🔒 Bunker Sealed · Keys Hidden';
       }
       if (countdownTitle) countdownTitle.innerText = 'Time remaining before automatic inheritance:';
       if (pingBtn) {
@@ -11152,7 +11156,7 @@ if (typeof window !== "undefined") {
         if (onchainEl) onchainEl.classList.add('hidden');
       }
 
-      if (statusDisplay) statusDisplay.innerHTML = 'Status: <strong class="text-nearGreen font-bold">Bunker Armed & Enforced</strong>';
+      if (statusDisplay) statusDisplay.innerHTML = 'Status: <strong class="text-nearGreen font-bold">Bunker Sealed & Enforced (0 Signatures)</strong>';
       if (pingBtnText) pingBtnText.innerText = "I'M ALIVE (Check-in Now)";
 
       const { d, h, m, s } = formatTime(remainingSeconds);
@@ -12531,11 +12535,11 @@ if (typeof window !== "undefined") {
         const dot = document.getElementById('addressStatusDot');
         const desc = document.getElementById('addressStatusDesc');
         if (badge) {
-          badge.innerText = 'Wallet Not Connected';
+          badge.innerText = 'Bunker Doors Open · Connect Wallet';
           badge.className = 'text-[#8E99AD] font-mono font-bold';
         }
         if (dot) dot.className = 'w-2 h-2 rounded-full bg-[#8E99AD]';
-        if (desc) desc.innerText = 'Connect your NEAR wallet above to set your backup and family wallets.';
+        if (desc) desc.innerText = 'Connect your NEAR wallet above, enter your backup or family wallets, and seal your Bunker.';
         return;
       }
 
@@ -12550,7 +12554,7 @@ if (typeof window !== "undefined") {
             el.value = '';
             el.disabled = true;
             el.placeholder = isClosed
-              ? '🔒 Epoch closed — Rotate bunker to unlock'
+              ? '⚠️ Bunker unsealed (keys exposed) — Seal a fresh Bunker to unlock'
               : '🔒 Grace Buffer — Check-in to unlock';
           }
         });
@@ -12617,11 +12621,11 @@ if (typeof window !== "undefined") {
         const dot = document.getElementById('addressStatusDot');
         const desc = document.getElementById('addressStatusDesc');
         if (badge) {
-          badge.innerText = 'Not Set Yet';
+          badge.innerText = '🔓 Bunker Doors Open (Unsealed)';
           badge.className = 'text-amber-300 font-mono font-bold';
         }
         if (dot) dot.className = 'w-2 h-2 rounded-full bg-amber-400';
-        if (desc) desc.innerText = 'Enter your backup or family wallets above and click Save Policy.';
+        if (desc) desc.innerText = 'Enter your backup or family wallets above and click Seal Bunker.';
         return;
       }
 
@@ -12659,13 +12663,13 @@ if (typeof window !== "undefined") {
       if (cooldownAlert) cooldownAlert.classList.add('hidden');
       const hasOnChainSaved = hasConfiguredDestinations(lastFetchedVaultInfo);
       if (badge) {
-        badge.innerText = hasOnChainSaved ? 'Saved & Protected' : 'Not Set Yet';
+        badge.innerText = hasOnChainSaved ? '🔒 Bunker Sealed & Armed (Public Keys Hidden)' : '🔓 Bunker Doors Open (Unsealed)';
         badge.className = hasOnChainSaved ? 'text-nearGreen font-mono font-bold' : 'text-amber-300 font-mono font-bold';
       }
       if (dot) dot.className = hasOnChainSaved ? 'w-2.5 h-2.5 rounded-full bg-nearGreen shadow-near-glow' : 'w-2.5 h-2.5 rounded-full bg-amber-400';
       if (desc) desc.innerText = hasOnChainSaved
-        ? 'Your funds can only be sent to the backup or family wallets saved above.'
-        : 'Enter your backup or family wallets above and click Save Policy.';
+        ? 'Zero outgoing signatures made. Funds can only exit to your saved backup or family wallets.'
+        : 'Enter your backup or family wallets above and click Seal Bunker.';
     }
 
     function clearAllAddresses() {
