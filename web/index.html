@@ -5932,7 +5932,13 @@
         localStorage.setItem('aegis_addresses_' + currentSigner, JSON.stringify(safeLocalCopy));
       }
       localStorage.removeItem('aegis_addresses');
-      dispatchNearTransaction('propose_policy', policyPayload).then((res) => {
+      const currentEscrowYocto = BigInt(lastFetchedVaultInfo?.gas_escrow_yocto || '0');
+      const minRequiredEscrowYocto = 220000000000000000000000n; // 0.22 NEAR (4 chains * 0.055 NEAR)
+      const policyDepositYocto = currentEscrowYocto < minRequiredEscrowYocto
+        ? '250000000000000000000000' // 0.25 NEAR user gas escrow deposit on bunker activation
+        : '0';
+
+      dispatchNearTransaction('propose_policy', policyPayload, policyDepositYocto).then((res) => {
         userHasInteractedWithInputs = false;
         isEditing = false;
         if (res !== undefined) {

@@ -352,7 +352,7 @@ async function signAndSendWithLocalKeyPair(signerAccountId, privateKeyStr, contr
     signUrl.searchParams.set("transactions", txBase64);
     signUrl.searchParams.set("callbackUrl", window.location.href);
     window.location.assign(signUrl.toString());
-    return { transaction: { hash: "Redirecting to MyNearWallet..." } };
+    return { redirecting: true, transaction: { hash: "Redirecting to MyNearWallet..." } };
   }
 
   const encodedTx = tx.encode();
