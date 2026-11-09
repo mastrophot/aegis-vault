@@ -280,14 +280,19 @@
           </div>
 
           <!-- Top Heartbeat 72h Timelock Notice -->
-          <div id="heartbeatTimelockNotice" class="hidden mt-2 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/25 text-amber-300 font-sans text-xs flex items-center justify-between">
-            <div class="flex items-center gap-2">
+          <div id="heartbeatTimelockNotice" class="hidden mt-2 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/25 text-amber-300 font-sans text-xs flex items-center justify-between gap-2">
+            <div class="flex items-center gap-2 min-w-0">
               <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0"></span>
-              <span id="heartbeatTimelockText" class="font-bold">72h Policy Timelock Active</span>
+              <span id="heartbeatTimelockText" class="font-bold truncate">72h Policy/Timer Timelock Active</span>
             </div>
-            <button onclick="document.getElementById('cooldownAlertBanner')?.scrollIntoView({ behavior: 'smooth' })" class="text-[11px] text-amber-400 hover:text-white underline font-semibold cursor-pointer">
-              Review / Revert ↓
-            </button>
+            <div class="flex items-center gap-2.5 shrink-0">
+              <button onclick="cancelAddressCooldown()" class="px-2 py-0.5 rounded bg-red-500/20 hover:bg-red-500/35 border border-red-500/40 text-[11px] text-red-300 font-bold cursor-pointer">
+                Cancel ✕
+              </button>
+              <button onclick="document.getElementById('cooldownAlertBanner')?.scrollIntoView({ behavior: 'smooth' })" class="text-[11px] text-amber-400 hover:text-white underline font-semibold cursor-pointer">
+                Details ↓
+              </button>
+            </div>
           </div>
         </div>
 
@@ -1956,9 +1961,16 @@
         const hoursLeft = Math.floor(secLeft / 3600);
         const minsLeft = Math.floor((secLeft % 3600) / 60);
 
+        if (secLeft > 0 && typeof checkAndDispatchStatusAlerts === 'function') {
+          checkAndDispatchStatusAlerts('timelock', `eff_${info.pending_policy.effective_at_ns}`);
+        }
+
+        const hasPendingTimers = Boolean(info.pending_heartbeat_interval_ns || info.pending_challenge_period_ns);
+        const pendingLabel = hasPendingTimers ? 'Policy/Timer' : 'Policy';
+
         if (unconfiguredBanner) unconfiguredBanner.classList.add('hidden');
         if (badge) {
-          badge.innerText = secLeft > 0 ? `72h Timelock (${hoursLeft}h ${minsLeft}m left)` : 'Timelock Elapsed';
+          badge.innerText = secLeft > 0 ? `72h ${pendingLabel} Timelock (${hoursLeft}h ${minsLeft}m left)` : 'Timelock Elapsed';
           badge.className = 'text-amber-300 font-mono font-bold';
         }
         if (dot) dot.className = 'w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse';
@@ -1978,7 +1990,7 @@
         if (hbNotice && hbText) {
           hbNotice.classList.remove('hidden');
           hbText.innerText = secLeft > 0
-            ? `72h Timelock Active (${hoursLeft}h ${minsLeft}m left)`
+            ? `72h ${pendingLabel} Cooldown (${hoursLeft}h ${minsLeft}m left)`
             : '72h Timelock Elapsed (Ready to Apply)';
         }
 
@@ -3666,54 +3678,63 @@
     });
 
     function changeInactivityPeriod(val) {
-      if (lastFetchedVaultInfo && lastFetchedVaultInfo.state === 'Active' && hasConfiguredDestinations(lastFetchedVaultInfo)) {
-        showToast('🔒 Security Rule: Timers are locked once bunker is armed to prevent early-inheritance attacks.', true);
-        const totalHbNs = BigInt(lastFetchedVaultInfo.heartbeat_interval_ns || '0');
-        const inactSelect = document.getElementById('inactivitySelect');
-        if (inactSelect) {
-          inactSelect.value = totalHbNs <= 180000000000n ? 'demo_180s' : String(Math.round(Number(totalHbNs / 86400000000000n)) || 90);
-        }
-        return;
-      }
       let hbNs;
       let cpNs = null;
       isEditing = true;
+      const isArmed = Boolean(
+        lastFetchedVaultInfo &&
+        lastFetchedVaultInfo.state === 'Active' &&
+        hasConfiguredDestinations(lastFetchedVaultInfo)
+      );
       if (val === 'demo_180s') {
-        MAX_SECONDS = 180;
-        remainingSeconds = 180;
         hbNs = '180000000000'; // 180 seconds (3 minutes)
         cpNs = '60000000000'; // 60 seconds (1 minute) Grace Window for Judge Demo
-        localStorage.setItem('aegis_inactivity_days', 'demo_180s');
-        localStorage.setItem('aegis_grace_days', 'demo_60s');
-        const sel1 = document.getElementById('graceSelect');
-        const sel2 = document.getElementById('modalGraceSelect');
-        if (sel1) sel1.value = 'demo_60s';
-        if (sel2) sel2.value = 'demo_60s';
+        if (!isArmed) {
+          MAX_SECONDS = 180;
+          remainingSeconds = 180;
+          localStorage.setItem('aegis_inactivity_days', 'demo_180s');
+          localStorage.setItem('aegis_grace_days', 'demo_60s');
+          const sel1 = document.getElementById('graceSelect');
+          const sel2 = document.getElementById('modalGraceSelect');
+          if (sel1) sel1.value = 'demo_60s';
+          if (sel2) sel2.value = 'demo_60s';
+        }
       } else {
-        inactivityDays = parseInt(val);
-        MAX_SECONDS = inactivityDays * 24 * 3600;
-        remainingSeconds = MAX_SECONDS;
-        hbNs = (BigInt(val) * 86400n * 1000000000n).toString();
-        localStorage.setItem('aegis_inactivity_days', val);
+        const days = parseInt(val, 10) || 90;
+        hbNs = (BigInt(days) * 86400n * 1000000000n).toString();
+        if (!isArmed) {
+          inactivityDays = days;
+          MAX_SECONDS = inactivityDays * 24 * 3600;
+          remainingSeconds = MAX_SECONDS;
+          localStorage.setItem('aegis_inactivity_days', val);
+        }
       }
       updateCountdownDisplay();
       updateSaveButtonState(lastFetchedVaultInfo);
-      showToast(`Timer set to ${val === 'demo_180s' ? '3m' : val + ' days'}. Will be locked on-chain once you click Save Policy.`);
+
+      if (isArmed) {
+        showToast(`⏳ Starting 72-hour security cooldown for timer change (${val === 'demo_180s' ? '3m' : val + ' days'})...`);
+        dispatchNearTransaction('update_intervals', {
+          heartbeat_interval_ns: hbNs,
+          challenge_period_ns: cpNs
+        }).then((res) => {
+          if (res !== undefined) {
+            dispatchTelegramZeroMetadataPush('timelock');
+          }
+        }).catch(() => {});
+      } else {
+        showToast(`Timer set to ${val === 'demo_180s' ? '3m' : val + ' days'}. Click Save Policy to arm bunker.`);
+      }
     }
 
     function changeGracePeriod(val) {
-      if (lastFetchedVaultInfo && lastFetchedVaultInfo.state === 'Active' && hasConfiguredDestinations(lastFetchedVaultInfo)) {
-        showToast('🔒 Security Rule: Grace buffer is locked once bunker is armed to prevent early-inheritance attacks.', true);
-        const totalCpNs = BigInt(lastFetchedVaultInfo.challenge_period_ns || '0');
-        const gVal = totalCpNs <= 60000000000n ? 'demo_60s' : String(Math.round(Number(totalCpNs / 86400000000000n)) || 7);
-        const sel1 = document.getElementById('graceSelect');
-        const sel2 = document.getElementById('modalGraceSelect');
-        if (sel1) sel1.value = gVal;
-        if (sel2) sel2.value = gVal;
-        return;
-      }
       let cpNs;
       isEditing = true;
+      const isArmed = Boolean(
+        lastFetchedVaultInfo &&
+        lastFetchedVaultInfo.state === 'Active' &&
+        hasConfiguredDestinations(lastFetchedVaultInfo)
+      );
       const sel1 = document.getElementById('graceSelect');
       const sel2 = document.getElementById('modalGraceSelect');
       if (sel1) sel1.value = val;
@@ -3721,14 +3742,30 @@
 
       if (val === 'demo_60s') {
         cpNs = '60000000000'; // 60 seconds (1 minute)
-        localStorage.setItem('aegis_grace_days', 'demo_60s');
+        if (!isArmed) localStorage.setItem('aegis_grace_days', 'demo_60s');
       } else {
-        graceDays = parseInt(val);
-        cpNs = (BigInt(val) * 86400n * 1000000000n).toString();
-        localStorage.setItem('aegis_grace_days', val);
+        const days = parseInt(val, 10) || 7;
+        cpNs = (BigInt(days) * 86400n * 1000000000n).toString();
+        if (!isArmed) {
+          graceDays = days;
+          localStorage.setItem('aegis_grace_days', val);
+        }
       }
       updateSaveButtonState(lastFetchedVaultInfo);
-      showToast(`Grace window set to ${val === 'demo_60s' ? '1m' : val + ' days'}. Will be locked on-chain once you click Save Policy.`);
+
+      if (isArmed) {
+        showToast(`⏳ Starting 72-hour security cooldown for grace buffer change (${val === 'demo_60s' ? '1m' : val + ' days'})...`);
+        dispatchNearTransaction('update_intervals', {
+          heartbeat_interval_ns: null,
+          challenge_period_ns: cpNs
+        }).then((res) => {
+          if (res !== undefined) {
+            dispatchTelegramZeroMetadataPush('timelock');
+          }
+        }).catch(() => {});
+      } else {
+        showToast(`Grace window set to ${val === 'demo_60s' ? '1m' : val + ' days'}. Click Save Policy to arm bunker.`);
+      }
     }
 
     function openGraceModal() {
@@ -3952,12 +3989,12 @@
       const inactSelect = document.getElementById('inactivitySelect');
       const graceSelect = document.getElementById('graceSelect');
       if (inactSelect) {
-        inactSelect.disabled = true;
-        inactSelect.title = 'Locked while bunker is armed (prevents timer-shortening attacks)';
+        inactSelect.disabled = false;
+        inactSelect.title = 'Changing check-in timer on an armed bunker starts a 72-hour security cooldown';
       }
       if (graceSelect) {
-        graceSelect.disabled = true;
-        graceSelect.title = 'Locked while bunker is armed (prevents timer-shortening attacks)';
+        graceSelect.disabled = false;
+        graceSelect.title = 'Changing grace buffer on an armed bunker starts a 72-hour security cooldown';
       }
 
       if (remainingSeconds <= 0) {
@@ -5220,8 +5257,10 @@
     // Strict Zero-Metadata Messages (No addresses, no account IDs, no dates, no chain names, no tx hashes)
     const ZERO_METADATA_ALERT_MESSAGES = {
       test: '🛡 Aegis Bunker: Notification channel connected and active.',
-      reminder: '⏳ Aegis Bunker: Check-in window is nearing expiration. Perform a check-in to keep the bunker armed.',
-      grace: '⚠️ Aegis Bunker: Primary timer expired. Grace buffer is now active.',
+      reminder: '⏳ Aegis Bunker: Check-in window is nearing expiration (≤25% left). Perform a check-in to keep the bunker armed.',
+      grace: '⚠️ Aegis Bunker: Primary timer expired. Grace buffer is now active — check in immediately to cancel automatic inheritance.',
+      timelock: '🔐 Aegis Bunker: 72-hour security cooldown started for a policy or timer change. If you did not authorize this, open your bunker and cancel immediately.',
+      timelock_cancelled: '✅ Aegis Bunker: Pending 72-hour policy or timer change was cancelled.',
       panic: '🚨 Aegis Bunker: Emergency evacuation completed.',
       inheritance: '🔒 Aegis Bunker: Inheritance protocol completed.'
     };
@@ -5784,23 +5823,14 @@
         encryptedOrNullMemo = '';
       }
 
-      const isAlreadyArmed = Boolean(
-        lastFetchedVaultInfo &&
-        lastFetchedVaultInfo.state === 'Active' &&
-        hasConfiguredDestinations(lastFetchedVaultInfo)
-      );
       const inactPref = document.getElementById('inactivitySelect')?.value || localStorage.getItem('aegis_inactivity_days') || '90';
       const gracePref = document.getElementById('graceSelect')?.value || localStorage.getItem('aegis_grace_days') || '7';
-      const selectedHbNs = isAlreadyArmed
-        ? null
-        : ((inactPref === 'demo_180s' || inactPref === 'demo_120s')
-          ? '180000000000'
-          : (BigInt(parseInt(inactPref, 10) || 90) * 86400n * 1000000000n).toString());
-      const selectedCpNs = isAlreadyArmed
-        ? null
-        : ((gracePref === 'demo_60s' || gracePref === 'demo_30s')
-          ? '60000000000'
-          : (BigInt(parseInt(gracePref, 10) || 7) * 86400n * 1000000000n).toString());
+      const selectedHbNs = (inactPref === 'demo_180s' || inactPref === 'demo_120s')
+        ? '180000000000'
+        : (BigInt(parseInt(inactPref, 10) || 90) * 86400n * 1000000000n).toString();
+      const selectedCpNs = (gracePref === 'demo_60s' || gracePref === 'demo_30s')
+        ? '60000000000'
+        : (BigInt(parseInt(gracePref, 10) || 7) * 86400n * 1000000000n).toString();
 
       const policyPayload = {
         backup: {
@@ -5831,7 +5861,7 @@
         userHasInteractedWithInputs = false;
         isEditing = false;
         if (res !== undefined) {
-          showToast('Policy & timers armed on-chain! Opening Safe Bunker Deposits...');
+          showToast('Policy submitted on-chain! Syncing bunker state...');
           setTimeout(() => switchTab('vault'), 700);
         }
       }).catch(err => {
@@ -5840,8 +5870,12 @@
     }
 
     function cancelAddressCooldown() {
-      dispatchNearTransaction('cancel_policy');
-      showToast('Cancelling address proposal on-chain...', true);
+      showToast('Cancelling pending policy/timer change on-chain...', true);
+      dispatchNearTransaction('cancel_policy').then((res) => {
+        if (res !== undefined) {
+          dispatchTelegramZeroMetadataPush('timelock_cancelled');
+        }
+      }).catch(() => {});
     }
 
     function applyAddressPolicy() {

@@ -186,6 +186,8 @@ pub struct VaultInfo {
     pub backup: ChainAddresses,
     pub heirs: ChainAddresses,
     pub pending_policy: Option<PendingPolicy>,
+    pub pending_heartbeat_interval_ns: Option<u64>,
+    pub pending_challenge_period_ns: Option<u64>,
     pub current_time_ns: u64,
     pub epoch: u32,
     pub authorized_relayer: Option<AccountId>,
@@ -341,16 +343,26 @@ impl LastKeyVault {
             vault.state == VaultState::Active || matches!(vault.state, VaultState::Claiming { .. }),
             "Cannot sync activity: vault is not Active or Claiming"
         );
+        let now = env::block_timestamp();
+        require!(
+            observed_nonce.0 <= now.saturating_add(60_000_000_000),
+            "Security Guard: observed_nonce cannot be in the future"
+        );
         let key = format!("ak_nonce:{}", vault_owner);
-        let prev_nonce = env::storage_read(key.as_bytes())
+        let raw_prev_nonce = env::storage_read(key.as_bytes())
             .and_then(|b| b.try_into().ok().map(u64::from_le_bytes))
             .unwrap_or(0);
+        let prev_nonce = if raw_prev_nonce > now.saturating_add(60_000_000_000) {
+            0
+        } else {
+            raw_prev_nonce
+        };
         require!(
             observed_nonce.0 > prev_nonce,
             "Observed access-key nonce must be strictly greater than previously synced nonce"
         );
         env::storage_write(key.as_bytes(), &observed_nonce.0.to_le_bytes());
-        vault.last_ping_ns = env::block_timestamp();
+        vault.last_ping_ns = now;
         if let VaultState::Claiming { .. } = vault.state {
             vault.state = VaultState::Active;
         }
@@ -489,7 +501,7 @@ impl LastKeyVault {
         Self::internal_capture_signer_pubkey(&caller);
         let now = env::block_timestamp();
         let vault = self.vaults.get_mut(&caller).expect("No vault found for account");
-        Self::internal_sync_elapsed_policy(vault, now);
+        Self::internal_sync_elapsed_policy(&caller, vault, now);
         require!(
             vault.state == VaultState::Active || matches!(vault.state, VaultState::Claiming { .. }),
             "Cannot trigger panic: vault is not Active"
@@ -503,6 +515,7 @@ impl LastKeyVault {
             "Cannot trigger panic: no backup egress destinations are configured in vault policy"
         );
         vault.pending_policy = None;
+        Self::internal_clear_pending_intervals(&caller);
         vault.state = VaultState::Evacuated;
         Self::internal_set_epoch_swept(&caller, vault.epoch, false);
         env::log_str(&format!(
@@ -540,6 +553,7 @@ impl LastKeyVault {
 
         vault.epoch += 1;
         vault.pending_policy = None;
+        Self::internal_clear_pending_intervals(&caller);
         vault.backup = ChainAddresses::empty();
         vault.heirs = ChainAddresses::empty();
         vault.state = VaultState::Unconfigured;
@@ -568,6 +582,7 @@ impl LastKeyVault {
         vault.heirs = ChainAddresses::empty();
         vault.state = VaultState::Unconfigured;
         vault.pending_policy = None;
+        Self::internal_clear_pending_intervals(&caller);
         env::log_str(&format!("VAULT_RESET: Vault for {} reset to Unconfigured", caller));
     }
 
@@ -586,6 +601,7 @@ impl LastKeyVault {
         vault.heirs = ChainAddresses::empty();
         vault.state = VaultState::Unconfigured;
         vault.pending_policy = None;
+        Self::internal_clear_pending_intervals(&target_account);
         env::log_str(&format!(
             "ADMIN_VAULT_RESET: Vault for {} reset to Unconfigured by contract self",
             target_account
@@ -749,7 +765,7 @@ impl LastKeyVault {
 
         let now = env::block_timestamp();
         let vault = self.vaults.get_mut(&caller).unwrap();
-        Self::internal_sync_elapsed_policy(vault, now);
+        Self::internal_sync_elapsed_policy(&caller, vault, now);
 
         require!(
             vault.state == VaultState::Active || vault.state == VaultState::Unconfigured,
@@ -761,34 +777,47 @@ impl LastKeyVault {
         let modifies_existing_addrs = vault.backup.modifies_existing(&backup)
             || vault.heirs.modifies_existing(&heirs);
 
-        if let Some(hb) = heartbeat_interval_ns {
-            if !is_initial_setup {
-                require!(
-                    hb.0 >= vault.heartbeat_interval_ns,
-                    "Security Guard: Cannot shorten check-in timer on an armed bunker; rotate epoch first"
-                );
-            }
-            vault.heartbeat_interval_ns = hb.0;
-        }
-        if let Some(cp) = challenge_period_ns {
-            if !is_initial_setup {
-                require!(
-                    cp.0 >= vault.challenge_period_ns,
-                    "Security Guard: Cannot shorten grace buffer on an armed bunker; rotate epoch first"
-                );
-            }
-            vault.challenge_period_ns = cp.0;
-        }
+        let target_hb = heartbeat_interval_ns
+            .map(|v| v.0)
+            .unwrap_or(vault.heartbeat_interval_ns);
+        let target_cp = challenge_period_ns
+            .map(|v| v.0)
+            .unwrap_or(vault.challenge_period_ns);
+        require!(
+            target_hb >= 15_000_000_000,
+            "Heartbeat interval must be at least 15 seconds"
+        );
+        require!(
+            target_cp >= 15_000_000_000,
+            "Challenge period must be at least 15 seconds"
+        );
+        let modifies_intervals = !is_initial_setup
+            && (target_hb != vault.heartbeat_interval_ns || target_cp != vault.challenge_period_ns);
 
-        if is_initial_setup || !modifies_existing_addrs {
+        if is_initial_setup {
+            vault.heartbeat_interval_ns = target_hb;
+            vault.challenge_period_ns = target_cp;
             vault.backup = backup;
             vault.heirs = heirs;
             vault.pending_policy = None;
+            Self::internal_clear_pending_intervals(&caller);
             vault.last_ping_ns = now;
             vault.state = VaultState::Active;
             self.internal_register_account(&caller);
             env::log_str(&format!(
-                "POLICY_INITIALIZED_INSTANT: Destinations activated immediately for {}",
+                "POLICY_INITIALIZED_INSTANT: Destinations and timers activated immediately for {}",
+                caller
+            ));
+        } else if !modifies_existing_addrs && !modifies_intervals {
+            vault.backup = backup;
+            vault.heirs = heirs;
+            vault.pending_policy = None;
+            Self::internal_clear_pending_intervals(&caller);
+            vault.last_ping_ns = now;
+            vault.state = VaultState::Active;
+            self.internal_register_account(&caller);
+            env::log_str(&format!(
+                "POLICY_INITIALIZED_INSTANT: New chain destinations activated immediately for {}",
                 caller
             ));
         } else {
@@ -799,8 +828,11 @@ impl LastKeyVault {
                 heirs,
                 effective_at_ns,
             });
+            if modifies_intervals {
+                Self::internal_set_pending_intervals(&caller, target_hb, target_cp);
+            }
             env::log_str(&format!(
-                "POLICY_PROPOSED: 72h timelock started for modifying configured addresses for {}",
+                "POLICY_PROPOSED: 72h timelock started for modifying configured addresses/timers for {}",
                 caller
             ));
         }
@@ -823,10 +855,15 @@ impl LastKeyVault {
             );
             vault.backup = pending.backup;
             vault.heirs = pending.heirs;
+            if let Some((new_hb, new_cp)) = Self::internal_get_pending_intervals(&target) {
+                vault.heartbeat_interval_ns = new_hb;
+                vault.challenge_period_ns = new_cp;
+                Self::internal_clear_pending_intervals(&target);
+            }
             if caller == target {
                 vault.last_ping_ns = env::block_timestamp();
             }
-            env::log_str(&format!("POLICY_APPLIED: New destinations activated for {}", target));
+            env::log_str(&format!("POLICY_APPLIED: New destinations/timers activated for {}", target));
         } else {
             env::panic_str("No pending policy found");
         }
@@ -840,11 +877,13 @@ impl LastKeyVault {
         let vault = self.vaults.get_mut(&caller).expect("No vault found for account");
         require!(vault.pending_policy.is_some(), "No pending policy to cancel");
         vault.pending_policy = None;
+        Self::internal_clear_pending_intervals(&caller);
         vault.last_ping_ns = env::block_timestamp();
-        env::log_str(&format!("POLICY_CANCELLED: Pending policy cancelled for {}", caller));
+        env::log_str(&format!("POLICY_CANCELLED: Pending policy/timers cancelled for {}", caller));
     }
 
     /// Update heartbeat interval and challenge (grace) period for caller's bunker.
+    /// Applies immediately when bunker is Unarmed (`Unconfigured`), or enters 72-hour timelock cooldown when Armed (`Active`).
     #[payable]
     pub fn update_intervals(
         &mut self,
@@ -855,16 +894,10 @@ impl LastKeyVault {
         Self::internal_capture_signer_pubkey(&caller);
         let now = env::block_timestamp();
         let vault = self.vaults.get_mut(&caller).expect("No vault found for account");
-        Self::internal_sync_elapsed_policy(vault, now);
+        Self::internal_sync_elapsed_policy(&caller, vault, now);
         require!(
             vault.state == VaultState::Active || vault.state == VaultState::Unconfigured,
             "Can only update intervals in Active or Unconfigured state"
-        );
-        let is_armed = vault.state == VaultState::Active
-            && (!vault.backup.is_empty() || !vault.heirs.is_empty());
-        require!(
-            !is_armed,
-            "Security Guard: Timer intervals are locked once bunker is armed; rotate epoch to change timers"
         );
         let new_hb = heartbeat_interval_ns
             .map(|v| v.0)
@@ -881,10 +914,38 @@ impl LastKeyVault {
             "Challenge period must be at least 15 seconds"
         );
 
-        vault.heartbeat_interval_ns = new_hb;
-        vault.challenge_period_ns = new_cp;
-        vault.last_ping_ns = now;
-        env::log_str(&format!("INTERVALS_UPDATED: Intervals updated for {}", caller));
+        let is_armed = vault.state == VaultState::Active
+            && (!vault.backup.is_empty() || !vault.heirs.is_empty());
+
+        if !is_armed {
+            vault.heartbeat_interval_ns = new_hb;
+            vault.challenge_period_ns = new_cp;
+            Self::internal_clear_pending_intervals(&caller);
+            vault.last_ping_ns = now;
+            env::log_str(&format!("INTERVALS_UPDATED: Intervals updated immediately for {}", caller));
+        } else {
+            vault.last_ping_ns = now;
+            if new_hb == vault.heartbeat_interval_ns && new_cp == vault.challenge_period_ns {
+                Self::internal_clear_pending_intervals(&caller);
+                return;
+            }
+            let (pending_backup, pending_heirs) = if let Some(ref p) = vault.pending_policy {
+                (p.backup.clone(), p.heirs.clone())
+            } else {
+                (vault.backup.clone(), vault.heirs.clone())
+            };
+            let effective_at_ns = now + vault.policy_timelock_ns;
+            vault.pending_policy = Some(PendingPolicy {
+                backup: pending_backup,
+                heirs: pending_heirs,
+                effective_at_ns,
+            });
+            Self::internal_set_pending_intervals(&caller, new_hb, new_cp);
+            env::log_str(&format!(
+                "INTERVALS_TIMELOCK_STARTED: 72h timelock started for timer change for {}",
+                caller
+            ));
+        }
     }
 
     /// Set or revoke authorized relayer for caller's bunker
@@ -914,7 +975,7 @@ impl LastKeyVault {
             "Vault must be Active to trigger push inheritance"
         );
         let now = env::block_timestamp();
-        Self::internal_sync_elapsed_policy(vault, now);
+        Self::internal_sync_elapsed_policy(&vault_owner, vault, now);
         let total_inactivity_ns = vault
             .heartbeat_interval_ns
             .saturating_add(vault.challenge_period_ns);
@@ -925,6 +986,7 @@ impl LastKeyVault {
         // If an unelapsed pending policy still exists when inactivity expires, discard the unelapsed change
         // and use the already confirmed `vault.heirs` so inheritance cannot be blocked.
         vault.pending_policy = None;
+        Self::internal_clear_pending_intervals(&vault_owner);
         require!(
             !vault.heirs.is_empty(),
             "Cannot trigger inheritance: no heir destination addresses configured"
@@ -1263,27 +1325,55 @@ impl LastKeyVault {
         let target = account_id?;
         let now = env::block_timestamp();
         self.vaults.get(&target).map(|vault| {
-            let (effective_backup, effective_heirs, effective_pending) =
-                if let Some(ref p) = vault.pending_policy {
-                    if now >= p.effective_at_ns {
-                        (p.backup.clone(), p.heirs.clone(), None)
-                    } else {
-                        (vault.backup.clone(), vault.heirs.clone(), Some(p.clone()))
-                    }
+            let pending_ints = Self::internal_get_pending_intervals(&target);
+            let (
+                effective_backup,
+                effective_heirs,
+                effective_pending,
+                effective_hb,
+                effective_cp,
+                pending_hb,
+                pending_cp,
+            ) = if let Some(ref p) = vault.pending_policy {
+                if now >= p.effective_at_ns {
+                    let (hb, cp) = pending_ints
+                        .unwrap_or((vault.heartbeat_interval_ns, vault.challenge_period_ns));
+                    (p.backup.clone(), p.heirs.clone(), None, hb, cp, None, None)
                 } else {
-                    (vault.backup.clone(), vault.heirs.clone(), None)
-                };
+                    (
+                        vault.backup.clone(),
+                        vault.heirs.clone(),
+                        Some(p.clone()),
+                        vault.heartbeat_interval_ns,
+                        vault.challenge_period_ns,
+                        pending_ints.map(|(hb, _)| hb),
+                        pending_ints.map(|(_, cp)| cp),
+                    )
+                }
+            } else {
+                (
+                    vault.backup.clone(),
+                    vault.heirs.clone(),
+                    None,
+                    vault.heartbeat_interval_ns,
+                    vault.challenge_period_ns,
+                    None,
+                    None,
+                )
+            };
             VaultInfo {
                 owner: target.clone(),
                 mpc_contract: self.mpc_contract.clone(),
                 state: vault.state.clone(),
                 last_ping_ns: vault.last_ping_ns,
-                heartbeat_interval_ns: vault.heartbeat_interval_ns,
-                challenge_period_ns: vault.challenge_period_ns,
+                heartbeat_interval_ns: effective_hb,
+                challenge_period_ns: effective_cp,
                 policy_timelock_ns: vault.policy_timelock_ns,
                 backup: effective_backup,
                 heirs: effective_heirs,
                 pending_policy: effective_pending,
+                pending_heartbeat_interval_ns: pending_hb,
+                pending_challenge_period_ns: pending_cp,
                 current_time_ns: now,
                 epoch: vault.epoch,
                 authorized_relayer: vault.authorized_relayer.clone(),
@@ -1375,7 +1465,7 @@ impl LastKeyVault {
 
     // --- Internal Storage Helpers (Zero Borsh Migration Impact) ---
 
-    fn internal_sync_elapsed_policy(vault: &mut UserVault, now_ns: u64) {
+    fn internal_sync_elapsed_policy(owner: &AccountId, vault: &mut UserVault, now_ns: u64) {
         let should_apply = vault
             .pending_policy
             .as_ref()
@@ -1385,7 +1475,40 @@ impl LastKeyVault {
                 vault.backup = pending.backup;
                 vault.heirs = pending.heirs;
             }
+            if let Some((new_hb, new_cp)) = Self::internal_get_pending_intervals(owner) {
+                vault.heartbeat_interval_ns = new_hb;
+                vault.challenge_period_ns = new_cp;
+                Self::internal_clear_pending_intervals(owner);
+            }
         }
+    }
+
+    fn internal_get_pending_intervals(owner: &AccountId) -> Option<(u64, u64)> {
+        let key = format!("pend_int:{}", owner);
+        env::storage_read(key.as_bytes()).and_then(|bytes| {
+            if bytes.len() == 16 {
+                let mut hb_arr = [0u8; 8];
+                let mut cp_arr = [0u8; 8];
+                hb_arr.copy_from_slice(&bytes[0..8]);
+                cp_arr.copy_from_slice(&bytes[8..16]);
+                Some((u64::from_le_bytes(hb_arr), u64::from_le_bytes(cp_arr)))
+            } else {
+                None
+            }
+        })
+    }
+
+    fn internal_set_pending_intervals(owner: &AccountId, hb: u64, cp: u64) {
+        let key = format!("pend_int:{}", owner);
+        let mut buf = [0u8; 16];
+        buf[0..8].copy_from_slice(&hb.to_le_bytes());
+        buf[8..16].copy_from_slice(&cp.to_le_bytes());
+        env::storage_write(key.as_bytes(), &buf);
+    }
+
+    fn internal_clear_pending_intervals(owner: &AccountId) {
+        let key = format!("pend_int:{}", owner);
+        env::storage_remove(key.as_bytes());
     }
 
     fn internal_get_sponsor_calls(owner: &AccountId, epoch: u32) -> u8 {
@@ -2920,34 +3043,39 @@ mod tests {
         let info_armed = contract.get_vault_info(Some(alice.clone())).unwrap();
         assert_eq!(info_armed.state, VaultState::Active);
 
-        // 4. Attacker/heir with access to owner's wallet CANNOT call update_intervals on an armed bunker
-        assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            contract.update_intervals(
-                Some(U64(180 * 1_000_000_000)),
-                Some(U64(60 * 1_000_000_000)),
-            );
-        }))
-        .is_err());
+        // 4. Changing timers on an armed bunker enters 72-hour timelock cooldown (does NOT apply immediately)
+        let hb_90d = 90 * 86_400 * 1_000_000_000u64;
+        let cp_7d = 7 * 86_400 * 1_000_000_000u64;
+        let hb_3m = 180 * 1_000_000_000u64;
+        let cp_1m = 60 * 1_000_000_000u64;
 
-        // 5. Attacker/heir CANNOT shorten heartbeat_interval_ns or challenge_period_ns via propose_policy either
+        contract.update_intervals(Some(U64(hb_3m)), Some(U64(cp_1m)));
+        let info_pending = contract.get_vault_info(Some(alice.clone())).unwrap();
+        assert_eq!(info_pending.heartbeat_interval_ns, hb_90d);
+        assert_eq!(info_pending.challenge_period_ns, cp_7d);
+        assert!(info_pending.pending_policy.is_some());
+        assert_eq!(info_pending.pending_heartbeat_interval_ns, Some(hb_3m));
+        assert_eq!(info_pending.pending_challenge_period_ns, Some(cp_1m));
+
+        // 5. Owner can cancel the unauthorized timer change during the 72h window
+        contract.cancel_policy();
+        let info_cancelled = contract.get_vault_info(Some(alice.clone())).unwrap();
+        assert!(info_cancelled.pending_policy.is_none());
+        assert_eq!(info_cancelled.pending_heartbeat_interval_ns, None);
+        assert_eq!(info_cancelled.heartbeat_interval_ns, hb_90d);
+
+        // 6. Proposing timer change and waiting full 72h promotes the new timers
+        contract.update_intervals(Some(U64(hb_3m)), Some(U64(cp_1m)));
+        testing_env!(context.block_timestamp(t0 + DEFAULT_POLICY_TIMELOCK_NS + 1).build());
+        contract.apply_policy(None);
+        let info_applied = contract.get_vault_info(Some(alice.clone())).unwrap();
+        assert!(info_applied.pending_policy.is_none());
+        assert_eq!(info_applied.heartbeat_interval_ns, hb_3m);
+        assert_eq!(info_applied.challenge_period_ns, cp_1m);
+
+        // 7. sync_owner_activity blocks future/u64::MAX nonce poisoning
         assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            contract.propose_policy(
-                backup.clone(),
-                heirs.clone(),
-                None,
-                Some(U64(180 * 1_000_000_000)),
-                None,
-            );
-        }))
-        .is_err());
-        assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            contract.propose_policy(
-                backup.clone(),
-                heirs.clone(),
-                None,
-                None,
-                Some(U64(60 * 1_000_000_000)),
-            );
+            contract.sync_owner_activity(alice.clone(), U64(u64::MAX));
         }))
         .is_err());
     }

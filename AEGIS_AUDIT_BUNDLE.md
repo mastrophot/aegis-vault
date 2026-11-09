@@ -241,6 +241,8 @@ pub struct VaultInfo {
     pub backup: ChainAddresses,
     pub heirs: ChainAddresses,
     pub pending_policy: Option<PendingPolicy>,
+    pub pending_heartbeat_interval_ns: Option<u64>,
+    pub pending_challenge_period_ns: Option<u64>,
     pub current_time_ns: u64,
     pub epoch: u32,
     pub authorized_relayer: Option<AccountId>,
@@ -396,16 +398,26 @@ impl LastKeyVault {
             vault.state == VaultState::Active || matches!(vault.state, VaultState::Claiming { .. }),
             "Cannot sync activity: vault is not Active or Claiming"
         );
+        let now = env::block_timestamp();
+        require!(
+            observed_nonce.0 <= now.saturating_add(60_000_000_000),
+            "Security Guard: observed_nonce cannot be in the future"
+        );
         let key = format!("ak_nonce:{}", vault_owner);
-        let prev_nonce = env::storage_read(key.as_bytes())
+        let raw_prev_nonce = env::storage_read(key.as_bytes())
             .and_then(|b| b.try_into().ok().map(u64::from_le_bytes))
             .unwrap_or(0);
+        let prev_nonce = if raw_prev_nonce > now.saturating_add(60_000_000_000) {
+            0
+        } else {
+            raw_prev_nonce
+        };
         require!(
             observed_nonce.0 > prev_nonce,
             "Observed access-key nonce must be strictly greater than previously synced nonce"
         );
         env::storage_write(key.as_bytes(), &observed_nonce.0.to_le_bytes());
-        vault.last_ping_ns = env::block_timestamp();
+        vault.last_ping_ns = now;
         if let VaultState::Claiming { .. } = vault.state {
             vault.state = VaultState::Active;
         }
@@ -544,7 +556,7 @@ impl LastKeyVault {
         Self::internal_capture_signer_pubkey(&caller);
         let now = env::block_timestamp();
         let vault = self.vaults.get_mut(&caller).expect("No vault found for account");
-        Self::internal_sync_elapsed_policy(vault, now);
+        Self::internal_sync_elapsed_policy(&caller, vault, now);
         require!(
             vault.state == VaultState::Active || matches!(vault.state, VaultState::Claiming { .. }),
             "Cannot trigger panic: vault is not Active"
@@ -558,6 +570,7 @@ impl LastKeyVault {
             "Cannot trigger panic: no backup egress destinations are configured in vault policy"
         );
         vault.pending_policy = None;
+        Self::internal_clear_pending_intervals(&caller);
         vault.state = VaultState::Evacuated;
         Self::internal_set_epoch_swept(&caller, vault.epoch, false);
         env::log_str(&format!(
@@ -595,6 +608,7 @@ impl LastKeyVault {
 
         vault.epoch += 1;
         vault.pending_policy = None;
+        Self::internal_clear_pending_intervals(&caller);
         vault.backup = ChainAddresses::empty();
         vault.heirs = ChainAddresses::empty();
         vault.state = VaultState::Unconfigured;
@@ -623,6 +637,7 @@ impl LastKeyVault {
         vault.heirs = ChainAddresses::empty();
         vault.state = VaultState::Unconfigured;
         vault.pending_policy = None;
+        Self::internal_clear_pending_intervals(&caller);
         env::log_str(&format!("VAULT_RESET: Vault for {} reset to Unconfigured", caller));
     }
 
@@ -641,6 +656,7 @@ impl LastKeyVault {
         vault.heirs = ChainAddresses::empty();
         vault.state = VaultState::Unconfigured;
         vault.pending_policy = None;
+        Self::internal_clear_pending_intervals(&target_account);
         env::log_str(&format!(
             "ADMIN_VAULT_RESET: Vault for {} reset to Unconfigured by contract self",
             target_account
@@ -804,7 +820,7 @@ impl LastKeyVault {
 
         let now = env::block_timestamp();
         let vault = self.vaults.get_mut(&caller).unwrap();
-        Self::internal_sync_elapsed_policy(vault, now);
+        Self::internal_sync_elapsed_policy(&caller, vault, now);
 
         require!(
             vault.state == VaultState::Active || vault.state == VaultState::Unconfigured,
@@ -816,34 +832,47 @@ impl LastKeyVault {
         let modifies_existing_addrs = vault.backup.modifies_existing(&backup)
             || vault.heirs.modifies_existing(&heirs);
 
-        if let Some(hb) = heartbeat_interval_ns {
-            if !is_initial_setup {
-                require!(
-                    hb.0 >= vault.heartbeat_interval_ns,
-                    "Security Guard: Cannot shorten check-in timer on an armed bunker; rotate epoch first"
-                );
-            }
-            vault.heartbeat_interval_ns = hb.0;
-        }
-        if let Some(cp) = challenge_period_ns {
-            if !is_initial_setup {
-                require!(
-                    cp.0 >= vault.challenge_period_ns,
-                    "Security Guard: Cannot shorten grace buffer on an armed bunker; rotate epoch first"
-                );
-            }
-            vault.challenge_period_ns = cp.0;
-        }
+        let target_hb = heartbeat_interval_ns
+            .map(|v| v.0)
+            .unwrap_or(vault.heartbeat_interval_ns);
+        let target_cp = challenge_period_ns
+            .map(|v| v.0)
+            .unwrap_or(vault.challenge_period_ns);
+        require!(
+            target_hb >= 15_000_000_000,
+            "Heartbeat interval must be at least 15 seconds"
+        );
+        require!(
+            target_cp >= 15_000_000_000,
+            "Challenge period must be at least 15 seconds"
+        );
+        let modifies_intervals = !is_initial_setup
+            && (target_hb != vault.heartbeat_interval_ns || target_cp != vault.challenge_period_ns);
 
-        if is_initial_setup || !modifies_existing_addrs {
+        if is_initial_setup {
+            vault.heartbeat_interval_ns = target_hb;
+            vault.challenge_period_ns = target_cp;
             vault.backup = backup;
             vault.heirs = heirs;
             vault.pending_policy = None;
+            Self::internal_clear_pending_intervals(&caller);
             vault.last_ping_ns = now;
             vault.state = VaultState::Active;
             self.internal_register_account(&caller);
             env::log_str(&format!(
-                "POLICY_INITIALIZED_INSTANT: Destinations activated immediately for {}",
+                "POLICY_INITIALIZED_INSTANT: Destinations and timers activated immediately for {}",
+                caller
+            ));
+        } else if !modifies_existing_addrs && !modifies_intervals {
+            vault.backup = backup;
+            vault.heirs = heirs;
+            vault.pending_policy = None;
+            Self::internal_clear_pending_intervals(&caller);
+            vault.last_ping_ns = now;
+            vault.state = VaultState::Active;
+            self.internal_register_account(&caller);
+            env::log_str(&format!(
+                "POLICY_INITIALIZED_INSTANT: New chain destinations activated immediately for {}",
                 caller
             ));
         } else {
@@ -854,8 +883,11 @@ impl LastKeyVault {
                 heirs,
                 effective_at_ns,
             });
+            if modifies_intervals {
+                Self::internal_set_pending_intervals(&caller, target_hb, target_cp);
+            }
             env::log_str(&format!(
-                "POLICY_PROPOSED: 72h timelock started for modifying configured addresses for {}",
+                "POLICY_PROPOSED: 72h timelock started for modifying configured addresses/timers for {}",
                 caller
             ));
         }
@@ -878,10 +910,15 @@ impl LastKeyVault {
             );
             vault.backup = pending.backup;
             vault.heirs = pending.heirs;
+            if let Some((new_hb, new_cp)) = Self::internal_get_pending_intervals(&target) {
+                vault.heartbeat_interval_ns = new_hb;
+                vault.challenge_period_ns = new_cp;
+                Self::internal_clear_pending_intervals(&target);
+            }
             if caller == target {
                 vault.last_ping_ns = env::block_timestamp();
             }
-            env::log_str(&format!("POLICY_APPLIED: New destinations activated for {}", target));
+            env::log_str(&format!("POLICY_APPLIED: New destinations/timers activated for {}", target));
         } else {
             env::panic_str("No pending policy found");
         }
@@ -895,11 +932,13 @@ impl LastKeyVault {
         let vault = self.vaults.get_mut(&caller).expect("No vault found for account");
         require!(vault.pending_policy.is_some(), "No pending policy to cancel");
         vault.pending_policy = None;
+        Self::internal_clear_pending_intervals(&caller);
         vault.last_ping_ns = env::block_timestamp();
-        env::log_str(&format!("POLICY_CANCELLED: Pending policy cancelled for {}", caller));
+        env::log_str(&format!("POLICY_CANCELLED: Pending policy/timers cancelled for {}", caller));
     }
 
     /// Update heartbeat interval and challenge (grace) period for caller's bunker.
+    /// Applies immediately when bunker is Unarmed (`Unconfigured`), or enters 72-hour timelock cooldown when Armed (`Active`).
     #[payable]
     pub fn update_intervals(
         &mut self,
@@ -910,16 +949,10 @@ impl LastKeyVault {
         Self::internal_capture_signer_pubkey(&caller);
         let now = env::block_timestamp();
         let vault = self.vaults.get_mut(&caller).expect("No vault found for account");
-        Self::internal_sync_elapsed_policy(vault, now);
+        Self::internal_sync_elapsed_policy(&caller, vault, now);
         require!(
             vault.state == VaultState::Active || vault.state == VaultState::Unconfigured,
             "Can only update intervals in Active or Unconfigured state"
-        );
-        let is_armed = vault.state == VaultState::Active
-            && (!vault.backup.is_empty() || !vault.heirs.is_empty());
-        require!(
-            !is_armed,
-            "Security Guard: Timer intervals are locked once bunker is armed; rotate epoch to change timers"
         );
         let new_hb = heartbeat_interval_ns
             .map(|v| v.0)
@@ -936,10 +969,38 @@ impl LastKeyVault {
             "Challenge period must be at least 15 seconds"
         );
 
-        vault.heartbeat_interval_ns = new_hb;
-        vault.challenge_period_ns = new_cp;
-        vault.last_ping_ns = now;
-        env::log_str(&format!("INTERVALS_UPDATED: Intervals updated for {}", caller));
+        let is_armed = vault.state == VaultState::Active
+            && (!vault.backup.is_empty() || !vault.heirs.is_empty());
+
+        if !is_armed {
+            vault.heartbeat_interval_ns = new_hb;
+            vault.challenge_period_ns = new_cp;
+            Self::internal_clear_pending_intervals(&caller);
+            vault.last_ping_ns = now;
+            env::log_str(&format!("INTERVALS_UPDATED: Intervals updated immediately for {}", caller));
+        } else {
+            vault.last_ping_ns = now;
+            if new_hb == vault.heartbeat_interval_ns && new_cp == vault.challenge_period_ns {
+                Self::internal_clear_pending_intervals(&caller);
+                return;
+            }
+            let (pending_backup, pending_heirs) = if let Some(ref p) = vault.pending_policy {
+                (p.backup.clone(), p.heirs.clone())
+            } else {
+                (vault.backup.clone(), vault.heirs.clone())
+            };
+            let effective_at_ns = now + vault.policy_timelock_ns;
+            vault.pending_policy = Some(PendingPolicy {
+                backup: pending_backup,
+                heirs: pending_heirs,
+                effective_at_ns,
+            });
+            Self::internal_set_pending_intervals(&caller, new_hb, new_cp);
+            env::log_str(&format!(
+                "INTERVALS_TIMELOCK_STARTED: 72h timelock started for timer change for {}",
+                caller
+            ));
+        }
     }
 
     /// Set or revoke authorized relayer for caller's bunker
@@ -969,7 +1030,7 @@ impl LastKeyVault {
             "Vault must be Active to trigger push inheritance"
         );
         let now = env::block_timestamp();
-        Self::internal_sync_elapsed_policy(vault, now);
+        Self::internal_sync_elapsed_policy(&vault_owner, vault, now);
         let total_inactivity_ns = vault
             .heartbeat_interval_ns
             .saturating_add(vault.challenge_period_ns);
@@ -980,6 +1041,7 @@ impl LastKeyVault {
         // If an unelapsed pending policy still exists when inactivity expires, discard the unelapsed change
         // and use the already confirmed `vault.heirs` so inheritance cannot be blocked.
         vault.pending_policy = None;
+        Self::internal_clear_pending_intervals(&vault_owner);
         require!(
             !vault.heirs.is_empty(),
             "Cannot trigger inheritance: no heir destination addresses configured"
@@ -1318,27 +1380,55 @@ impl LastKeyVault {
         let target = account_id?;
         let now = env::block_timestamp();
         self.vaults.get(&target).map(|vault| {
-            let (effective_backup, effective_heirs, effective_pending) =
-                if let Some(ref p) = vault.pending_policy {
-                    if now >= p.effective_at_ns {
-                        (p.backup.clone(), p.heirs.clone(), None)
-                    } else {
-                        (vault.backup.clone(), vault.heirs.clone(), Some(p.clone()))
-                    }
+            let pending_ints = Self::internal_get_pending_intervals(&target);
+            let (
+                effective_backup,
+                effective_heirs,
+                effective_pending,
+                effective_hb,
+                effective_cp,
+                pending_hb,
+                pending_cp,
+            ) = if let Some(ref p) = vault.pending_policy {
+                if now >= p.effective_at_ns {
+                    let (hb, cp) = pending_ints
+                        .unwrap_or((vault.heartbeat_interval_ns, vault.challenge_period_ns));
+                    (p.backup.clone(), p.heirs.clone(), None, hb, cp, None, None)
                 } else {
-                    (vault.backup.clone(), vault.heirs.clone(), None)
-                };
+                    (
+                        vault.backup.clone(),
+                        vault.heirs.clone(),
+                        Some(p.clone()),
+                        vault.heartbeat_interval_ns,
+                        vault.challenge_period_ns,
+                        pending_ints.map(|(hb, _)| hb),
+                        pending_ints.map(|(_, cp)| cp),
+                    )
+                }
+            } else {
+                (
+                    vault.backup.clone(),
+                    vault.heirs.clone(),
+                    None,
+                    vault.heartbeat_interval_ns,
+                    vault.challenge_period_ns,
+                    None,
+                    None,
+                )
+            };
             VaultInfo {
                 owner: target.clone(),
                 mpc_contract: self.mpc_contract.clone(),
                 state: vault.state.clone(),
                 last_ping_ns: vault.last_ping_ns,
-                heartbeat_interval_ns: vault.heartbeat_interval_ns,
-                challenge_period_ns: vault.challenge_period_ns,
+                heartbeat_interval_ns: effective_hb,
+                challenge_period_ns: effective_cp,
                 policy_timelock_ns: vault.policy_timelock_ns,
                 backup: effective_backup,
                 heirs: effective_heirs,
                 pending_policy: effective_pending,
+                pending_heartbeat_interval_ns: pending_hb,
+                pending_challenge_period_ns: pending_cp,
                 current_time_ns: now,
                 epoch: vault.epoch,
                 authorized_relayer: vault.authorized_relayer.clone(),
@@ -1430,7 +1520,7 @@ impl LastKeyVault {
 
     // --- Internal Storage Helpers (Zero Borsh Migration Impact) ---
 
-    fn internal_sync_elapsed_policy(vault: &mut UserVault, now_ns: u64) {
+    fn internal_sync_elapsed_policy(owner: &AccountId, vault: &mut UserVault, now_ns: u64) {
         let should_apply = vault
             .pending_policy
             .as_ref()
@@ -1440,7 +1530,40 @@ impl LastKeyVault {
                 vault.backup = pending.backup;
                 vault.heirs = pending.heirs;
             }
+            if let Some((new_hb, new_cp)) = Self::internal_get_pending_intervals(owner) {
+                vault.heartbeat_interval_ns = new_hb;
+                vault.challenge_period_ns = new_cp;
+                Self::internal_clear_pending_intervals(owner);
+            }
         }
+    }
+
+    fn internal_get_pending_intervals(owner: &AccountId) -> Option<(u64, u64)> {
+        let key = format!("pend_int:{}", owner);
+        env::storage_read(key.as_bytes()).and_then(|bytes| {
+            if bytes.len() == 16 {
+                let mut hb_arr = [0u8; 8];
+                let mut cp_arr = [0u8; 8];
+                hb_arr.copy_from_slice(&bytes[0..8]);
+                cp_arr.copy_from_slice(&bytes[8..16]);
+                Some((u64::from_le_bytes(hb_arr), u64::from_le_bytes(cp_arr)))
+            } else {
+                None
+            }
+        })
+    }
+
+    fn internal_set_pending_intervals(owner: &AccountId, hb: u64, cp: u64) {
+        let key = format!("pend_int:{}", owner);
+        let mut buf = [0u8; 16];
+        buf[0..8].copy_from_slice(&hb.to_le_bytes());
+        buf[8..16].copy_from_slice(&cp.to_le_bytes());
+        env::storage_write(key.as_bytes(), &buf);
+    }
+
+    fn internal_clear_pending_intervals(owner: &AccountId) {
+        let key = format!("pend_int:{}", owner);
+        env::storage_remove(key.as_bytes());
     }
 
     fn internal_get_sponsor_calls(owner: &AccountId, epoch: u32) -> u8 {
@@ -2975,34 +3098,39 @@ mod tests {
         let info_armed = contract.get_vault_info(Some(alice.clone())).unwrap();
         assert_eq!(info_armed.state, VaultState::Active);
 
-        // 4. Attacker/heir with access to owner's wallet CANNOT call update_intervals on an armed bunker
-        assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            contract.update_intervals(
-                Some(U64(180 * 1_000_000_000)),
-                Some(U64(60 * 1_000_000_000)),
-            );
-        }))
-        .is_err());
+        // 4. Changing timers on an armed bunker enters 72-hour timelock cooldown (does NOT apply immediately)
+        let hb_90d = 90 * 86_400 * 1_000_000_000u64;
+        let cp_7d = 7 * 86_400 * 1_000_000_000u64;
+        let hb_3m = 180 * 1_000_000_000u64;
+        let cp_1m = 60 * 1_000_000_000u64;
 
-        // 5. Attacker/heir CANNOT shorten heartbeat_interval_ns or challenge_period_ns via propose_policy either
+        contract.update_intervals(Some(U64(hb_3m)), Some(U64(cp_1m)));
+        let info_pending = contract.get_vault_info(Some(alice.clone())).unwrap();
+        assert_eq!(info_pending.heartbeat_interval_ns, hb_90d);
+        assert_eq!(info_pending.challenge_period_ns, cp_7d);
+        assert!(info_pending.pending_policy.is_some());
+        assert_eq!(info_pending.pending_heartbeat_interval_ns, Some(hb_3m));
+        assert_eq!(info_pending.pending_challenge_period_ns, Some(cp_1m));
+
+        // 5. Owner can cancel the unauthorized timer change during the 72h window
+        contract.cancel_policy();
+        let info_cancelled = contract.get_vault_info(Some(alice.clone())).unwrap();
+        assert!(info_cancelled.pending_policy.is_none());
+        assert_eq!(info_cancelled.pending_heartbeat_interval_ns, None);
+        assert_eq!(info_cancelled.heartbeat_interval_ns, hb_90d);
+
+        // 6. Proposing timer change and waiting full 72h promotes the new timers
+        contract.update_intervals(Some(U64(hb_3m)), Some(U64(cp_1m)));
+        testing_env!(context.block_timestamp(t0 + DEFAULT_POLICY_TIMELOCK_NS + 1).build());
+        contract.apply_policy(None);
+        let info_applied = contract.get_vault_info(Some(alice.clone())).unwrap();
+        assert!(info_applied.pending_policy.is_none());
+        assert_eq!(info_applied.heartbeat_interval_ns, hb_3m);
+        assert_eq!(info_applied.challenge_period_ns, cp_1m);
+
+        // 7. sync_owner_activity blocks future/u64::MAX nonce poisoning
         assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            contract.propose_policy(
-                backup.clone(),
-                heirs.clone(),
-                None,
-                Some(U64(180 * 1_000_000_000)),
-                None,
-            );
-        }))
-        .is_err());
-        assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            contract.propose_policy(
-                backup.clone(),
-                heirs.clone(),
-                None,
-                None,
-                Some(U64(60 * 1_000_000_000)),
-            );
+            contract.sync_owner_activity(alice.clone(), U64(u64::MAX));
         }))
         .is_err());
     }
@@ -4949,7 +5077,7 @@ class AegisRelayerService {
     return telemetryRecord;
   }
 
-  async dispatchZeroMetadataTelegramAlert(vaultOwner, state, epoch = 0) {
+  async dispatchZeroMetadataTelegramAlert(vaultOwner, eventOrState, scopeOrEpoch = 0) {
     try {
       const tk =
         (typeof process !== 'undefined' && process.env && process.env.TELEGRAM_BOT_TOKEN) ||
@@ -4957,13 +5085,31 @@ class AegisRelayerService {
           Buffer.from('QUFHYXpXWmZ1RjJWdEJpVk9odkp0ak9wclhNRDk0Snhhd2c=', 'base64').toString('utf8');
       if (!tk || !vaultOwner) return false;
 
-      const isInheritance = String(state).toLowerCase().includes('inherit');
-      const evtKey = isInheritance ? 'inheritance' : 'panic';
-      const dedupKey = `aegis_tg_sent_${vaultOwner}_${evtKey}_ep_${epoch || 0}`;
+      const raw = String(eventOrState || '').toLowerCase();
+      let evtKey = raw;
+      if (raw.includes('inherit')) evtKey = 'inheritance';
+      else if (raw.includes('evac') || raw === 'panic') evtKey = 'panic';
+
+      const messages = {
+        test: '🛡 Aegis Bunker: Notification channel connected and active.',
+        reminder: '⏳ Aegis Bunker: Check-in window is nearing expiration (≤25% left). Perform a check-in to keep the bunker armed.',
+        grace: '⚠️ Aegis Bunker: Primary timer expired. Grace buffer is now active — check in immediately to cancel automatic inheritance.',
+        timelock: '🔐 Aegis Bunker: 72-hour security cooldown started for a policy or timer change. If you did not authorize this, open your bunker and cancel immediately.',
+        timelock_cancelled: '✅ Aegis Bunker: Pending 72-hour policy or timer change was cancelled.',
+        panic: '🚨 Aegis Bunker: Emergency evacuation completed.',
+        inheritance: '🔒 Aegis Bunker: Inheritance protocol completed.'
+      };
+      const text = messages[evtKey];
+      if (!text) return false;
+
+      const dedupKey = `aegis_tg_sent_${vaultOwner}_${evtKey}_${scopeOrEpoch}`;
+      if (!this._sentTelegramAlerts) this._sentTelegramAlerts = new Set();
+      if (this._sentTelegramAlerts.has(dedupKey)) return false;
       if (typeof localStorage !== 'undefined') {
         if (localStorage.getItem(dedupKey)) return false;
         localStorage.setItem(dedupKey, '1');
       }
+      this._sentTelegramAlerts.add(dedupKey);
 
       const tagHex = ethers
         .sha256(ethers.toUtf8Bytes('aegis_alert_v1:' + String(vaultOwner).trim().toLowerCase()))
@@ -4986,11 +5132,6 @@ class AegisRelayerService {
         chatId = localStorage.getItem(`aegis_tg_chatid_${vaultOwner}`) || localStorage.getItem(`aegis_tg_${vaultOwner}`);
       }
       if (!chatId) return false;
-
-      // Strict Zero-Metadata Message: no addresses, no account IDs, no dates, no chain names
-      const text = isInheritance
-        ? '🔒 Aegis Bunker: Inheritance protocol completed.'
-        : '🚨 Aegis Bunker: Emergency evacuation completed.';
 
       await fetch(`https://api.telegram.org/bot${tk}/sendMessage`, {
         method: 'POST',
@@ -6277,14 +6418,19 @@ if (typeof window !== "undefined") {
           </div>
 
           <!-- Top Heartbeat 72h Timelock Notice -->
-          <div id="heartbeatTimelockNotice" class="hidden mt-2 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/25 text-amber-300 font-sans text-xs flex items-center justify-between">
-            <div class="flex items-center gap-2">
+          <div id="heartbeatTimelockNotice" class="hidden mt-2 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/25 text-amber-300 font-sans text-xs flex items-center justify-between gap-2">
+            <div class="flex items-center gap-2 min-w-0">
               <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0"></span>
-              <span id="heartbeatTimelockText" class="font-bold">72h Policy Timelock Active</span>
+              <span id="heartbeatTimelockText" class="font-bold truncate">72h Policy/Timer Timelock Active</span>
             </div>
-            <button onclick="document.getElementById('cooldownAlertBanner')?.scrollIntoView({ behavior: 'smooth' })" class="text-[11px] text-amber-400 hover:text-white underline font-semibold cursor-pointer">
-              Review / Revert ↓
-            </button>
+            <div class="flex items-center gap-2.5 shrink-0">
+              <button onclick="cancelAddressCooldown()" class="px-2 py-0.5 rounded bg-red-500/20 hover:bg-red-500/35 border border-red-500/40 text-[11px] text-red-300 font-bold cursor-pointer">
+                Cancel ✕
+              </button>
+              <button onclick="document.getElementById('cooldownAlertBanner')?.scrollIntoView({ behavior: 'smooth' })" class="text-[11px] text-amber-400 hover:text-white underline font-semibold cursor-pointer">
+                Details ↓
+              </button>
+            </div>
           </div>
         </div>
 
@@ -7953,9 +8099,16 @@ if (typeof window !== "undefined") {
         const hoursLeft = Math.floor(secLeft / 3600);
         const minsLeft = Math.floor((secLeft % 3600) / 60);
 
+        if (secLeft > 0 && typeof checkAndDispatchStatusAlerts === 'function') {
+          checkAndDispatchStatusAlerts('timelock', `eff_${info.pending_policy.effective_at_ns}`);
+        }
+
+        const hasPendingTimers = Boolean(info.pending_heartbeat_interval_ns || info.pending_challenge_period_ns);
+        const pendingLabel = hasPendingTimers ? 'Policy/Timer' : 'Policy';
+
         if (unconfiguredBanner) unconfiguredBanner.classList.add('hidden');
         if (badge) {
-          badge.innerText = secLeft > 0 ? `72h Timelock (${hoursLeft}h ${minsLeft}m left)` : 'Timelock Elapsed';
+          badge.innerText = secLeft > 0 ? `72h ${pendingLabel} Timelock (${hoursLeft}h ${minsLeft}m left)` : 'Timelock Elapsed';
           badge.className = 'text-amber-300 font-mono font-bold';
         }
         if (dot) dot.className = 'w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse';
@@ -7975,7 +8128,7 @@ if (typeof window !== "undefined") {
         if (hbNotice && hbText) {
           hbNotice.classList.remove('hidden');
           hbText.innerText = secLeft > 0
-            ? `72h Timelock Active (${hoursLeft}h ${minsLeft}m left)`
+            ? `72h ${pendingLabel} Cooldown (${hoursLeft}h ${minsLeft}m left)`
             : '72h Timelock Elapsed (Ready to Apply)';
         }
 
@@ -9663,54 +9816,63 @@ if (typeof window !== "undefined") {
     });
 
     function changeInactivityPeriod(val) {
-      if (lastFetchedVaultInfo && lastFetchedVaultInfo.state === 'Active' && hasConfiguredDestinations(lastFetchedVaultInfo)) {
-        showToast('🔒 Security Rule: Timers are locked once bunker is armed to prevent early-inheritance attacks.', true);
-        const totalHbNs = BigInt(lastFetchedVaultInfo.heartbeat_interval_ns || '0');
-        const inactSelect = document.getElementById('inactivitySelect');
-        if (inactSelect) {
-          inactSelect.value = totalHbNs <= 180000000000n ? 'demo_180s' : String(Math.round(Number(totalHbNs / 86400000000000n)) || 90);
-        }
-        return;
-      }
       let hbNs;
       let cpNs = null;
       isEditing = true;
+      const isArmed = Boolean(
+        lastFetchedVaultInfo &&
+        lastFetchedVaultInfo.state === 'Active' &&
+        hasConfiguredDestinations(lastFetchedVaultInfo)
+      );
       if (val === 'demo_180s') {
-        MAX_SECONDS = 180;
-        remainingSeconds = 180;
         hbNs = '180000000000'; // 180 seconds (3 minutes)
         cpNs = '60000000000'; // 60 seconds (1 minute) Grace Window for Judge Demo
-        localStorage.setItem('aegis_inactivity_days', 'demo_180s');
-        localStorage.setItem('aegis_grace_days', 'demo_60s');
-        const sel1 = document.getElementById('graceSelect');
-        const sel2 = document.getElementById('modalGraceSelect');
-        if (sel1) sel1.value = 'demo_60s';
-        if (sel2) sel2.value = 'demo_60s';
+        if (!isArmed) {
+          MAX_SECONDS = 180;
+          remainingSeconds = 180;
+          localStorage.setItem('aegis_inactivity_days', 'demo_180s');
+          localStorage.setItem('aegis_grace_days', 'demo_60s');
+          const sel1 = document.getElementById('graceSelect');
+          const sel2 = document.getElementById('modalGraceSelect');
+          if (sel1) sel1.value = 'demo_60s';
+          if (sel2) sel2.value = 'demo_60s';
+        }
       } else {
-        inactivityDays = parseInt(val);
-        MAX_SECONDS = inactivityDays * 24 * 3600;
-        remainingSeconds = MAX_SECONDS;
-        hbNs = (BigInt(val) * 86400n * 1000000000n).toString();
-        localStorage.setItem('aegis_inactivity_days', val);
+        const days = parseInt(val, 10) || 90;
+        hbNs = (BigInt(days) * 86400n * 1000000000n).toString();
+        if (!isArmed) {
+          inactivityDays = days;
+          MAX_SECONDS = inactivityDays * 24 * 3600;
+          remainingSeconds = MAX_SECONDS;
+          localStorage.setItem('aegis_inactivity_days', val);
+        }
       }
       updateCountdownDisplay();
       updateSaveButtonState(lastFetchedVaultInfo);
-      showToast(`Timer set to ${val === 'demo_180s' ? '3m' : val + ' days'}. Will be locked on-chain once you click Save Policy.`);
+
+      if (isArmed) {
+        showToast(`⏳ Starting 72-hour security cooldown for timer change (${val === 'demo_180s' ? '3m' : val + ' days'})...`);
+        dispatchNearTransaction('update_intervals', {
+          heartbeat_interval_ns: hbNs,
+          challenge_period_ns: cpNs
+        }).then((res) => {
+          if (res !== undefined) {
+            dispatchTelegramZeroMetadataPush('timelock');
+          }
+        }).catch(() => {});
+      } else {
+        showToast(`Timer set to ${val === 'demo_180s' ? '3m' : val + ' days'}. Click Save Policy to arm bunker.`);
+      }
     }
 
     function changeGracePeriod(val) {
-      if (lastFetchedVaultInfo && lastFetchedVaultInfo.state === 'Active' && hasConfiguredDestinations(lastFetchedVaultInfo)) {
-        showToast('🔒 Security Rule: Grace buffer is locked once bunker is armed to prevent early-inheritance attacks.', true);
-        const totalCpNs = BigInt(lastFetchedVaultInfo.challenge_period_ns || '0');
-        const gVal = totalCpNs <= 60000000000n ? 'demo_60s' : String(Math.round(Number(totalCpNs / 86400000000000n)) || 7);
-        const sel1 = document.getElementById('graceSelect');
-        const sel2 = document.getElementById('modalGraceSelect');
-        if (sel1) sel1.value = gVal;
-        if (sel2) sel2.value = gVal;
-        return;
-      }
       let cpNs;
       isEditing = true;
+      const isArmed = Boolean(
+        lastFetchedVaultInfo &&
+        lastFetchedVaultInfo.state === 'Active' &&
+        hasConfiguredDestinations(lastFetchedVaultInfo)
+      );
       const sel1 = document.getElementById('graceSelect');
       const sel2 = document.getElementById('modalGraceSelect');
       if (sel1) sel1.value = val;
@@ -9718,14 +9880,30 @@ if (typeof window !== "undefined") {
 
       if (val === 'demo_60s') {
         cpNs = '60000000000'; // 60 seconds (1 minute)
-        localStorage.setItem('aegis_grace_days', 'demo_60s');
+        if (!isArmed) localStorage.setItem('aegis_grace_days', 'demo_60s');
       } else {
-        graceDays = parseInt(val);
-        cpNs = (BigInt(val) * 86400n * 1000000000n).toString();
-        localStorage.setItem('aegis_grace_days', val);
+        const days = parseInt(val, 10) || 7;
+        cpNs = (BigInt(days) * 86400n * 1000000000n).toString();
+        if (!isArmed) {
+          graceDays = days;
+          localStorage.setItem('aegis_grace_days', val);
+        }
       }
       updateSaveButtonState(lastFetchedVaultInfo);
-      showToast(`Grace window set to ${val === 'demo_60s' ? '1m' : val + ' days'}. Will be locked on-chain once you click Save Policy.`);
+
+      if (isArmed) {
+        showToast(`⏳ Starting 72-hour security cooldown for grace buffer change (${val === 'demo_60s' ? '1m' : val + ' days'})...`);
+        dispatchNearTransaction('update_intervals', {
+          heartbeat_interval_ns: null,
+          challenge_period_ns: cpNs
+        }).then((res) => {
+          if (res !== undefined) {
+            dispatchTelegramZeroMetadataPush('timelock');
+          }
+        }).catch(() => {});
+      } else {
+        showToast(`Grace window set to ${val === 'demo_60s' ? '1m' : val + ' days'}. Click Save Policy to arm bunker.`);
+      }
     }
 
     function openGraceModal() {
@@ -9949,12 +10127,12 @@ if (typeof window !== "undefined") {
       const inactSelect = document.getElementById('inactivitySelect');
       const graceSelect = document.getElementById('graceSelect');
       if (inactSelect) {
-        inactSelect.disabled = true;
-        inactSelect.title = 'Locked while bunker is armed (prevents timer-shortening attacks)';
+        inactSelect.disabled = false;
+        inactSelect.title = 'Changing check-in timer on an armed bunker starts a 72-hour security cooldown';
       }
       if (graceSelect) {
-        graceSelect.disabled = true;
-        graceSelect.title = 'Locked while bunker is armed (prevents timer-shortening attacks)';
+        graceSelect.disabled = false;
+        graceSelect.title = 'Changing grace buffer on an armed bunker starts a 72-hour security cooldown';
       }
 
       if (remainingSeconds <= 0) {
@@ -11217,8 +11395,10 @@ if (typeof window !== "undefined") {
     // Strict Zero-Metadata Messages (No addresses, no account IDs, no dates, no chain names, no tx hashes)
     const ZERO_METADATA_ALERT_MESSAGES = {
       test: '🛡 Aegis Bunker: Notification channel connected and active.',
-      reminder: '⏳ Aegis Bunker: Check-in window is nearing expiration. Perform a check-in to keep the bunker armed.',
-      grace: '⚠️ Aegis Bunker: Primary timer expired. Grace buffer is now active.',
+      reminder: '⏳ Aegis Bunker: Check-in window is nearing expiration (≤25% left). Perform a check-in to keep the bunker armed.',
+      grace: '⚠️ Aegis Bunker: Primary timer expired. Grace buffer is now active — check in immediately to cancel automatic inheritance.',
+      timelock: '🔐 Aegis Bunker: 72-hour security cooldown started for a policy or timer change. If you did not authorize this, open your bunker and cancel immediately.',
+      timelock_cancelled: '✅ Aegis Bunker: Pending 72-hour policy or timer change was cancelled.',
       panic: '🚨 Aegis Bunker: Emergency evacuation completed.',
       inheritance: '🔒 Aegis Bunker: Inheritance protocol completed.'
     };
@@ -11781,23 +11961,14 @@ if (typeof window !== "undefined") {
         encryptedOrNullMemo = '';
       }
 
-      const isAlreadyArmed = Boolean(
-        lastFetchedVaultInfo &&
-        lastFetchedVaultInfo.state === 'Active' &&
-        hasConfiguredDestinations(lastFetchedVaultInfo)
-      );
       const inactPref = document.getElementById('inactivitySelect')?.value || localStorage.getItem('aegis_inactivity_days') || '90';
       const gracePref = document.getElementById('graceSelect')?.value || localStorage.getItem('aegis_grace_days') || '7';
-      const selectedHbNs = isAlreadyArmed
-        ? null
-        : ((inactPref === 'demo_180s' || inactPref === 'demo_120s')
-          ? '180000000000'
-          : (BigInt(parseInt(inactPref, 10) || 90) * 86400n * 1000000000n).toString());
-      const selectedCpNs = isAlreadyArmed
-        ? null
-        : ((gracePref === 'demo_60s' || gracePref === 'demo_30s')
-          ? '60000000000'
-          : (BigInt(parseInt(gracePref, 10) || 7) * 86400n * 1000000000n).toString());
+      const selectedHbNs = (inactPref === 'demo_180s' || inactPref === 'demo_120s')
+        ? '180000000000'
+        : (BigInt(parseInt(inactPref, 10) || 90) * 86400n * 1000000000n).toString();
+      const selectedCpNs = (gracePref === 'demo_60s' || gracePref === 'demo_30s')
+        ? '60000000000'
+        : (BigInt(parseInt(gracePref, 10) || 7) * 86400n * 1000000000n).toString();
 
       const policyPayload = {
         backup: {
@@ -11828,7 +11999,7 @@ if (typeof window !== "undefined") {
         userHasInteractedWithInputs = false;
         isEditing = false;
         if (res !== undefined) {
-          showToast('Policy & timers armed on-chain! Opening Safe Bunker Deposits...');
+          showToast('Policy submitted on-chain! Syncing bunker state...');
           setTimeout(() => switchTab('vault'), 700);
         }
       }).catch(err => {
@@ -11837,8 +12008,12 @@ if (typeof window !== "undefined") {
     }
 
     function cancelAddressCooldown() {
-      dispatchNearTransaction('cancel_policy');
-      showToast('Cancelling address proposal on-chain...', true);
+      showToast('Cancelling pending policy/timer change on-chain...', true);
+      dispatchNearTransaction('cancel_policy').then((res) => {
+        if (res !== undefined) {
+          dispatchTelegramZeroMetadataPush('timelock_cancelled');
+        }
+      }).catch(() => {});
     }
 
     function applyAddressPolicy() {

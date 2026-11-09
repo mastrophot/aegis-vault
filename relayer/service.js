@@ -1130,7 +1130,7 @@ class AegisRelayerService {
     return telemetryRecord;
   }
 
-  async dispatchZeroMetadataTelegramAlert(vaultOwner, state, epoch = 0) {
+  async dispatchZeroMetadataTelegramAlert(vaultOwner, eventOrState, scopeOrEpoch = 0) {
     try {
       const tk =
         (typeof process !== 'undefined' && process.env && process.env.TELEGRAM_BOT_TOKEN) ||
@@ -1138,13 +1138,31 @@ class AegisRelayerService {
           Buffer.from('QUFHYXpXWmZ1RjJWdEJpVk9odkp0ak9wclhNRDk0Snhhd2c=', 'base64').toString('utf8');
       if (!tk || !vaultOwner) return false;
 
-      const isInheritance = String(state).toLowerCase().includes('inherit');
-      const evtKey = isInheritance ? 'inheritance' : 'panic';
-      const dedupKey = `aegis_tg_sent_${vaultOwner}_${evtKey}_ep_${epoch || 0}`;
+      const raw = String(eventOrState || '').toLowerCase();
+      let evtKey = raw;
+      if (raw.includes('inherit')) evtKey = 'inheritance';
+      else if (raw.includes('evac') || raw === 'panic') evtKey = 'panic';
+
+      const messages = {
+        test: '🛡 Aegis Bunker: Notification channel connected and active.',
+        reminder: '⏳ Aegis Bunker: Check-in window is nearing expiration (≤25% left). Perform a check-in to keep the bunker armed.',
+        grace: '⚠️ Aegis Bunker: Primary timer expired. Grace buffer is now active — check in immediately to cancel automatic inheritance.',
+        timelock: '🔐 Aegis Bunker: 72-hour security cooldown started for a policy or timer change. If you did not authorize this, open your bunker and cancel immediately.',
+        timelock_cancelled: '✅ Aegis Bunker: Pending 72-hour policy or timer change was cancelled.',
+        panic: '🚨 Aegis Bunker: Emergency evacuation completed.',
+        inheritance: '🔒 Aegis Bunker: Inheritance protocol completed.'
+      };
+      const text = messages[evtKey];
+      if (!text) return false;
+
+      const dedupKey = `aegis_tg_sent_${vaultOwner}_${evtKey}_${scopeOrEpoch}`;
+      if (!this._sentTelegramAlerts) this._sentTelegramAlerts = new Set();
+      if (this._sentTelegramAlerts.has(dedupKey)) return false;
       if (typeof localStorage !== 'undefined') {
         if (localStorage.getItem(dedupKey)) return false;
         localStorage.setItem(dedupKey, '1');
       }
+      this._sentTelegramAlerts.add(dedupKey);
 
       const tagHex = ethers
         .sha256(ethers.toUtf8Bytes('aegis_alert_v1:' + String(vaultOwner).trim().toLowerCase()))
@@ -1167,11 +1185,6 @@ class AegisRelayerService {
         chatId = localStorage.getItem(`aegis_tg_chatid_${vaultOwner}`) || localStorage.getItem(`aegis_tg_${vaultOwner}`);
       }
       if (!chatId) return false;
-
-      // Strict Zero-Metadata Message: no addresses, no account IDs, no dates, no chain names
-      const text = isInheritance
-        ? '🔒 Aegis Bunker: Inheritance protocol completed.'
-        : '🚨 Aegis Bunker: Emergency evacuation completed.';
 
       await fetch(`https://api.telegram.org/bot${tk}/sendMessage`, {
         method: 'POST',
