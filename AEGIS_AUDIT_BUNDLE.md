@@ -6974,7 +6974,7 @@ if (typeof window !== "undefined") {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Aegis — Self-Custodial Crypto Bunker &amp; Automatic Inheritance · NEAR MPC</title>
+  <title>LastKey Bunker — Self-Custodial Crypto Bunker &amp; Automatic Inheritance · NEAR MPC</title>
   <link rel="icon" type="image/svg+xml" href="./favicon.svg">
   <link rel="shortcut icon" href="./favicon.svg">
   
@@ -7144,10 +7144,10 @@ if (typeof window !== "undefined") {
   <header class="border-b border-nearBorder bg-black/85 backdrop-blur-xl sticky top-0 z-40">
     <div class="max-w-7xl mx-auto px-4 sm:px-8 min-h-[72px] py-2.5 flex items-center justify-between gap-3">
       
-      <!-- Brand & Aegis Identity -->
+      <!-- Brand & LastKey Bunker Identity -->
       <div class="flex items-center gap-4">
-        <!-- Custom Aegis Cyber Shield Emblem -->
-        <a href="#" onclick="window.location.reload(); return false;" title="Aegis Dead-Man's Switch" class="w-11 h-11 rounded-2xl bg-[#0B0E15] border border-white/[0.08] hover:border-[#00F5D4]/40 flex items-center justify-center transition group shadow-near-pill">
+        <!-- Custom LastKey Cyber Shield Emblem -->
+        <a href="#" onclick="window.location.reload(); return false;" title="LastKey Bunker" class="w-11 h-11 rounded-2xl bg-[#0B0E15] border border-white/[0.08] hover:border-[#00F5D4]/40 flex items-center justify-center transition group shadow-near-pill">
           <svg width="26" height="26" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" class="transform group-hover:scale-105 transition">
             <defs>
               <linearGradient id="aegisLogoGrad" x1="2" y1="2" x2="30" y2="30" gradientUnits="userSpaceOnUse">
@@ -7159,10 +7159,10 @@ if (typeof window !== "undefined") {
                 <stop offset="100%" stop-color="#A5F3FC"/>
               </linearGradient>
             </defs>
-            <!-- Outer Aegis Cyber Shield -->
+            <!-- Outer LastKey Cyber Shield -->
             <path d="M16 3L27 7.5V15.5C27 22.8 22.3 27.8 16 29C9.7 27.8 5 22.8 5 15.5V7.5L16 3Z" fill="url(#aegisLogoGrad)" fill-opacity="0.15" stroke="url(#aegisLogoGrad)" stroke-width="2" stroke-linejoin="round"/>
-            <!-- Central Geometric 'A' / Quantum Vault Core -->
-            <path d="M16 8L22.5 21H18.8L17.2 17.5H14.8L13.2 21H9.5L16 8ZM16 12.8L15.2 15H16.8L16 12.8Z" fill="url(#aegisCoreGrad)"/>
+            <!-- Central Geometric 'L' / LastKey Bunker Core -->
+            <path d="M11.5 8.5H15.2V17.4H21.2V20.8H11.5V8.5Z" fill="url(#aegisCoreGrad)"/>
             <!-- Quantum Key Node -->
             <circle cx="16" cy="24.5" r="1.5" fill="#00F5D4"/>
           </svg>
@@ -7170,7 +7170,7 @@ if (typeof window !== "undefined") {
 
         <div>
           <div class="flex items-center gap-2.5 flex-wrap">
-            <span class="font-extrabold text-xl sm:text-2xl tracking-tighter text-white">AEGIS</span>
+            <span class="font-extrabold text-xl sm:text-2xl tracking-tight text-white">LASTKEY <span class="text-nearGreen">BUNKER</span></span>
             <span class="text-[11px] font-sans font-bold px-2.5 py-0.5 rounded-lg bg-[#00F5D4]/10 text-[#00F5D4] border border-[#00F5D4]/30 hidden sm:inline-flex items-center gap-1.5">
               <span class="w-1.5 h-1.5 rounded-full bg-[#00F5D4] radar-pulse"></span>
               Secured by NEAR MPC
@@ -7911,7 +7911,7 @@ if (typeof window !== "undefined") {
               <span>1 Telegram → Many Bunkers</span>
             </div>
             <p class="text-[11px] text-[#8C929D] leading-snug">
-              Link a single Telegram account to unlimited Aegis Bunker wallets. Each Bunker pairs independently via an anonymous tag.
+              Link a single Telegram account to unlimited LastKey Bunker wallets. Each Bunker pairs independently via an anonymous tag.
             </p>
           </div>
           <div class="p-3 rounded-xl bg-white/[0.02] border border-white/[0.06] space-y-1">
@@ -8251,7 +8251,7 @@ if (typeof window !== "undefined") {
   <footer class="border-t border-nearBorder py-8 px-8 bg-black text-center text-xs text-textGray">
     <div class="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
       <div class="flex items-center gap-2">
-        <span class="text-nearGreen font-extrabold text-sm tracking-tighter">AEGIS</span>
+        <span class="text-nearGreen font-extrabold text-sm tracking-tight">LASTKEY BUNKER</span>
         <span class="text-textMuted">·</span>
         <span>Self-Custodial Crypto Bunker &amp; Automatic Inheritance</span>
       </div>

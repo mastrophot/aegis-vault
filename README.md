@@ -1,11 +1,11 @@
-# 🛡️ Aegis Vault — Autonomous Multichain Dead-Man's Switch & Panic Evacuation Bunker
+# 🛡️ LastKey Bunker — Zero-Signature Crypto Bunker & Automatic Inheritance on NEAR MPC
 
 > **NEAR HACKATHON 2026 Submission (`Nov 1–14, 2026`)**  
 > **Official Track IDs:** `open` (Open Innovation) · `security` (AI Security & Defense) · `defi` (Unstoppable DeFi)  
 > **Core Primitive:** Native NEAR Chain Signatures (`v1.signer-prod.testnet` MPC Network) & Pure Rust Smart Contract  
 > **Live App:** [https://mastrophot.github.io/aegis-vault/](https://mastrophot.github.io/aegis-vault/)  
 > **24/7 Autonomous Cloud Keeper:** [`.github/workflows/relayer-keeper.yml`](https://github.com/mastrophot/aegis-vault/actions/workflows/relayer-keeper.yml)  
-> **NEAR Testnet Contract:** [`aegis.okgoogleok.testnet`](https://testnet.nearblocks.io/address/aegis.okgoogleok.testnet)  
+> **NEAR Testnet Contract (`Aegis Engine`):** [`aegis.okgoogleok.testnet`](https://testnet.nearblocks.io/address/aegis.okgoogleok.testnet)  
 > **Least-Privilege Keeper Account:** [`keeper.aegis.okgoogleok.testnet`](https://testnet.nearblocks.io/address/keeper.aegis.okgoogleok.testnet)  
 > **Zero-Metadata Telegram Alerts Bot:** [`@aegis_vault_bot`](https://t.me/aegis_vault_bot)
 
@@ -13,15 +13,15 @@
 
 ## 🎯 The Problem
 
-1. **Billions in Stranded Crypto Assets**: When an asset holder unexpectedly passes away or becomes incapacitated, family members rarely know how to recover seed phrases, hardware wallets, and cross-chain accounts across disparate ecosystems.
-2. **Physical Coercion & Duress ("\$5 Wrench Attack")**: Under physical extortion or device seizure, victims need an immediate, irreversible mechanism to evacuate assets to cold multi-sig/backup storage and burn hot derivation epochs.
+1. **Billions in Stranded Crypto Assets**: When an asset holder unexpectedly passes away or becomes incapacitated, beneficiaries rarely know how to recover seed phrases, hardware wallets, and cross-chain accounts across disparate ecosystems.
+2. **Physical Coercion, Key Exposure & Duress ("\$5 Wrench Attack")**: Every time a regular wallet signs an outgoing transaction, it permanently exposes its cryptographic public key on-chain. Under physical extortion or key compromise, holders need a zero-signature Bunker with an immediate, irreversible mechanism to evacuate 100% of assets to backup storage and retire exposed derivation epochs.
 3. **Cross-Ecosystem Fragmentation & Blind-Signing Risks**: Traditional inheritance contracts work only inside a single EVM chain, expose plaintext notes on-chain, or rely on centralized custodial bots with unrestricted signing keys.
 
 ---
 
-## 💡 The Solution: Aegis Vault
+## 💡 The Solution: LastKey Bunker
 
-**Aegis Vault** is a 100% non-custodial multichain dead-man's switch and emergency evacuation bunker powered by **NEAR Protocol Chain Signatures (`v1.signer-prod.testnet`)**. A single Rust smart contract governs threshold ECDSA (`Secp256k1`) and EdDSA (`Ed25519`) sweeps across **Bitcoin (Native SegWit)**, **EVM (Ethereum / Base / Arbitrum)**, **Solana (Native + SPL / Token-2022)**, and **NEAR**.
+**LastKey Bunker** (powered by the on-chain **Aegis MPC Engine** at `aegis.okgoogleok.testnet`) is a 100% non-custodial multichain zero-signature crypto bunker, emergency panic switch, and automatic inheritance protocol built on **NEAR Protocol Chain Signatures (`v1.signer-prod.testnet`)**. A single Rust smart contract governs threshold ECDSA (`Secp256k1`) and EdDSA (`Ed25519`) sweeps across **Bitcoin (Native SegWit)**, **EVM (Ethereum / Base / Arbitrum)**, **Solana (Native + SPL / Token-2022)**, and **NEAR**.
 
 ### Key Capabilities & Hardened Architecture
 
