@@ -20,12 +20,12 @@ export default defineConfig({
   },
   build: {
     lib: {
-      entry: 'src/wallet-selector.js',
+      entry: path.resolve(__dirname, 'src/wallet-selector.js'),
       name: 'AegisWalletBundle',
       fileName: () => 'wallet-bundle.js',
       formats: ['iife']
     },
-    outDir: 'web',
+    outDir: path.resolve(__dirname, 'web'),
     emptyOutDir: false,
     minify: true
   },

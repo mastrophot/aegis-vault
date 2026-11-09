@@ -1668,37 +1668,73 @@ class AegisRelayerService {
             const nowNsBig = BigInt(v.current_time_ns || BigInt(Date.now()) * 1000000n);
             const maxAllowedNonce = nowNsBig + 60000000000n;
             let maxNonce = 0n;
+            const currentKeyMap = {};
             if (akList && Array.isArray(akList.keys)) {
               for (const k of akList.keys) {
+                const pk = String(k?.public_key || '');
                 const n = BigInt(k?.access_key?.nonce || 0);
-                if (n <= maxAllowedNonce && n > maxNonce) maxNonce = n;
+                if (n <= maxAllowedNonce) {
+                  if (pk) currentKeyMap[pk] = n;
+                  if (n > maxNonce) maxNonce = n;
+                }
               }
             }
             const curPingNs = BigInt(v.last_ping_ns || 0);
             const prevTrack = this._ownerKeyNonceMap.get(acc);
             if (!prevTrack) {
-              this._ownerKeyNonceMap.set(acc, { maxNonce, lastPingNs: curPingNs });
-            } else if (maxNonce > prevTrack.maxNonce) {
-              if (curPingNs <= prevTrack.lastPingNs && this.hasSignerKey) {
-                await this.callContract(
-                  'sync_owner_activity',
-                  { vault_owner: acc, observed_nonce: maxNonce.toString() },
-                  '30000000000000',
-                  '0'
-                );
-                console.log(
-                  `⚡ [Autonomous Activity Sync] Reset timer for ${acc} via outgoing wallet tx (nonce ${maxNonce.toString()})`
-                );
-                v.last_ping_ns = v.current_time_ns;
-                this._ownerKeyNonceMap.set(acc, {
-                  maxNonce,
-                  lastPingNs: BigInt(v.current_time_ns || curPingNs)
-                });
-              } else {
-                this._ownerKeyNonceMap.set(acc, { maxNonce, lastPingNs: curPingNs });
+              this._ownerKeyNonceMap.set(acc, {
+                keyMap: currentKeyMap,
+                maxNonce,
+                lastPingNs: curPingNs
+              });
+            } else {
+              let txDetected = maxNonce > prevTrack.maxNonce;
+              if (!txDetected && prevTrack.keyMap) {
+                for (const [pk, curNonce] of Object.entries(currentKeyMap)) {
+                  const oldNonce = prevTrack.keyMap[pk];
+                  if (oldNonce !== undefined && curNonce > oldNonce) {
+                    txDetected = true;
+                    break;
+                  } else if (oldNonce === undefined && Object.keys(prevTrack.keyMap).length > 0) {
+                    txDetected = true;
+                    break;
+                  }
+                }
               }
-            } else if (curPingNs > prevTrack.lastPingNs) {
-              this._ownerKeyNonceMap.set(acc, { maxNonce, lastPingNs: curPingNs });
+              if (txDetected) {
+                if (curPingNs <= prevTrack.lastPingNs && this.hasSignerKey) {
+                  const monotonicObservedNonce = (
+                    nowNsBig > maxNonce ? nowNsBig : maxNonce + 1n
+                  ).toString();
+                  await this.callContract(
+                    'sync_owner_activity',
+                    { vault_owner: acc, observed_nonce: monotonicObservedNonce },
+                    '30000000000000',
+                    '0'
+                  );
+                  console.log(
+                    `⚡ [Autonomous Activity Sync] Reset timer for ${acc} via outgoing wallet tx (observed_nonce ${monotonicObservedNonce})`
+                  );
+                  v.last_ping_ns = v.current_time_ns;
+                  this._ownerKeyNonceMap.set(acc, {
+                    keyMap: currentKeyMap,
+                    maxNonce,
+                    lastPingNs: BigInt(v.current_time_ns || curPingNs)
+                  });
+                } else {
+                  this._ownerKeyNonceMap.set(acc, {
+                    keyMap: currentKeyMap,
+                    maxNonce,
+                    lastPingNs: curPingNs
+                  });
+                }
+              } else if (curPingNs > prevTrack.lastPingNs) {
+                this._ownerKeyNonceMap.set(acc, {
+                  keyMap: currentKeyMap,
+                  maxNonce,
+                  lastPingNs: curPingNs
+                });
+              }
             }
           } catch (_) {}
         }
