@@ -7257,7 +7257,7 @@ if (typeof window !== "undefined") {
                 Bunker #1
               </span>
               <span id="heartbeatTag" class="text-xs font-sans font-semibold text-[#A6B0C3] bg-white/[0.04] px-3 py-1 rounded-lg border border-white/[0.08]">
-                Bunker Open · Connect Wallet
+                Wallet Not Connected
               </span>
             </div>
           </div>
@@ -7277,7 +7277,7 @@ if (typeof window !== "undefined") {
               <div id="timerBar" class="bg-white/20 h-full w-full transition-all duration-1000 ease-out"></div>
             </div>
             <div class="flex justify-between text-xs text-textGray font-sans">
-              <span id="statusDisplay">Status: <strong class="text-white font-semibold">Bunker Doors Open — Connect wallet to seal</strong></span>
+              <span id="statusDisplay">Status: <strong class="text-white font-semibold">Connect wallet to start</strong></span>
               <span id="timerPctDisplay" class="font-mono">100.0% remaining</span>
             </div>
           </div>
@@ -7519,7 +7519,7 @@ if (typeof window !== "undefined") {
                 <div class="text-xs sm:text-sm font-bold text-white flex items-center gap-2">
                   <span id="addressStatusDot" class="w-2 h-2 rounded-full bg-[#8E99AD]"></span>
                   <span>Bunker Status:</span>
-                  <span id="addressStatusBadge" class="text-[#8E99AD] font-sans font-bold">Bunker Doors Open · Connect Wallet</span>
+                  <span id="addressStatusBadge" class="text-[#8E99AD] font-sans font-bold">Wallet Not Connected</span>
                 </div>
                 <p id="addressStatusDesc" class="text-xs text-[#8C929D]">
                   Connect your NEAR wallet above, enter your Emergency Panic & Inheritance wallets, and seal your Bunker.
@@ -7607,7 +7607,7 @@ if (typeof window !== "undefined") {
               <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
             </div>
             <div>
-              <h4 class="text-xs sm:text-sm font-extrabold text-amber-200">Bunker Doors Open — Save Wallets Above to Seal</h4>
+              <h4 class="text-xs sm:text-sm font-extrabold text-amber-200">Save Wallets Above to Seal Bunker</h4>
               <p class="text-xs text-[#C5CAD3] mt-0.5">Cold deposit addresses unlock as soon as you save your Emergency Panic & Inheritance wallets above and seal the Bunker.</p>
             </div>
           </div>
@@ -8937,8 +8937,8 @@ if (typeof window !== "undefined") {
           badge.innerText = isGraceOnly
             ? 'Grace Buffer (Addresses Locked)'
             : (isInheritance
-                ? (isEpochSwept ? '⚠️ Bunker Unsealed · Inheritance Transferred (Keys Exposed)' : 'Bunker Unsealed · Inheritance Sweep in Progress')
-                : (isEpochSwept ? '⚠️ Bunker Unsealed · Evacuated (Public Keys Exposed)' : 'Bunker Unsealed · Emergency Sweep in Progress'));
+                ? (isEpochSwept ? 'Bunker Unsealed · Inheritance Transferred (Keys Exposed)' : 'Bunker Unsealed · Inheritance Sweep in Progress')
+                : (isEpochSwept ? 'Bunker Unsealed · Evacuated (Public Keys Exposed)' : 'Bunker Unsealed · Emergency Sweep in Progress'));
           badge.className = isGraceOnly
             ? 'text-amber-400 font-mono font-bold'
             : (isInheritance ? 'text-purple-400 font-mono font-bold' : 'text-red-400 font-mono font-bold');
@@ -8984,7 +8984,7 @@ if (typeof window !== "undefined") {
         }
         const desc = document.getElementById('addressStatusDesc');
         if (badge && !info.pending_policy) {
-          badge.innerText = '🔒 Bunker Sealed · Keys Hidden';
+          badge.innerText = 'Bunker Sealed · Keys Hidden';
           badge.className = 'text-nearGreen font-mono font-bold';
         }
         if (dot && !info.pending_policy) dot.className = 'w-2.5 h-2.5 rounded-full bg-nearGreen shadow-near-glow';
@@ -9001,7 +9001,7 @@ if (typeof window !== "undefined") {
           tabRescue.innerText = `1. Rescue & Inheritance (Destinations)`;
         }
         if (badge && !info.pending_policy) {
-          badge.innerText = '🔓 Bunker Doors Open (Unsealed)';
+          badge.innerText = 'Bunker Open (Unsealed)';
           badge.className = 'text-amber-300 font-mono font-bold';
         }
         if (dot && !info.pending_policy) dot.className = 'w-2.5 h-2.5 rounded-full bg-amber-400';
@@ -9682,11 +9682,11 @@ if (typeof window !== "undefined") {
       }
       if (heartbeatTag) {
         heartbeatTag.className = 'text-xs font-sans font-semibold text-[#A6B0C3] bg-white/[0.04] px-3 py-1 rounded-lg border border-white/[0.08]';
-        heartbeatTag.innerText = 'Bunker Open · Connect Wallet';
+        heartbeatTag.innerText = 'Wallet Not Connected';
       }
       if (countdownTitle) countdownTitle.innerText = 'Time remaining before automatic inheritance:';
       if (countdownBox) countdownBox.innerText = 'Seal Your Bunker';
-      if (statusDisplay) statusDisplay.innerHTML = 'Status: <strong class="text-white font-semibold">Bunker Doors Open — Connect wallet to seal</strong>';
+      if (statusDisplay) statusDisplay.innerHTML = 'Status: <strong class="text-white font-semibold">Connect wallet to start</strong>';
       if (timerBar) {
         timerBar.style.width = '100%';
         timerBar.className = 'h-full bg-white/20 rounded-full transition-all duration-300';
@@ -10130,7 +10130,7 @@ if (typeof window !== "undefined") {
 
         chains.forEach(c => {
           if (c.addrEl) {
-            c.addrEl.innerText = 'Bunker Doors Open — Save Panic & Inheritance addresses above to reveal';
+            c.addrEl.innerText = 'Save Panic & Inheritance addresses above to reveal';
             c.addrEl.className = 'font-sans text-xs sm:text-[13px] leading-relaxed text-amber-400/90 break-words select-none font-semibold';
             c.addrEl.dataset.full = '';
           }
@@ -10572,7 +10572,7 @@ if (typeof window !== "undefined") {
           renderBunkerAddresses();
           fetchLiveBalances(true);
           updateCountdownDisplay();
-          showToast(`✅ Clean Bunker Activated! Active Epoch ${currentEpochIndex} (Doors Open — Enter destinations to seal)`);
+          showToast(`✅ Clean Bunker Activated! Active Epoch ${currentEpochIndex} (Enter destinations to seal)`);
         }
       } catch (err) {
         console.error('Rotate bunker failed:', err);
@@ -10873,11 +10873,11 @@ if (typeof window !== "undefined") {
         }
         if (heartbeatTag) {
           heartbeatTag.className = 'text-xs font-sans font-semibold text-[#A6B0C3] bg-white/[0.04] px-3 py-1 rounded-lg border border-white/[0.08]';
-          heartbeatTag.innerText = 'Bunker Open · Connect Wallet';
+          heartbeatTag.innerText = 'Wallet Not Connected';
         }
         if (countdownTitle) countdownTitle.innerText = 'Time remaining before automatic inheritance:';
         if (countdownBox) countdownBox.innerText = 'Seal Your Bunker';
-        if (statusDisplay) statusDisplay.innerHTML = 'Status: <strong class="text-white font-semibold">Bunker Doors Open — Connect wallet to seal</strong>';
+        if (statusDisplay) statusDisplay.innerHTML = 'Status: <strong class="text-white font-semibold">Connect wallet to start</strong>';
         if (timerBar) {
           timerBar.style.width = '100%';
           timerBar.className = 'h-full bg-white/20 rounded-full transition-all duration-300';
@@ -10914,7 +10914,7 @@ if (typeof window !== "undefined") {
           heartbeatTag.className = isInheritance
             ? 'text-xs font-sans font-semibold text-purple-300 bg-purple-950/40 px-3 py-1 rounded-lg border border-purple-500/30'
             : 'text-xs font-sans font-semibold text-red-400 bg-red-950/40 px-3 py-1 rounded-lg border border-red-500/30';
-          heartbeatTag.innerText = isInheritance ? '⚠️ Bunker Unsealed · Inherited' : '⚠️ Bunker Unsealed · Keys Exposed';
+          heartbeatTag.innerText = isInheritance ? 'Bunker Unsealed · Inherited' : 'Bunker Unsealed · Keys Exposed';
         }
         if (countdownTitle) {
           countdownTitle.innerText = isInheritance ? 'Outgoing signature exposed public keys · seal a fresh Bunker:' : 'Outgoing signature exposed public keys · seal a fresh Bunker:';
@@ -10990,11 +10990,11 @@ if (typeof window !== "undefined") {
         }
         if (heartbeatTag) {
           heartbeatTag.className = 'text-xs font-sans font-semibold text-amber-400/90 bg-amber-950/30 px-3 py-1 rounded-lg border border-amber-500/30';
-          heartbeatTag.innerText = '🔓 Bunker Doors Open';
+          heartbeatTag.innerText = 'Bunker Open';
         }
         if (countdownTitle) countdownTitle.innerText = 'Time remaining before automatic inheritance:';
         if (countdownBox) countdownBox.innerText = 'Seal Your Bunker';
-        if (statusDisplay) statusDisplay.innerHTML = 'Status: <strong class="text-amber-400 font-bold">Bunker Doors Open (Save Wallets Below to Seal)</strong>';
+        if (statusDisplay) statusDisplay.innerHTML = 'Status: <strong class="text-amber-400 font-bold">Save wallets below to seal Bunker</strong>';
         if (timerBar) {
           timerBar.style.width = '100%';
           timerBar.className = 'h-full bg-amber-400/50 rounded-full transition-all duration-300';
@@ -11043,7 +11043,7 @@ if (typeof window !== "undefined") {
       }
       if (heartbeatTag) {
         heartbeatTag.className = 'text-xs font-sans font-semibold text-nearGreen bg-nearGreenMuted px-3 py-1 rounded-lg border border-nearGreen/30';
-        heartbeatTag.innerText = '🔒 Bunker Sealed · Keys Hidden';
+        heartbeatTag.innerText = 'Bunker Sealed · Keys Hidden';
       }
       if (countdownTitle) countdownTitle.innerText = 'Time remaining before automatic inheritance:';
       if (pingBtn) {
@@ -12553,7 +12553,7 @@ if (typeof window !== "undefined") {
         const dot = document.getElementById('addressStatusDot');
         const desc = document.getElementById('addressStatusDesc');
         if (badge) {
-          badge.innerText = 'Bunker Doors Open · Connect Wallet';
+          badge.innerText = 'Wallet Not Connected';
           badge.className = 'text-[#8E99AD] font-mono font-bold';
         }
         if (dot) dot.className = 'w-2 h-2 rounded-full bg-[#8E99AD]';
@@ -12572,7 +12572,7 @@ if (typeof window !== "undefined") {
             el.value = '';
             el.disabled = true;
             el.placeholder = isClosed
-              ? '⚠️ Bunker unsealed (keys exposed) — Seal a fresh Bunker to unlock'
+              ? 'Bunker unsealed (keys exposed) — Seal a fresh Bunker to unlock'
               : '🔒 Grace Buffer — Check-in to unlock';
           }
         });
@@ -12639,7 +12639,7 @@ if (typeof window !== "undefined") {
         const dot = document.getElementById('addressStatusDot');
         const desc = document.getElementById('addressStatusDesc');
         if (badge) {
-          badge.innerText = '🔓 Bunker Doors Open (Unsealed)';
+          badge.innerText = 'Bunker Open (Unsealed)';
           badge.className = 'text-amber-300 font-mono font-bold';
         }
         if (dot) dot.className = 'w-2 h-2 rounded-full bg-amber-400';
@@ -12681,7 +12681,7 @@ if (typeof window !== "undefined") {
       if (cooldownAlert) cooldownAlert.classList.add('hidden');
       const hasOnChainSaved = hasConfiguredDestinations(lastFetchedVaultInfo);
       if (badge) {
-        badge.innerText = hasOnChainSaved ? '🔒 Bunker Sealed · Keys Hidden' : '🔓 Bunker Doors Open (Unsealed)';
+        badge.innerText = hasOnChainSaved ? 'Bunker Sealed · Keys Hidden' : 'Bunker Open (Unsealed)';
         badge.className = hasOnChainSaved ? 'text-nearGreen font-mono font-bold' : 'text-amber-300 font-mono font-bold';
       }
       if (dot) dot.className = hasOnChainSaved ? 'w-2.5 h-2.5 rounded-full bg-nearGreen shadow-near-glow' : 'w-2.5 h-2.5 rounded-full bg-amber-400';
