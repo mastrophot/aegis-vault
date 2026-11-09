@@ -7609,11 +7609,14 @@ if (typeof window !== "undefined") {
       <!-- Header row for Deposit section with Live Sync Status -->
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2">
         <div>
-          <div class="flex items-center gap-2.5">
+          <div class="flex flex-wrap items-center gap-2.5">
             <span class="w-2.5 h-2.5 rounded-full bg-nearGreen radar-pulse"></span>
-            <h3 class="text-base sm:text-lg font-extrabold text-white">Your Vault Deposit Addresses</h3>
+            <h3 class="text-base sm:text-lg font-extrabold text-white">Your Bunker Deposit Addresses</h3>
+            <span class="text-[11px] font-mono px-2.5 py-0.5 rounded-md bg-nearGreen/10 text-nearGreen border border-nearGreen/25 font-bold">Zero-Signature Bunker · Public Keys Hidden</span>
           </div>
-          <p class="text-xs text-[#8C929D] mt-0.5">Send funds to these addresses to store them inside your vault.</p>
+          <p class="text-xs text-[#A6B0C3] mt-1 max-w-3xl leading-relaxed">
+            Send funds here for cold protection. Why a <span class="text-white font-semibold">Bunker</span>? Every time a regular wallet signs an outgoing transaction, it permanently exposes its cryptographic public key on the blockchain — making reused addresses vulnerable to key-recovery and future quantum attacks. Your Aegis Bunker addresses <span class="text-nearGreen font-semibold">only receive deposits and never sign a single transaction</span> while storing your funds. Once evacuated via Panic or Inheritance, the used address is permanently retired and rotated to a fresh Bunker.
+          </p>
         </div>
         <div class="flex items-center gap-2 self-start sm:self-auto">
           <button onclick="fetchLiveBalances(true)" class="px-3.5 py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-xs font-sans font-semibold text-textSilver hover:text-white transition flex items-center gap-2 cursor-pointer">
