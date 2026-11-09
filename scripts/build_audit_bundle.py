@@ -1,13 +1,14 @@
 import os
 
-bundle_path = '/Users/maximbutrik/.gemini/antigravity/scratch/lastkey/AEGIS_AUDIT_BUNDLE.md'
-lib_rs = open('/Users/maximbutrik/.gemini/antigravity/scratch/lastkey/contracts/vault/src/lib.rs', 'r', encoding='utf-8').read()
-relayer_js = open('/Users/maximbutrik/.gemini/antigravity/scratch/lastkey/relayer/sweep_relayer.js', 'r', encoding='utf-8').read()
-relayer_service_js = open('/Users/maximbutrik/.gemini/antigravity/scratch/lastkey/relayer/service.js', 'r', encoding='utf-8').read() if os.path.exists('/Users/maximbutrik/.gemini/antigravity/scratch/lastkey/relayer/service.js') else ''
-wallet_selector_js = open('/Users/maximbutrik/.gemini/antigravity/scratch/lastkey/src/wallet-selector.js', 'r', encoding='utf-8').read() if os.path.exists('/Users/maximbutrik/.gemini/antigravity/scratch/lastkey/src/wallet-selector.js') else ''
-index_html = open('/Users/maximbutrik/.gemini/antigravity/scratch/lastkey/web/index.html', 'r', encoding='utf-8').read()
-test_flow = open('/Users/maximbutrik/.gemini/antigravity/scratch/lastkey/scripts/test_sweep_flow.js', 'r', encoding='utf-8').read()
-derive_js = open('/Users/maximbutrik/.gemini/antigravity/scratch/lastkey/scripts/derive_addresses.js', 'r', encoding='utf-8').read()
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+bundle_path = os.path.join(ROOT_DIR, 'AEGIS_AUDIT_BUNDLE.md')
+lib_rs = open(os.path.join(ROOT_DIR, 'contracts/vault/src/lib.rs'), 'r', encoding='utf-8').read()
+relayer_js = open(os.path.join(ROOT_DIR, 'relayer/sweep_relayer.js'), 'r', encoding='utf-8').read()
+relayer_service_js = open(os.path.join(ROOT_DIR, 'relayer/service.js'), 'r', encoding='utf-8').read() if os.path.exists(os.path.join(ROOT_DIR, 'relayer/service.js')) else ''
+wallet_selector_js = open(os.path.join(ROOT_DIR, 'src/wallet-selector.js'), 'r', encoding='utf-8').read() if os.path.exists(os.path.join(ROOT_DIR, 'src/wallet-selector.js')) else ''
+index_html = open(os.path.join(ROOT_DIR, 'web/index.html'), 'r', encoding='utf-8').read()
+test_flow = open(os.path.join(ROOT_DIR, 'scripts/test_sweep_flow.js'), 'r', encoding='utf-8').read()
+derive_js = open(os.path.join(ROOT_DIR, 'scripts/derive_addresses.js'), 'r', encoding='utf-8').read()
 
 header = """# 🛡️ AEGIS PROTOCOL: COMPREHENSIVE ARCHITECTURAL AUDIT & CODE DOSSIER
 
