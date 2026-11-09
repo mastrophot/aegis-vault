@@ -424,6 +424,22 @@
                   </span>
                   <input type="text" id="panicSolAddr" value="" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="Backup Solana address" class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:font-sans placeholder:text-[#585E6A] outline-none">
                 </div>
+
+                <!-- Panic Button Trigger Mode (3s Hold vs 1-Click Instant) -->
+                <div class="space-y-1.5 pt-2 border-t border-white/[0.06]">
+                  <div class="flex items-center justify-between text-xs">
+                    <label class="text-[#8C929D] font-sans font-medium">Panic button trigger mode</label>
+                    <span id="panicTriggerModeSub" class="text-[11px] text-[#8E99AD] font-sans">Hold 3s to confirm</span>
+                  </div>
+                  <div class="grid grid-cols-2 gap-1.5 p-1 rounded-xl bg-white/[0.02] border border-white/[0.08]">
+                    <button id="panicModeBtnHold" type="button" onclick="toggleInstantPanic(false)" class="py-1.5 px-3 rounded-lg text-xs font-sans font-bold transition cursor-pointer bg-nearGreen/15 text-nearGreen border border-nearGreen/30">
+                      🛡️ 3s Hold (Safe)
+                    </button>
+                    <button id="panicModeBtnInstant" type="button" onclick="toggleInstantPanic(true)" class="py-1.5 px-3 rounded-lg text-xs font-sans font-bold transition cursor-pointer text-[#8C929D] hover:text-white border border-transparent">
+                      ⚡ 1-Click Instant
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -4486,8 +4502,23 @@
       const safeDesc = document.getElementById('panicModeSafeDesc');
       const armedDesc = document.getElementById('panicModeArmedDesc');
       const statusDot = document.getElementById('panicGuardStatusDot');
+      const holdBtn = document.getElementById('panicModeBtnHold');
+      const instantBtn = document.getElementById('panicModeBtnInstant');
+      const modeSub = document.getElementById('panicTriggerModeSub');
 
       if (tabToggle) tabToggle.checked = enabled;
+
+      if (holdBtn && instantBtn) {
+        if (enabled) {
+          holdBtn.className = "py-1.5 px-3 rounded-lg text-xs font-sans font-bold transition cursor-pointer text-[#8C929D] hover:text-white border border-transparent";
+          instantBtn.className = "py-1.5 px-3 rounded-lg text-xs font-sans font-bold transition cursor-pointer bg-red-500/20 text-red-300 border border-red-500/40";
+          if (modeSub) modeSub.innerText = "Fires immediately on 1 click";
+        } else {
+          holdBtn.className = "py-1.5 px-3 rounded-lg text-xs font-sans font-bold transition cursor-pointer bg-nearGreen/15 text-nearGreen border border-nearGreen/30";
+          instantBtn.className = "py-1.5 px-3 rounded-lg text-xs font-sans font-bold transition cursor-pointer text-[#8C929D] hover:text-white border border-transparent";
+          if (modeSub) modeSub.innerText = "Hold 3s to confirm (prevents misclicks)";
+        }
+      }
 
       if (safeDesc && armedDesc) {
         if (enabled) {
