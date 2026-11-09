@@ -937,10 +937,10 @@
           <div class="p-3 rounded-xl bg-white/[0.02] border border-white/[0.06] space-y-1">
             <div class="font-bold text-white flex items-center gap-1.5">
               <span class="text-amber-400">⏳</span>
-              <span>Check-In &amp; Grace Warnings</span>
+              <span>50% Check-In &amp; Grace Alerts</span>
             </div>
             <p class="text-[11px] text-[#8C929D] leading-snug">
-              Alerts you the moment your check-in timer hits 0 and Grace Buffer begins, so you can check in before inheritance triggers.
+              Alerts you at 50% timer remaining to press the Check-In reset button, and again at 0s when Grace Buffer begins.
             </p>
           </div>
           <div class="p-3 rounded-xl bg-white/[0.02] border border-white/[0.06] space-y-1">
@@ -2006,10 +2006,10 @@
             openEvacMonitor();
           }
         }
-        // Automatically trigger in-browser fallback keeper sweep if Cloud Keeper hasn't swept within 20s
+        // Automatically trigger in-browser fallback keeper sweep only if Cloud Keeper hasn't swept within 45s
         if ((isEvacuated || isGraceExp) && info && !info.is_epoch_swept) {
           if (!window._unsweptDetectedAtMs) window._unsweptDetectedAtMs = Date.now();
-          if (!window._keeperSweepInFlight && Date.now() - window._unsweptDetectedAtMs > 20000 && Date.now() - lastCloudKeeperNudgeMs > 15000) {
+          if (!window._keeperSweepInFlight && Date.now() - window._unsweptDetectedAtMs > 45000 && Date.now() - lastCloudKeeperNudgeMs > 25000) {
             lastCloudKeeperNudgeMs = Date.now();
             setTimeout(() => triggerCloudKeeperSweep(false), 100);
           }
@@ -5186,10 +5186,10 @@
         }).catch(() => {});
       }
 
-      // Automatically nudge fallback in-browser Keeper if Cloud Keeper hasn't completed sweep within 20s
+      // Automatically nudge fallback in-browser Keeper only if Cloud Keeper hasn't completed sweep within 45s
       if (lastFetchedVaultInfo && !lastFetchedVaultInfo.is_epoch_swept) {
         if (!window._unsweptDetectedAtMs) window._unsweptDetectedAtMs = Date.now();
-        if (Date.now() - window._unsweptDetectedAtMs > 20000 && Date.now() - lastCloudKeeperNudgeMs > 15000) {
+        if (Date.now() - window._unsweptDetectedAtMs > 45000 && Date.now() - lastCloudKeeperNudgeMs > 25000) {
           lastCloudKeeperNudgeMs = Date.now();
           triggerCloudKeeperSweep(false);
         }
@@ -5217,9 +5217,33 @@
       const btn = document.getElementById('syncKeeperBtn');
       if (showFeedback) {
         if (btn) { btn.disabled = true; btn.innerText = 'Syncing Keeper...'; }
-        showToast('⚡ Executing autonomous keeper sweep on NEAR MPC...');
+        showToast('⚡ Syncing live multichain sweep status from 24/7 Cloud Keeper...');
       }
       try {
+        // First poll on-chain telemetry so we never collide with the 24/7 GitHub Actions Cloud Keeper while it is actively sweeping
+        for (let pollIdx = 0; pollIdx < 3; pollIdx++) {
+          await fetchLiveContractState();
+          const modalEl = document.getElementById('evacMonitorModal');
+          if (modalEl && !modalEl.classList.contains('hidden')) {
+            openEvacMonitor();
+          }
+          const hasOnChainBroadcast = Boolean(
+            lastFetchedVaultInfo &&
+            lastFetchedVaultInfo.last_sweep_report &&
+            (lastFetchedVaultInfo.last_sweep_report.includes('"tx_hash"') ||
+              lastFetchedVaultInfo.last_sweep_report.includes('"signature"') ||
+              lastFetchedVaultInfo.last_sweep_report.includes('"tx_id"'))
+          );
+          if ((lastFetchedVaultInfo && lastFetchedVaultInfo.is_epoch_swept) || hasOnChainBroadcast) {
+            fetchLiveBalances(true);
+            if (showFeedback) {
+              showToast('✅ Synced live multichain sweep telemetry from 24/7 Cloud Keeper!');
+            }
+            return;
+          }
+          await new Promise(r => setTimeout(r, 2000));
+        }
+
         const executeAutonomousPass = async () => {
           let provider = window.AegisWallet || window.AegisMeteor || window.AegisWalletBundle;
           if (!provider || typeof provider.runAutonomousKeeperSweep !== 'function') {

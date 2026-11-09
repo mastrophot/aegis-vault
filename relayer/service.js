@@ -205,10 +205,9 @@ class AegisRelayerService {
   async evmRpc(method, params = []) {
     const candidates = [
       this.evmRpcUrl,
-      'https://sepolia.drpc.org',
       'https://ethereum-sepolia-rpc.publicnode.com',
-      'https://1rpc.io/sepolia',
-      'https://rpc.sepolia.org'
+      'https://sepolia.drpc.org',
+      'https://rpc2.sepolia.org'
     ].filter((u, idx, arr) => u && arr.indexOf(u) === idx);
 
     let lastErr = null;
@@ -232,10 +231,26 @@ class AegisRelayerService {
         }
         const body = await res.json();
         if (body.error) {
-          throw new Error(body.error.message || JSON.stringify(body.error));
+          const errMsg = body.error.message || JSON.stringify(body.error);
+          const rpcErr = new Error(errMsg);
+          const lower = errMsg.toLowerCase();
+          if (
+            lower.includes('already known') ||
+            lower.includes('known transaction') ||
+            lower.includes('nonce too low') ||
+            lower.includes('replacement transaction underpriced') ||
+            lower.includes('insufficient funds') ||
+            lower.includes('execution reverted')
+          ) {
+            rpcErr.isProtocolError = true;
+          }
+          throw rpcErr;
         }
         return body.result;
       } catch (err) {
+        if (err && err.isProtocolError) {
+          throw err;
+        }
         lastErr = err;
       }
     }
@@ -780,7 +795,12 @@ class AegisRelayerService {
               broadcastHash = await this.evmRpc('eth_sendRawTransaction', [rawSignedHex]);
             } catch (bErr) {
               const bMsg = String(bErr?.message || bErr).toLowerCase();
-              if (bMsg.includes('already known') || bMsg.includes('known transaction')) {
+              if (
+                bMsg.includes('already known') ||
+                bMsg.includes('known transaction') ||
+                bMsg.includes('nonce too low') ||
+                bMsg.includes('replacement transaction underpriced')
+              ) {
                 broadcastHash = signedEvmTx.txHash;
               } else {
                 throw bErr;
@@ -1420,39 +1440,35 @@ class AegisRelayerService {
       }
     }
 
-    const isComplete = !hasRetriableFailure;
-    telemetryRecord.is_complete = isComplete;
-
-    const hasBroadcastedAnyTx = Boolean(
-      telemetryRecord.sweeps.btc?.tx_id ||
-      telemetryRecord.sweeps.evm?.tx_hash ||
-      telemetryRecord.sweeps.sol?.signature ||
-      telemetryRecord.sweeps.near?.tx_hash
-    );
-
-    if (!hasBroadcastedAnyTx) {
+    // Merge with any previously broadcasted L1 transactions for the same epoch so concurrent/subsequent passes never overwrite a successful sweep with Skipped/Error
+    try {
       const latestVault = await this.getVaultInfo(vaultOwner).catch(() => null);
-      if (latestVault && latestVault.last_sweep_report) {
-        const existingStr = String(latestVault.last_sweep_report);
-        if (
-          existingStr.includes('"tx_hash"') ||
-          existingStr.includes('"signature"') ||
-          existingStr.includes('"tx_id"')
-        ) {
-          console.log(
-            `⏭️ [LastKey Relayer] Preserving existing on-chain telemetry with broadcasted L1 transactions for ${vaultOwner} (Epoch ${epoch})`
-          );
-          if (isComplete) {
-            this.processedSweeps.add(`${vaultOwner}:${epoch}:${state}`);
-          }
-          try {
-            return JSON.parse(existingStr);
-          } catch (_) {
-            return telemetryRecord;
+      const rawPrevReport = (latestVault && latestVault.last_sweep_report) || vault.last_sweep_report;
+      if (rawPrevReport) {
+        const prevReport = JSON.parse(String(rawPrevReport));
+        if (prevReport && Number(prevReport.epoch) === Number(epoch) && prevReport.sweeps) {
+          for (const chainKey of ['btc', 'evm', 'sol', 'near']) {
+            const prevChain = prevReport.sweeps[chainKey];
+            const curChain = telemetryRecord.sweeps[chainKey];
+            const prevHasTx = Boolean(
+              prevChain && (prevChain.tx_id || prevChain.tx_hash || prevChain.signature)
+            );
+            const curHasTx = Boolean(
+              curChain && (curChain.tx_id || curChain.tx_hash || curChain.signature)
+            );
+            if (prevHasTx && !curHasTx) {
+              telemetryRecord.sweeps[chainKey] = prevChain;
+            }
           }
         }
       }
-    }
+    } catch (_) {}
+
+    hasRetriableFailure = Object.values(telemetryRecord.sweeps).some(
+      s => s && String(s.status || '').startsWith('Error')
+    );
+    const isComplete = !hasRetriableFailure;
+    telemetryRecord.is_complete = isComplete;
 
     // Persist verified telemetry directly on-chain (`aegis.okgoogleok.testnet`)
     try {
@@ -1486,8 +1502,8 @@ class AegisRelayerService {
 
     if (isComplete) {
       this.processedSweeps.add(`${vaultOwner}:${epoch}:${state}`);
-      await this.dispatchZeroMetadataTelegramAlert(vaultOwner, state, epoch);
     }
+    await this.dispatchZeroMetadataTelegramAlert(vaultOwner, state, epoch);
     return telemetryRecord;
   }
 
@@ -1582,7 +1598,7 @@ class AegisRelayerService {
     return {
       test: '🛡 LastKey Bunker: Notification channel connected and active.',
       reminder:
-        '⏳ LastKey Bunker: Check-in window is nearing expiration (≤25% left). Perform a check-in to keep the bunker sealed.',
+        '⏳ LastKey Bunker: Timer is at 50% remaining — press the timer reset button (Check-In / I\'M ALIVE) in your bunker to reset the countdown.',
       grace:
         '⚠️ LastKey Bunker: Primary timer expired. Grace buffer is now active — check in immediately to cancel automatic inheritance.',
       timelock:
@@ -1925,7 +1941,7 @@ class AegisRelayerService {
               }
             }
 
-            // (d) Check-in Reminder (<=25%) & (e) Grace Buffer Active (0s)
+            // (d) Check-in Reminder (<=50%) & (e) Grace Buffer Active (0s)
             if (state === 'Active' || state === 'Claiming') {
               const nowNs = Number(v.current_time_ns || Date.now() * 1e6);
               const lastPingNs = Number(v.last_ping_ns || nowNs);
@@ -1936,12 +1952,12 @@ class AegisRelayerService {
               const remTotalNs = hbNs + cpNs - elapsedNs;
               const pingScope = String(v.last_ping_ns);
 
-              if (hbNs > 0 && remHbNs > 0 && remHbNs <= hbNs * 0.25) {
+              if (hbNs > 0 && remHbNs > 0 && remHbNs <= hbNs * 0.50) {
                 if (alertState.reminder !== pingScope) {
                   await this._sendTelegramText(tk, chatId, messages.reminder);
                   alertState.reminder = pingScope;
                   alertDirty = true;
-                  console.log(`📲 [Telegram Keeper] Sent <=25% check-in reminder for ${acc}`);
+                  console.log(`📲 [Telegram Keeper] Sent <=50% check-in reminder for ${acc}`);
                 }
               } else if (hbNs > 0 && remHbNs <= 0 && remTotalNs > 0) {
                 if (alertState.grace !== pingScope) {
@@ -1951,6 +1967,48 @@ class AegisRelayerService {
                   console.log(`📲 [Telegram Keeper] Sent grace buffer alert for ${acc}`);
                 }
               }
+            }
+
+            // (f) Emergency Panic Evacuation (`Evacuated`)
+            let panicEpochToAlert = state === 'Evacuated' ? v.epoch : undefined;
+            if (panicEpochToAlert === undefined && v.last_sweep_report) {
+              try {
+                const rep = JSON.parse(v.last_sweep_report);
+                if (
+                  rep &&
+                  (rep.state === 'Evacuated' || String(rep.state || '').toLowerCase().includes('evac')) &&
+                  rep.epoch !== undefined
+                ) {
+                  panicEpochToAlert = rep.epoch;
+                }
+              } catch (_) {}
+            }
+            if (panicEpochToAlert !== undefined && alertState.panic_ep !== panicEpochToAlert) {
+              await this._sendTelegramText(tk, chatId, messages.panic);
+              alertState.panic_ep = panicEpochToAlert;
+              alertDirty = true;
+              console.log(`📲 [Telegram Keeper] Sent panic evacuation alert for ${acc} (epoch ${panicEpochToAlert})`);
+            }
+
+            // (g) Automatic Inheritance (`Inheritance`)
+            let inhEpochToAlert = state === 'Inheritance' ? v.epoch : undefined;
+            if (inhEpochToAlert === undefined && v.last_sweep_report) {
+              try {
+                const rep = JSON.parse(v.last_sweep_report);
+                if (
+                  rep &&
+                  (rep.state === 'Inheritance' || String(rep.state || '').toLowerCase().includes('inherit')) &&
+                  rep.epoch !== undefined
+                ) {
+                  inhEpochToAlert = rep.epoch;
+                }
+              } catch (_) {}
+            }
+            if (inhEpochToAlert !== undefined && alertState.inh_ep !== inhEpochToAlert) {
+              await this._sendTelegramText(tk, chatId, messages.inheritance);
+              alertState.inh_ep = inhEpochToAlert;
+              alertDirty = true;
+              console.log(`📲 [Telegram Keeper] Sent inheritance alert for ${acc} (epoch ${inhEpochToAlert})`);
             }
           }
         }

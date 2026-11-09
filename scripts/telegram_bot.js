@@ -12,7 +12,7 @@ const processedUpdateIds = new Set();
 
 const ZERO_METADATA_MESSAGES = {
   test: '🛡 LastKey Bunker: Notification channel connected and active.',
-  reminder: '⏳ LastKey Bunker: Check-in window is nearing expiration (≤25% left). Perform a check-in to keep the bunker armed.',
+  reminder: '⏳ LastKey Bunker: Timer is at 50% remaining — press the timer reset button (Check-In / I\'M ALIVE) in your bunker to reset the countdown.',
   grace: '⚠️ LastKey Bunker: Primary timer expired. Grace buffer is now active — check in immediately to cancel automatic inheritance.',
   timelock: '🔐 LastKey Bunker: 72-hour security cooldown started for a policy or timer change. If you did not authorize this, open your bunker and cancel immediately.',
   timelock_cancelled: '✅ LastKey Bunker: Pending 72-hour policy or timer change was cancelled.',
