@@ -7291,6 +7291,7 @@ if (typeof window !== "undefined") {
                   </select>
                   <svg class="w-3.5 h-3.5 text-[#8C929D] absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" /></svg>
                 </div>
+                <p class="text-[11px] text-[#8C929D] leading-snug pl-1 pt-0.5">How long you can stay inactive. Resets on check-in or any wallet activity.</p>
               </div>
               <div class="space-y-1">
                 <label class="block text-xs font-semibold text-[#8C929D] pl-1">2. Grace Buffer</label>
@@ -7304,6 +7305,7 @@ if (typeof window !== "undefined") {
                   </select>
                   <svg class="w-3.5 h-3.5 text-[#8C929D] absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" /></svg>
                 </div>
+                <p class="text-[11px] text-[#8C929D] leading-snug pl-1 pt-0.5">Extra safety window after timer hits 0 before funds are sent to your Heir.</p>
               </div>
             </div>
           </div>
