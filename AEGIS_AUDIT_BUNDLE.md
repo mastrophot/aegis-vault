@@ -6974,7 +6974,7 @@ if (typeof window !== "undefined") {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Aegis — Multichain MPC Dead-Man's Switch · Built on NEAR Protocol</title>
+  <title>Aegis — Self-Custodial Crypto Bunker &amp; Automatic Inheritance · NEAR MPC</title>
   <link rel="icon" type="image/svg+xml" href="./favicon.svg">
   <link rel="shortcut icon" href="./favicon.svg">
   
@@ -7158,7 +7158,7 @@ if (typeof window !== "undefined") {
             </span>
           </div>
           <p class="text-xs text-[#8C95A6] hidden sm:block mt-0.5">
-            Self-Custodial Crypto Bunker &amp; Family Inheritance Switch
+            Self-Custodial Crypto Bunker &amp; Automatic Family Inheritance
           </p>
         </div>
       </div>
@@ -7231,7 +7231,7 @@ if (typeof window !== "undefined") {
             <div class="flex items-center gap-2.5">
               <span id="heartbeatPulseDot" class="w-2.5 h-2.5 rounded-full bg-[#8E99AD]"></span>
               <span id="heartbeatCardTitle" class="text-xs font-sans font-bold tracking-wide text-[#A6B0C3]">
-                Bunker Dead-Man's Switch · Check-In Timer
+                Bunker Check-In Timer
               </span>
             </div>
             <div class="flex items-center gap-2 flex-wrap">
@@ -8237,7 +8237,7 @@ if (typeof window !== "undefined") {
       <div class="flex items-center gap-2">
         <span class="text-nearGreen font-extrabold text-sm tracking-tighter">AEGIS</span>
         <span class="text-textMuted">·</span>
-        <span>Self-Custodial Crypto Bunker &amp; Inheritance Switch</span>
+        <span>Self-Custodial Crypto Bunker &amp; Automatic Family Inheritance</span>
       </div>
       <div class="flex items-center gap-3">
         <a href="https://docs.near.org/chain-abstraction/chain-signatures" target="_blank" rel="noopener noreferrer" class="px-3.5 py-1.5 rounded-xl bg-nearSurface hover:bg-nearElevated border border-nearBorder text-textSilver hover:text-nearGreen transition flex items-center gap-2 text-xs font-sans font-medium">
@@ -9662,7 +9662,7 @@ if (typeof window !== "undefined") {
       if (pulseDot) pulseDot.className = 'w-2.5 h-2.5 rounded-full bg-[#8E99AD]';
       if (cardTitle) {
         cardTitle.className = 'text-xs font-sans font-bold tracking-wide text-[#A6B0C3]';
-        cardTitle.innerText = "Bunker Dead-Man's Switch · Check-In Timer";
+        cardTitle.innerText = "Bunker Check-In Timer";
       }
       if (heartbeatTag) {
         heartbeatTag.className = 'text-xs font-sans font-semibold text-[#A6B0C3] bg-white/[0.04] px-3 py-1 rounded-lg border border-white/[0.08]';
@@ -10853,7 +10853,7 @@ if (typeof window !== "undefined") {
         if (onchainEl) onchainEl.classList.add('hidden');
         if (cardTitle) {
           cardTitle.className = 'text-xs font-sans font-bold tracking-wide text-[#A6B0C3]';
-          cardTitle.innerText = "Bunker Dead-Man's Switch · Check-In Timer";
+          cardTitle.innerText = "Bunker Check-In Timer";
         }
         if (heartbeatTag) {
           heartbeatTag.className = 'text-xs font-sans font-semibold text-[#A6B0C3] bg-white/[0.04] px-3 py-1 rounded-lg border border-white/[0.08]';
@@ -10970,7 +10970,7 @@ if (typeof window !== "undefined") {
         if (pulseDot) pulseDot.className = 'w-2.5 h-2.5 rounded-full bg-amber-400';
         if (cardTitle) {
           cardTitle.className = 'text-xs font-sans font-bold tracking-wide text-amber-400';
-          cardTitle.innerText = "Bunker Dead-Man's Switch · Check-In Timer";
+          cardTitle.innerText = "Bunker Check-In Timer";
         }
         if (heartbeatTag) {
           heartbeatTag.className = 'text-xs font-sans font-semibold text-amber-400/90 bg-amber-950/30 px-3 py-1 rounded-lg border border-amber-500/30';
@@ -11023,7 +11023,7 @@ if (typeof window !== "undefined") {
       if (pulseDot) pulseDot.className = 'w-2.5 h-2.5 rounded-full bg-nearGreen radar-pulse';
       if (cardTitle) {
         cardTitle.className = 'text-xs font-sans font-bold tracking-wide text-nearGreen';
-        cardTitle.innerText = "Bunker Dead-Man's Switch · Check-In Timer";
+        cardTitle.innerText = "Bunker Check-In Timer";
       }
       if (heartbeatTag) {
         heartbeatTag.className = 'text-xs font-sans font-semibold text-nearGreen bg-nearGreenMuted px-3 py-1 rounded-lg border border-nearGreen/30';
