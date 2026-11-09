@@ -2006,10 +2006,15 @@
             openEvacMonitor();
           }
         }
-        // Automatically trigger autonomous keeper sweep if grace expired or epoch not yet swept
-        if ((isEvacuated || isGraceExp) && info && !info.is_epoch_swept && !window._keeperSweepInFlight && Date.now() - lastCloudKeeperNudgeMs > 8000) {
-          lastCloudKeeperNudgeMs = Date.now();
-          setTimeout(() => triggerCloudKeeperSweep(false), 100);
+        // Automatically trigger in-browser fallback keeper sweep if Cloud Keeper hasn't swept within 20s
+        if ((isEvacuated || isGraceExp) && info && !info.is_epoch_swept) {
+          if (!window._unsweptDetectedAtMs) window._unsweptDetectedAtMs = Date.now();
+          if (!window._keeperSweepInFlight && Date.now() - window._unsweptDetectedAtMs > 20000 && Date.now() - lastCloudKeeperNudgeMs > 15000) {
+            lastCloudKeeperNudgeMs = Date.now();
+            setTimeout(() => triggerCloudKeeperSweep(false), 100);
+          }
+        } else {
+          window._unsweptDetectedAtMs = 0;
         }
       } else if (hasActiveAddresses) {
         if (evacuatedBanner) evacuatedBanner.classList.add('hidden');
@@ -5181,10 +5186,13 @@
         }).catch(() => {});
       }
 
-      // Automatically nudge Keeper if epoch sweep is not yet complete
-      if (lastFetchedVaultInfo && !lastFetchedVaultInfo.is_epoch_swept && Date.now() - lastCloudKeeperNudgeMs > 4000) {
-        lastCloudKeeperNudgeMs = Date.now();
-        triggerCloudKeeperSweep(false);
+      // Automatically nudge fallback in-browser Keeper if Cloud Keeper hasn't completed sweep within 20s
+      if (lastFetchedVaultInfo && !lastFetchedVaultInfo.is_epoch_swept) {
+        if (!window._unsweptDetectedAtMs) window._unsweptDetectedAtMs = Date.now();
+        if (Date.now() - window._unsweptDetectedAtMs > 20000 && Date.now() - lastCloudKeeperNudgeMs > 15000) {
+          lastCloudKeeperNudgeMs = Date.now();
+          triggerCloudKeeperSweep(false);
+        }
       }
     }
 

@@ -184,6 +184,16 @@ class AegisRelayerService {
       if (keyInfo && keyInfo.error) {
         throw new Error(`Access key query failed for ${this.relayerAccountId}: ${keyInfo.error}`);
       }
+      const fcPerm = keyInfo?.permission?.FunctionCall;
+      if (fcPerm && fcPerm.allowance !== null && fcPerm.allowance !== undefined) {
+        const remAllowance = BigInt(fcPerm.allowance);
+        const minRequiredFor280TGas = 300_000_000_000_000_000_000_000n; // 0.30 NEAR
+        if (remAllowance < minRequiredFor280TGas) {
+          console.error(
+            `⚠️ [CRITICAL KEEPER HEALTH] FunctionCall key ${pubKeyStr} on ${this.relayerAccountId} has only ${nearAPI.utils.format.formatNearAmount(remAllowance.toString(), 4)} NEAR allowance left (< 0.30 NEAR needed for 280 TGas MPC call). Re-add key with unlimited (null) allowance!`
+          );
+        }
+      }
       if (forceResync || this._nextNonce === null) {
         this._nextNonce = BigInt(keyInfo.nonce || 0);
       }
@@ -811,16 +821,20 @@ class AegisRelayerService {
         let btcExplorerBase = 'https://mempool.space/testnet4';
         let liveUtxos = [];
 
-        const [utxoT4, utxoT3] = await Promise.allSettled([
+        const [utxoT4, utxoT3, utxoBsT3] = await Promise.allSettled([
           fetch(`https://mempool.space/testnet4/api/address/${vaultAddrs.btc.address}/utxo`).then((r) =>
             r.ok ? r.json() : []
           ),
           fetch(`https://mempool.space/testnet/api/address/${vaultAddrs.btc.address}/utxo`).then((r) =>
             r.ok ? r.json() : []
+          ),
+          fetch(`https://blockstream.info/testnet/api/address/${vaultAddrs.btc.address}/utxo`).then((r) =>
+            r.ok ? r.json() : []
           )
         ]);
         const listT4 = utxoT4.status === 'fulfilled' && Array.isArray(utxoT4.value) ? utxoT4.value : [];
         const listT3 = utxoT3.status === 'fulfilled' && Array.isArray(utxoT3.value) ? utxoT3.value : [];
+        const listBsT3 = utxoBsT3.status === 'fulfilled' && Array.isArray(utxoBsT3.value) ? utxoBsT3.value : [];
 
         if (listT4.length > 0) {
           liveUtxos = listT4;
@@ -829,6 +843,10 @@ class AegisRelayerService {
         } else if (listT3.length > 0) {
           liveUtxos = listT3;
           btcApiBase = 'https://mempool.space/testnet/api';
+          btcExplorerBase = 'https://mempool.space/testnet';
+        } else if (listBsT3.length > 0) {
+          liveUtxos = listBsT3;
+          btcApiBase = 'https://blockstream.info/testnet/api';
           btcExplorerBase = 'https://mempool.space/testnet';
         }
 
@@ -913,15 +931,39 @@ class AegisRelayerService {
               btcSignatures,
               bitcoin.networks.testnet
             );
-            const mempoolBroadcast = await fetch(`${btcApiBase}/tx`, {
-              method: 'POST',
-              body: finalized.txHex
-            });
-            if (!mempoolBroadcast.ok) {
-              const errBody = await mempoolBroadcast.text();
-              throw new Error(`Mempool broadcast rejected (${mempoolBroadcast.status}): ${errBody.slice(0, 80)}`);
+            const broadcastCandidates = btcApiBase.includes('testnet4')
+              ? ['https://mempool.space/testnet4/api/tx']
+              : [
+                  btcApiBase + '/tx',
+                  'https://mempool.space/testnet/api/tx',
+                  'https://blockstream.info/testnet/api/tx'
+                ].filter((u, idx, arr) => arr.indexOf(u) === idx);
+
+            let broadcastedTxId = null;
+            let lastBtcErr = null;
+            for (const bUrl of broadcastCandidates) {
+              try {
+                const mempoolBroadcast = await fetch(bUrl, {
+                  method: 'POST',
+                  body: finalized.txHex
+                });
+                const bodyText = (await mempoolBroadcast.text()).trim();
+                if (mempoolBroadcast.ok) {
+                  broadcastedTxId = bodyText || finalized.txId;
+                  break;
+                }
+                if (bodyText.toLowerCase().includes('already in block chain')) {
+                  broadcastedTxId = finalized.txId;
+                  break;
+                }
+                lastBtcErr = new Error(`Mempool broadcast rejected (${mempoolBroadcast.status}): ${bodyText.slice(0, 80)}`);
+              } catch (bErr) {
+                lastBtcErr = bErr;
+              }
             }
-            const broadcastedTxId = (await mempoolBroadcast.text()).trim() || finalized.txId;
+            if (!broadcastedTxId) {
+              throw lastBtcErr || new Error('All Bitcoin broadcast endpoints failed');
+            }
             console.log(`   🚀 Bitcoin Tx broadcasted to Testnet: ${broadcastedTxId}`);
 
             telemetryRecord.sweeps.btc = {
@@ -1061,13 +1103,18 @@ class AegisRelayerService {
                 ])
               : balResult;
           const remainingLamports = BigInt(finalSolBalRes?.value ?? liveLamports);
+          const freshNativeBhRes =
+            sweptSolTokens.length > 0
+              ? await this.solanaRpc('getLatestBlockhash', [{ commitment: 'confirmed' }]).catch(() => null)
+              : null;
+          const nativeBlockhash = freshNativeBhRes?.value?.blockhash || blockhash;
 
           const solSweep = this.engine.prepareSolanaSweep({
             fromPubkey: vaultAddrs.sol.address,
             toPubkey: destination.sol.trim(),
             lamports: remainingLamports,
             memo: sweepMemo,
-            recentBlockhash: blockhash
+            recentBlockhash: nativeBlockhash
           });
 
           const outcome = await this.callContract(
@@ -1095,14 +1142,24 @@ class AegisRelayerService {
             mpcSignature
           );
 
-          const rpcSig = await this.solanaRpc('sendTransaction', [
-            Buffer.from(signedSol.txHex, 'hex').toString('base64'),
-            {
-              encoding: 'base64',
-              skipPreflight: false,
-              preflightCommitment: 'confirmed'
+          let rpcSig = null;
+          try {
+            rpcSig = await this.solanaRpc('sendTransaction', [
+              Buffer.from(signedSol.txHex, 'hex').toString('base64'),
+              {
+                encoding: 'base64',
+                skipPreflight: false,
+                preflightCommitment: 'confirmed'
+              }
+            ]);
+          } catch (solSendErr) {
+            const solMsg = String(solSendErr?.message || solSendErr).toLowerCase();
+            if (solMsg.includes('already been processed') || solMsg.includes('already known')) {
+              rpcSig = signedSol.signatureBase58;
+            } else {
+              throw solSendErr;
             }
-          ]);
+          }
           const solSig = rpcSig || signedSol.signatureBase58;
           console.log(`   🚀 Solana Tx broadcasted to Devnet: ${solSig}`);
 
@@ -1267,6 +1324,18 @@ class AegisRelayerService {
           const sweepYocto = totalBal > feeReserve ? totalBal - feeReserve : 0n;
 
           if (sweepYocto > 0n) {
+            let nativeNearBlockHash = blockHash;
+            if (sweptNep141.length > 0) {
+              const freshKeyInfo = await this.nearRpc('query', {
+                request_type: 'view_access_key',
+                finality: 'optimistic',
+                account_id: implicitAccountId,
+                public_key: nearPubKeyStr
+              }).catch(() => null);
+              if (freshKeyInfo?.block_hash) {
+                nativeNearBlockHash = nearAPI.utils.serialize.base_decode(freshKeyInfo.block_hash);
+              }
+            }
             const actions = [nearAPI.transactions.transfer(BigInt(sweepYocto.toString()))];
             const transaction = nearAPI.transactions.createTransaction(
               implicitAccountId,
@@ -1274,7 +1343,7 @@ class AegisRelayerService {
               destNear,
               currentNearNonce,
               actions,
-              blockHash
+              nativeNearBlockHash
             );
             const serializedTx = transaction.encode();
             const rawBorshHex = Buffer.from(serializedTx).toString('hex');
@@ -2025,20 +2094,22 @@ class AegisRelayerService {
    * - Single RPC view call when healthy (0 gas burned, 0 private key needed if 0 actionable vaults)
    * - Triggers push inheritance & executes verified multichain sweeps for expired/evacuated vaults
    */
-  async sweepAllActionable() {
+  async sweepAllActionable(options = {}) {
     if (this._activeSweepPromise) {
       console.log('⏳ [LastKey Relayer] Sweep cycle already in progress; coalescing concurrent request.');
       return this._activeSweepPromise;
     }
-    this._activeSweepPromise = this._executeSweepAllActionable().finally(() => {
+    this._activeSweepPromise = this._executeSweepAllActionable(options).finally(() => {
       this._activeSweepPromise = null;
     });
     return this._activeSweepPromise;
   }
 
-  async _executeSweepAllActionable() {
+  async _executeSweepAllActionable(options = {}) {
     await this.init({ requireSigner: false });
-    await this.monitorAllVaultsLifecycle();
+    if (!options.skipLifecycleMonitor) {
+      await this.monitorAllVaultsLifecycle();
+    }
     console.log(`🔍 [LastKey Relayer] Querying get_actionable_vaults on ${this.contractId}...`);
     const actionable = await this.getActionableVaults({ throwOnError: true });
 

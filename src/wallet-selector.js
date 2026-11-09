@@ -59,7 +59,7 @@ export async function runAutonomousKeeperSweep() {
       if (!keeper) {
         return { success: false, error: "Browser keeper unavailable" };
       }
-      const summary = await keeper.sweepAllActionable();
+      const summary = await keeper.sweepAllActionable({ skipLifecycleMonitor: true });
       return {
         success: true,
         source: "in-browser-keeper",
