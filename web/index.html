@@ -203,7 +203,7 @@
             </span>
           </div>
           <p class="text-xs text-[#8C95A6] hidden sm:block mt-0.5">
-            Self-Custodial Crypto Bunker &amp; Automatic Family Inheritance
+            Self-Custodial Crypto Bunker &amp; Automatic Inheritance
           </p>
         </div>
       </div>
@@ -262,7 +262,7 @@
         <span class="text-[11px] font-mono px-2.5 py-0.5 rounded-md bg-nearGreen/10 text-nearGreen border border-nearGreen/25 font-bold">Public Keys Hidden</span>
       </div>
       <p class="text-xs sm:text-[13px] text-[#A6B0C3] leading-relaxed max-w-5xl">
-        Regular wallets permanently expose their cryptographic public key on-chain every time they sign a transaction. Your <strong class="text-white font-semibold">Aegis Bunker</strong> addresses only receive deposits and never sign a single outgoing transaction — until <strong class="text-white font-semibold">Emergency Panic</strong> sweeps 100% of funds to your backup wallet or <strong class="text-white font-semibold">Automatic Inheritance</strong> transfers them to your family if your timer expires.
+        Regular wallets permanently expose their cryptographic public key on-chain every time they sign a transaction. Your <strong class="text-white font-semibold">Aegis Bunker</strong> addresses only receive deposits and never sign a single outgoing transaction — until <strong class="text-white font-semibold">Emergency Panic</strong> sweeps 100% of funds to your backup wallet or <strong class="text-white font-semibold">Automatic Inheritance</strong> transfers them to your designated inheritance wallets if your timer expires.
       </p>
     </div>
 
@@ -337,7 +337,7 @@
           <div class="p-3.5 rounded-2xl bg-white/[0.03] border border-white/[0.08] space-y-2.5">
             <div class="grid grid-cols-2 gap-2.5">
               <div class="space-y-1">
-                <label class="block text-xs font-semibold text-[#8C929D] pl-1">1. Check-in Timer</label>
+                <label class="block text-xs font-semibold text-[#8C929D] pl-1">Check-in Timer</label>
                 <div class="relative">
                   <select id="inactivitySelect" onchange="changeInactivityPeriod(this.value)" class="w-full appearance-none bg-[#0B0D12] hover:bg-white/[0.06] text-white font-semibold text-xs rounded-xl pl-3 pr-7 py-2.5 border border-white/[0.08] focus:border-nearGreen outline-none transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
                     <option value="demo_180s" class="bg-[#0B0D12] text-amber-300 font-bold">⚡ 3m (Judge Demo)</option>
@@ -351,7 +351,7 @@
                 <p class="text-[11px] text-[#8C929D] leading-snug pl-1 pt-0.5">How long you can stay inactive. Resets on check-in or any wallet activity.</p>
               </div>
               <div class="space-y-1">
-                <label class="block text-xs font-semibold text-[#8C929D] pl-1">2. Grace Buffer</label>
+                <label class="block text-xs font-semibold text-[#8C929D] pl-1">Grace Buffer</label>
                 <div class="relative">
                   <select id="graceSelect" onchange="changeGracePeriod(this.value)" class="w-full appearance-none bg-[#0B0D12] hover:bg-white/[0.06] text-white font-semibold text-xs rounded-xl pl-3 pr-7 py-2.5 border border-white/[0.08] focus:border-nearGreen outline-none transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
                     <option value="demo_60s" class="bg-[#0B0D12] text-amber-300 font-bold">⚡ 1m (Judge Demo)</option>
@@ -362,7 +362,7 @@
                   </select>
                   <svg class="w-3.5 h-3.5 text-[#8C929D] absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" /></svg>
                 </div>
-                <p class="text-[11px] text-[#8C929D] leading-snug pl-1 pt-0.5">Extra safety window after timer hits 0 before funds are sent to your Heir.</p>
+                <p class="text-[11px] text-[#8C929D] leading-snug pl-1 pt-0.5">Extra safety window after timer hits 0 before funds are transferred to your Inheritance wallets.</p>
               </div>
             </div>
           </div>
@@ -383,7 +383,7 @@
               <h3 class="text-base sm:text-lg font-bold text-white tracking-tight">Where Your Funds Go</h3>
             </div>
             <p class="text-xs sm:text-sm text-[#8C929D] mt-1">
-              Set your personal backup wallets (for instant emergency withdrawal) and your family wallets (for automatic inheritance).
+              Set your Emergency Panic wallets (for instant self-rescue) and your Inheritance wallets (for automatic transfer if your timer expires).
             </p>
           </div>
         </div>
@@ -412,14 +412,14 @@
                 <div class="space-y-1">
                   <div class="flex items-center gap-2">
                     <span class="w-2 h-2 rounded-full bg-red-400"></span>
-                    <h4 class="text-sm sm:text-base font-bold text-white tracking-tight">1. Your Backup Wallets (Emergency)</h4>
+                    <h4 class="text-sm sm:text-base font-bold text-white tracking-tight">Emergency Panic Wallets (Backup)</h4>
                   </div>
                   <p class="text-xs sm:text-sm text-[#B0B9C9]">
-                    Clicking Panic immediately withdraws 100% of your vault assets to these backup wallets.
+                    Clicking Emergency Panic immediately evacuates 100% of your Bunker assets to these personal backup wallets.
                   </p>
                 </div>
                 <span class="text-xs font-sans font-semibold text-red-400 bg-red-950/40 border border-red-500/30 px-2.5 py-0.5 rounded-lg whitespace-nowrap shrink-0">
-                  Instant Withdrawal
+                  Emergency Panic
                 </span>
               </div>
 
@@ -429,28 +429,28 @@
                   <span class="w-16 text-center py-2.5 text-xs font-sans font-bold text-white bg-white/[0.03] border-r border-white/[0.06] shrink-0">
                     NEAR
                   </span>
-                  <input type="text" id="panicNearAddr" value="" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="Backup NEAR wallet (e.g. backup.testnet)" class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:font-sans placeholder:text-[#585E6A] outline-none">
+                  <input type="text" id="panicNearAddr" value="" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="Enter NEAR wallet address" class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:font-sans placeholder:text-[#585E6A] outline-none">
                 </div>
 
                 <div class="flex items-center rounded-xl bg-white/[0.02] border border-white/[0.08] focus-within:border-nearGreen transition overflow-hidden">
                   <span class="w-16 text-center py-2.5 text-xs font-sans font-bold text-[#F7931A] bg-white/[0.03] border-r border-white/[0.06] shrink-0">
                     BTC
                   </span>
-                  <input type="text" id="panicBtcAddr" value="" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="Backup Bitcoin address (e.g. tb1q...)" class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:font-sans placeholder:text-[#585E6A] outline-none">
+                  <input type="text" id="panicBtcAddr" value="" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="Enter Bitcoin (BTC) address" class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:font-sans placeholder:text-[#585E6A] outline-none">
                 </div>
 
                 <div class="flex items-center rounded-xl bg-white/[0.02] border border-white/[0.08] focus-within:border-nearGreen transition overflow-hidden">
                   <span class="w-16 text-center py-2.5 text-xs font-sans font-bold text-[#627EEA] bg-white/[0.03] border-r border-white/[0.06] shrink-0">
                     ETH
                   </span>
-                  <input type="text" id="panicEvmAddr" value="" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="Backup Ethereum / EVM address (e.g. 0x...)" class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:font-sans placeholder:text-[#585E6A] outline-none">
+                  <input type="text" id="panicEvmAddr" value="" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="Enter Ethereum / EVM address" class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:font-sans placeholder:text-[#585E6A] outline-none">
                 </div>
 
                 <div class="flex items-center rounded-xl bg-white/[0.02] border border-white/[0.08] focus-within:border-nearGreen transition overflow-hidden">
                   <span class="w-16 text-center py-2.5 text-xs font-sans font-bold text-[#9945FF] bg-white/[0.03] border-r border-white/[0.06] shrink-0">
                     SOL
                   </span>
-                  <input type="text" id="panicSolAddr" value="" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="Backup Solana address" class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:font-sans placeholder:text-[#585E6A] outline-none">
+                  <input type="text" id="panicSolAddr" value="" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="Enter Solana (SOL) address" class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:font-sans placeholder:text-[#585E6A] outline-none">
                 </div>
 
                 <!-- Panic Button Trigger Mode (3s Hold vs 1-Click Instant) -->
@@ -479,14 +479,14 @@
                   <div class="space-y-1">
                     <div class="flex items-center gap-2">
                       <span class="w-2 h-2 rounded-full bg-nearGreen"></span>
-                      <h4 class="text-sm sm:text-base font-bold text-white tracking-tight">2. Family Wallets (Inheritance)</h4>
+                      <h4 class="text-sm sm:text-base font-bold text-white tracking-tight">Inheritance Wallets (Beneficiary)</h4>
                     </div>
                     <p class="text-xs sm:text-sm text-[#B0B9C9]">
-                      If your timer and grace period expire, funds are sent here automatically.
+                      If your check-in timer and grace buffer expire, 100% of your Bunker assets are transferred here automatically.
                     </p>
                   </div>
                   <span class="text-xs font-sans font-semibold text-nearGreen bg-nearGreenMuted border border-nearGreen/30 px-2.5 py-0.5 rounded-lg whitespace-nowrap shrink-0">
-                    Auto-Transfer
+                    Auto-Inheritance
                   </span>
                 </div>
 
@@ -496,41 +496,41 @@
                     <span class="w-16 text-center py-2.5 text-xs font-sans font-bold text-white bg-white/[0.03] border-r border-white/[0.06] shrink-0">
                       NEAR
                     </span>
-                    <input type="text" id="heirNearAddr" value="" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="Family NEAR wallet (e.g. family.testnet)" class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:font-sans placeholder:text-[#585E6A] outline-none">
+                    <input type="text" id="heirNearAddr" value="" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="Enter NEAR wallet address" class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:font-sans placeholder:text-[#585E6A] outline-none">
                   </div>
 
                   <div class="flex items-center rounded-xl bg-white/[0.02] border border-white/[0.08] focus-within:border-nearGreen transition overflow-hidden">
                     <span class="w-16 text-center py-2.5 text-xs font-sans font-bold text-[#F7931A] bg-white/[0.03] border-r border-white/[0.06] shrink-0">
                       BTC
                     </span>
-                    <input type="text" id="heirBtcAddr" value="" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="Family Bitcoin address (e.g. tb1q...)" class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:font-sans placeholder:text-[#585E6A] outline-none">
+                    <input type="text" id="heirBtcAddr" value="" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="Enter Bitcoin (BTC) address" class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:font-sans placeholder:text-[#585E6A] outline-none">
                   </div>
 
                   <div class="flex items-center rounded-xl bg-white/[0.02] border border-white/[0.08] focus-within:border-nearGreen transition overflow-hidden">
                     <span class="w-16 text-center py-2.5 text-xs font-sans font-bold text-[#627EEA] bg-white/[0.03] border-r border-white/[0.06] shrink-0">
                       ETH
                     </span>
-                    <input type="text" id="heirEvmAddr" value="" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="Family Ethereum / EVM address (e.g. 0x...)" class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:font-sans placeholder:text-[#585E6A] outline-none">
+                    <input type="text" id="heirEvmAddr" value="" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="Enter Ethereum / EVM address" class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:font-sans placeholder:text-[#585E6A] outline-none">
                   </div>
 
                   <div class="flex items-center rounded-xl bg-white/[0.02] border border-white/[0.08] focus-within:border-nearGreen transition overflow-hidden">
                     <span class="w-16 text-center py-2.5 text-xs font-sans font-bold text-[#9945FF] bg-white/[0.03] border-r border-white/[0.06] shrink-0">
                       SOL
                     </span>
-                    <input type="text" id="heirSolAddr" value="" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="Family Solana address" class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:font-sans placeholder:text-[#585E6A] outline-none">
+                    <input type="text" id="heirSolAddr" value="" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" placeholder="Enter Solana (SOL) address" class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white placeholder:font-sans placeholder:text-[#585E6A] outline-none">
                   </div>
 
                   <!-- Optional Note to Heirs -->
                   <div class="space-y-1.5 pt-2 border-t border-white/[0.06]">
                     <div class="flex items-center justify-between text-xs">
-                      <label class="text-[#8C929D] font-sans font-medium">Optional note for family</label>
+                      <label class="text-[#8C929D] font-sans font-medium">Optional note for recipient</label>
                       <span id="memoByteCount" class="text-[11px] text-[#8E99AD] font-mono">0 / 240 B</span>
                     </div>
                     <div class="flex items-center rounded-xl bg-white/[0.02] border border-white/[0.08] focus-within:border-nearGreen transition overflow-hidden">
                       <span class="w-16 text-center py-2.5 text-xs font-sans font-bold text-nearGreen bg-white/[0.03] border-r border-white/[0.06] shrink-0">
                         Note
                       </span>
-                      <input type="text" id="heirFinalMemo" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" oninput="updateMemoByteCounter(this.value)" placeholder="e.g. Optional note for your family..." class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-sans text-white placeholder:text-[#585E6A] outline-none">
+                      <input type="text" id="heirFinalMemo" autocomplete="off" aria-autocomplete="none" list="aegisNoAutofillList" data-form-type="other" readonly autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" oninput="updateMemoByteCounter(this.value)" placeholder="Enter optional note for recipient..." class="w-full bg-transparent px-3.5 py-2.5 text-xs sm:text-sm font-sans text-white placeholder:text-[#585E6A] outline-none">
                     </div>
                   </div>
                 </div>
@@ -550,7 +550,7 @@
                   <span id="addressStatusBadge" class="text-[#8E99AD] font-sans font-bold">Bunker Doors Open · Connect Wallet</span>
                 </div>
                 <p id="addressStatusDesc" class="text-xs text-[#8C929D]">
-                  Connect your NEAR wallet above, enter your backup or family wallets, and seal your Bunker.
+                  Connect your NEAR wallet above, enter your Emergency Panic & Inheritance wallets, and seal your Bunker.
                 </p>
               </div>
 
@@ -636,7 +636,7 @@
             </div>
             <div>
               <h4 class="text-xs sm:text-sm font-extrabold text-amber-200">Bunker Doors Open — Save Wallets Above to Seal</h4>
-              <p class="text-xs text-[#C5CAD3] mt-0.5">Cold deposit addresses unlock as soon as you save your backup or family wallets above and seal the Bunker.</p>
+              <p class="text-xs text-[#C5CAD3] mt-0.5">Cold deposit addresses unlock as soon as you save your Emergency Panic & Inheritance wallets above and seal the Bunker.</p>
             </div>
           </div>
           <button onclick="switchTab('rescue')" class="px-4 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-black font-extrabold text-xs transition whitespace-nowrap shrink-0 self-start sm:self-center cursor-pointer">
@@ -670,7 +670,7 @@
             <span class="w-2.5 h-2.5 rounded-full bg-nearGreen radar-pulse"></span>
             <h3 class="text-base sm:text-lg font-extrabold text-white">Your Bunker Deposit Addresses</h3>
           </div>
-          <p class="text-xs text-[#A6B0C3] mt-0.5">Connect your wallet and save both Backup (Emergency) &amp; Family (Inheritance) addresses above to unlock each network's deposit address.</p>
+          <p class="text-xs text-[#A6B0C3] mt-0.5">Connect your wallet and save both Emergency Panic (Backup) &amp; Inheritance addresses above to unlock each network's deposit address.</p>
         </div>
         <div class="flex items-center gap-2 self-start sm:self-auto">
           <button onclick="fetchLiveBalances(true)" class="px-3.5 py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-xs font-sans font-semibold text-textSilver hover:text-white transition flex items-center gap-2 cursor-pointer">
@@ -713,7 +713,7 @@
               </div>
               <div class="p-3.5 rounded-xl bg-white/[0.03] border border-white/[0.08] hover:border-white/[0.2] transition min-h-[68px] flex items-center cursor-pointer group" onclick="copyAddr('btcAddress')">
                 <span id="btcAddress" data-full="" class="font-sans text-xs sm:text-[13px] leading-relaxed text-[#A6B0C3] break-words select-none font-medium group-hover:text-nearGreen transition-colors">
-                  Connect wallet &amp; save Backup + Family addresses above
+                  Connect wallet &amp; save Panic + Inheritance addresses above
                 </span>
               </div>
             </div>
@@ -761,7 +761,7 @@
               </div>
               <div class="p-3.5 rounded-xl bg-white/[0.03] border border-white/[0.08] hover:border-white/[0.2] transition min-h-[68px] flex items-center cursor-pointer group" onclick="copyAddr('evmAddress')">
                 <span id="evmAddress" data-full="" class="font-sans text-xs sm:text-[13px] leading-relaxed text-[#A6B0C3] break-words select-none font-medium group-hover:text-nearGreen transition-colors">
-                  Connect wallet &amp; save Backup + Family addresses above
+                  Connect wallet &amp; save Panic + Inheritance addresses above
                 </span>
               </div>
             </div>
@@ -809,7 +809,7 @@
               </div>
               <div class="p-3.5 rounded-xl bg-white/[0.03] border border-white/[0.08] hover:border-white/[0.2] transition min-h-[68px] flex items-center cursor-pointer group" onclick="copyAddr('solAddress')">
                 <span id="solAddress" data-full="" class="font-sans text-xs sm:text-[13px] leading-relaxed text-[#A6B0C3] break-words select-none font-medium group-hover:text-nearGreen transition-colors">
-                  Connect wallet &amp; save Backup + Family addresses above
+                  Connect wallet &amp; save Panic + Inheritance addresses above
                 </span>
               </div>
             </div>
@@ -856,8 +856,8 @@
                 <span class="text-xs font-sans font-medium text-[#A6B0C3]">Deposit address</span>
               </div>
               <div class="p-3.5 rounded-xl bg-white/[0.03] border border-white/[0.08] hover:border-white/[0.2] transition min-h-[68px] flex items-center cursor-pointer group" onclick="copyAddr('nearAddress')">
-                <span id="nearAddress" data-full="" title="Connect wallet &amp; save Backup + Family addresses above" class="font-sans text-xs sm:text-[13px] leading-relaxed text-[#A6B0C3] break-words select-none font-medium group-hover:text-nearGreen transition-colors">
-                  Connect wallet &amp; save Backup + Family addresses above
+                <span id="nearAddress" data-full="" title="Connect wallet &amp; save Panic + Inheritance addresses above" class="font-sans text-xs sm:text-[13px] leading-relaxed text-[#A6B0C3] break-words select-none font-medium group-hover:text-nearGreen transition-colors">
+                  Connect wallet &amp; save Panic + Inheritance addresses above
                 </span>
               </div>
             </div>
@@ -931,7 +931,7 @@
               <span>72h Anti-Hijack Alarm</span>
             </div>
             <p class="text-[11px] text-[#8C929D] leading-snug">
-              Instant alert if anyone tries to change your Backup/Family addresses or shorten your timer — giving you 72h to cancel.
+              Instant alert if anyone tries to change your Emergency Panic / Inheritance addresses or shorten your timer — giving you 72h to cancel.
             </p>
           </div>
           <div class="p-3 rounded-xl bg-white/[0.02] border border-white/[0.06] space-y-1">
@@ -1282,7 +1282,7 @@
       <div class="flex items-center gap-2">
         <span class="text-nearGreen font-extrabold text-sm tracking-tighter">AEGIS</span>
         <span class="text-textMuted">·</span>
-        <span>Self-Custodial Crypto Bunker &amp; Automatic Family Inheritance</span>
+        <span>Self-Custodial Crypto Bunker &amp; Automatic Inheritance</span>
       </div>
       <div class="flex items-center gap-3">
         <a href="https://docs.near.org/chain-abstraction/chain-signatures" target="_blank" rel="noopener noreferrer" class="px-3.5 py-1.5 rounded-xl bg-nearSurface hover:bg-nearElevated border border-nearBorder text-textSilver hover:text-nearGreen transition flex items-center gap-2 text-xs font-sans font-medium">
@@ -1579,7 +1579,7 @@
           badge.className = 'text-[#8E99AD] font-mono font-bold';
         }
         if (dot) dot.className = 'w-2 h-2 rounded-full bg-[#8E99AD]';
-        if (desc) desc.innerText = 'Connect your NEAR wallet above to set your backup and family wallets.';
+        if (desc) desc.innerText = 'Connect your NEAR wallet above to set your Emergency Panic and Inheritance wallets.';
 
         updateSaveButtonState(null);
         renderBunkerAddresses();
@@ -1648,7 +1648,7 @@
         if (solUsdEl) solUsdEl.innerText = '≈ 0.00 USD';
         if (nearBalEl) nearBalEl.innerHTML = '0.0000 <span class="text-base font-normal text-[#B0B9C9]">NEAR</span>';
         if (nearUsdEl) nearUsdEl.innerText = '≈ 0.00 USD';
-        if (syncBadge) syncBadge.innerText = 'Vault Unarmed';
+        if (syncBadge) syncBadge.innerText = 'Bunker Unsealed';
         if (syncDot) syncDot.className = 'w-2 h-2 rounded-full bg-white/20';
 
         const badge = document.getElementById('addressStatusBadge');
@@ -1659,7 +1659,7 @@
           badge.className = 'text-amber-300 font-mono font-bold';
         }
         if (dot) dot.className = 'w-2 h-2 rounded-full bg-amber-400';
-        if (desc) desc.innerText = 'Enter your backup or family wallets above and click Save Policy.';
+        if (desc) desc.innerText = 'Enter your Emergency Panic and Inheritance wallets above and click Seal Bunker.';
 
         updateSaveButtonState(lastFetchedVaultInfo);
         renderBunkerAddresses();
@@ -1765,15 +1765,15 @@
       if (isAddrLocked) {
         // Vault is evacuated, inherited, or timer expired: NEVER populate or display addresses in inputs
         const defaultPlaceholders = {
-          panicNearAddr: 'e.g. coldvault.testnet',
-          panicBtcAddr: 'e.g. tb1q...',
-          panicEvmAddr: 'e.g. 0x...',
-          panicSolAddr: 'e.g. Base58 Solana address',
-          heirNearAddr: 'e.g. family.testnet',
-          heirBtcAddr: 'e.g. tb1q...',
-          heirEvmAddr: 'e.g. 0x...',
-          heirSolAddr: 'e.g. Base58 Solana address',
-          heirFinalMemo: 'e.g. Optional note for your family...'
+          panicNearAddr: 'Enter NEAR wallet address',
+          panicBtcAddr: 'Enter Bitcoin (BTC) address',
+          panicEvmAddr: 'Enter Ethereum / EVM address',
+          panicSolAddr: 'Enter Solana (SOL) address',
+          heirNearAddr: 'Enter NEAR wallet address',
+          heirBtcAddr: 'Enter Bitcoin (BTC) address',
+          heirEvmAddr: 'Enter Ethereum / EVM address',
+          heirSolAddr: 'Enter Solana (SOL) address',
+          heirFinalMemo: 'Enter optional note for recipient...'
         };
         inputIds.forEach(id => {
           const el = document.getElementById(id);
@@ -1932,7 +1932,7 @@
             if (bIcon) bIcon.setAttribute('class', 'w-4 h-4 text-purple-300');
             if (evacuatedSummary) {
               evacuatedSummary.innerHTML = isEpochSwept
-                ? 'All bunker assets autonomously transferred to designated family heirs. Destination and deposit addresses are permanently hidden. Click <strong>Activate Clean Bunker</strong> to advance to next epoch.'
+                ? 'All Bunker assets autonomously transferred to designated Inheritance wallets. Destination and deposit addresses are permanently hidden. Click <strong>Activate Clean Bunker</strong> to advance to next epoch.'
                 : 'Autonomous inheritance triggered. Cloud Keeper sweep is in progress and all addresses are hidden. Once sweep completes, click <strong>Activate Clean Bunker</strong> to advance to next epoch.';
             }
           } else {
@@ -1966,7 +1966,7 @@
           badge.innerText = isGraceOnly
             ? 'Grace Buffer (Addresses Locked)'
             : (isInheritance
-                ? (isEpochSwept ? '⚠️ Bunker Unsealed · Transferred to Family (Keys Exposed)' : 'Bunker Unsealed · Inheritance Sweep in Progress')
+                ? (isEpochSwept ? '⚠️ Bunker Unsealed · Inheritance Transferred (Keys Exposed)' : 'Bunker Unsealed · Inheritance Sweep in Progress')
                 : (isEpochSwept ? '⚠️ Bunker Unsealed · Evacuated (Public Keys Exposed)' : 'Bunker Unsealed · Emergency Sweep in Progress'));
           badge.className = isGraceOnly
             ? 'text-amber-400 font-mono font-bold'
@@ -2013,11 +2013,11 @@
         }
         const desc = document.getElementById('addressStatusDesc');
         if (badge && !info.pending_policy) {
-          badge.innerText = '🔒 Bunker Sealed & Armed (Public Keys Hidden)';
+          badge.innerText = '🔒 Bunker Sealed · Keys Hidden';
           badge.className = 'text-nearGreen font-mono font-bold';
         }
         if (dot && !info.pending_policy) dot.className = 'w-2.5 h-2.5 rounded-full bg-nearGreen shadow-near-glow';
-        if (desc && !info.pending_policy) desc.innerText = 'Zero outgoing signatures made. Funds can only exit to your saved backup or family wallets.';
+        if (desc && !info.pending_policy) desc.innerText = 'Zero outgoing signatures made. Funds can only exit to your saved Emergency Panic or Inheritance wallets.';
       } else {
         const desc = document.getElementById('addressStatusDesc');
         if (activeBanner) activeBanner.classList.add('hidden');
@@ -2034,7 +2034,7 @@
           badge.className = 'text-amber-300 font-mono font-bold';
         }
         if (dot && !info.pending_policy) dot.className = 'w-2.5 h-2.5 rounded-full bg-amber-400';
-        if (desc && !info.pending_policy) desc.innerText = 'Enter your backup or family wallets above and click Seal Bunker.';
+        if (desc && !info.pending_policy) desc.innerText = 'Enter your Emergency Panic and Inheritance wallets above and click Seal Bunker.';
       }
 
       updateSaveButtonState(info);
@@ -2116,8 +2116,8 @@
         }
         if (dot) dot.className = hasActiveAddresses ? 'w-2.5 h-2.5 rounded-full bg-nearGreen shadow-near-glow' : 'w-2.5 h-2.5 rounded-full bg-amber-400';
         if (desc) desc.innerText = hasActiveAddresses
-          ? 'Your funds can only be sent to the backup or family wallets saved above.'
-          : 'Enter your backup or family wallets above and click Save Policy.';
+          ? 'Your funds can only be sent to the Emergency Panic or Inheritance wallets saved above.'
+          : 'Enter your Emergency Panic and Inheritance wallets above and click Seal Bunker.';
       }
 
       if (isVaultEvacuatedOrBurned()) {
@@ -3039,7 +3039,7 @@
       if (!currentSigner) {
         chains.forEach(c => {
           if (c.addrEl) {
-            c.addrEl.innerText = 'Connect wallet & save Backup + Family addresses above';
+            c.addrEl.innerText = 'Connect wallet & save Panic + Inheritance addresses above';
             c.addrEl.className = 'font-sans text-xs sm:text-[13px] leading-relaxed text-[#A6B0C3] break-words select-none font-medium';
             c.addrEl.dataset.full = '';
           }
@@ -3083,7 +3083,7 @@
             c.actionsEl.innerHTML = `
               <div class="col-span-2 py-2.5 px-3 rounded-xl ${isInheritance ? 'bg-purple-950/30 border border-purple-500/20 text-purple-300' : 'bg-red-950/30 border border-red-500/20 text-red-400'} text-center text-xs font-mono flex items-center justify-center gap-1.5 select-none">
                 <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
-                <span>${isInheritance ? (isEpochSwept ? 'Bunker Unsealed · Transferred to Family' : 'Bunker Unsealed · Transfer in Progress') : (isEpochSwept ? 'Bunker Unsealed · Assets Swept' : 'Bunker Unsealed · Sweep in Progress')}</span>
+                <span>${isInheritance ? (isEpochSwept ? 'Bunker Unsealed · Inheritance Transferred' : 'Bunker Unsealed · Transfer in Progress') : (isEpochSwept ? 'Bunker Unsealed · Assets Swept' : 'Bunker Unsealed · Sweep in Progress')}</span>
               </div>
             `;
           }
@@ -3106,7 +3106,7 @@
           if (bannerText) {
             bannerText.innerText = isInheritance
               ? (isEpochSwept
-                  ? 'Assets were transferred to your designated family wallets. Because an outgoing signature exposed this Bunker\'s public keys on-chain, it is permanently retired. Seal a fresh Bunker for new storage.'
+                  ? 'Assets were transferred to your designated Inheritance wallets. Because an outgoing signature exposed this Bunker\'s public keys on-chain, it is permanently retired. Seal a fresh Bunker for new storage.'
                   : 'Autonomous inheritance triggered; Cloud Keeper sweep is in progress. Seal a fresh Bunker to derive clean, unexposed addresses.')
               : (isEpochSwept
                   ? 'Sweeping your funds required an outgoing signature, permanently exposing this Bunker\'s public keys on the blockchain. Seal a fresh Bunker to derive clean, unexposed addresses.'
@@ -3159,7 +3159,7 @@
 
         chains.forEach(c => {
           if (c.addrEl) {
-            c.addrEl.innerText = 'Bunker Doors Open — Save Backup & Family addresses above to reveal';
+            c.addrEl.innerText = 'Bunker Doors Open — Save Panic & Inheritance addresses above to reveal';
             c.addrEl.className = 'font-sans text-xs sm:text-[13px] leading-relaxed text-amber-400/90 break-words select-none font-semibold';
             c.addrEl.dataset.full = '';
           }
@@ -3167,7 +3167,7 @@
             c.actionsEl.innerHTML = `
               <button type="button" onclick="switchTab('rescue')" class="col-span-2 py-2.5 px-3 rounded-xl bg-amber-950/25 hover:bg-amber-950/40 border border-amber-500/25 hover:border-amber-500/40 text-center text-xs font-sans font-bold text-amber-400 flex items-center justify-center gap-1.5 transition active:scale-98 cursor-pointer">
                 <svg class="w-3.5 h-3.5 text-amber-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
-                <span>Save Backup &amp; Family Wallets ↑</span>
+                <span>Save Panic &amp; Inheritance Wallets ↑</span>
               </button>
             `;
           }
@@ -3219,7 +3219,7 @@
       chains.forEach(c => {
         if (!c.hasEgress) {
           if (c.addrEl) {
-            c.addrEl.innerText = `Save Backup & Family addresses for ${c.name} above to reveal`;
+            c.addrEl.innerText = `Save Panic & Inheritance addresses for ${c.name} above to reveal`;
             c.addrEl.className = 'font-sans text-xs sm:text-[13px] leading-relaxed text-amber-400/90 break-words select-none font-semibold';
             c.addrEl.dataset.full = '';
           }
@@ -3227,7 +3227,7 @@
             c.actionsEl.innerHTML = `
               <button type="button" onclick="switchTab('rescue')" class="col-span-2 py-2.5 px-3 rounded-xl bg-amber-950/25 hover:bg-amber-950/40 border border-amber-500/25 hover:border-amber-500/40 text-center text-xs font-sans font-bold text-amber-400 flex items-center justify-center gap-1.5 transition active:scale-98 cursor-pointer">
                 <svg class="w-3.5 h-3.5 text-amber-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
-                <span>Set ${c.name} Backup &amp; Family ↑</span>
+                <span>Set ${c.name} Panic &amp; Inheritance ↑</span>
               </button>
             `;
           }
@@ -3330,7 +3330,7 @@
           if (syncBadge) syncBadge.innerText = 'Epoch Swept · Closed';
           if (syncDot) syncDot.className = 'w-2 h-2 rounded-full bg-purple-400';
         } else {
-          if (syncBadge) syncBadge.innerText = 'Vault Unarmed';
+          if (syncBadge) syncBadge.innerText = 'Bunker Unsealed';
           if (syncDot) syncDot.className = 'w-2 h-2 rounded-full bg-white/20';
         }
         checkUnallocatedFunds();
@@ -3601,7 +3601,7 @@
           renderBunkerAddresses();
           fetchLiveBalances(true);
           updateCountdownDisplay();
-          showToast(`✅ Clean Bunker Activated! Active Epoch ${currentEpochIndex} (Unarmed - Enter destinations to arm)`);
+          showToast(`✅ Clean Bunker Activated! Active Epoch ${currentEpochIndex} (Doors Open — Enter destinations to seal)`);
         }
       } catch (err) {
         console.error('Rotate bunker failed:', err);
@@ -3719,7 +3719,7 @@
           btn.innerHTML = `
             <span class="flex items-center gap-1.5 text-nearGreen">
               <svg class="w-3.5 h-3.5 text-nearGreen shrink-0" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
-              <span>Bunker Sealed & Armed</span>
+              <span>Bunker Sealed · Keys Hidden</span>
             </span>
           `;
           btn.className = 'save-policy-btn bg-nearGreen/15 hover:bg-nearGreen/25 text-nearGreen border border-nearGreen/40 font-bold py-2 px-5 rounded-xl text-xs transition active:scale-98 whitespace-nowrap cursor-pointer';
@@ -3818,7 +3818,7 @@
           }
         }).catch(() => {});
       } else {
-        showToast(`Timer set to ${val === 'demo_180s' ? '3m' : val + ' days'}. Click Save Policy to arm bunker.`);
+        showToast(`Timer set to ${val === 'demo_180s' ? '3m' : val + ' days'}. Click Seal Bunker to apply.`);
       }
     }
 
@@ -3859,7 +3859,7 @@
           }
         }).catch(() => {});
       } else {
-        showToast(`Grace window set to ${val === 'demo_60s' ? '1m' : val + ' days'}. Click Save Policy to arm bunker.`);
+        showToast(`Grace window set to ${val === 'demo_60s' ? '1m' : val + ' days'}. Click Seal Bunker to apply.`);
       }
     }
 
@@ -3937,7 +3937,7 @@
         if (pulseDot) pulseDot.className = isInheritance ? 'w-2.5 h-2.5 rounded-full bg-purple-500 animate-pulse' : 'w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse';
         if (cardTitle) {
           cardTitle.className = isInheritance ? 'text-xs font-sans font-bold tracking-wide text-purple-400' : 'text-xs font-sans font-bold tracking-wide text-red-400';
-          cardTitle.innerText = isInheritance ? 'Bunker Unsealed · Transferred to Family' : 'Bunker Unsealed · Public Keys Exposed';
+          cardTitle.innerText = isInheritance ? 'Bunker Unsealed · Inheritance Transferred' : 'Bunker Unsealed · Public Keys Exposed';
         }
         if (heartbeatTag) {
           heartbeatTag.className = isInheritance
@@ -4095,11 +4095,11 @@
       const graceSelect = document.getElementById('graceSelect');
       if (inactSelect) {
         inactSelect.disabled = false;
-        inactSelect.title = 'Changing check-in timer on an armed bunker starts a 72-hour security cooldown';
+        inactSelect.title = 'Changing check-in timer on a sealed Bunker starts a 72-hour security cooldown';
       }
       if (graceSelect) {
         graceSelect.disabled = false;
-        graceSelect.title = 'Changing grace buffer on an armed bunker starts a 72-hour security cooldown';
+        graceSelect.title = 'Changing grace buffer on a sealed Bunker starts a 72-hour security cooldown';
       }
 
       if (remainingSeconds <= 0) {
@@ -4442,7 +4442,7 @@
 
     function copyAddr(elemId) {
       if (!localStorage.getItem('aegis_signer_account')) {
-        showToast('Connect your wallet and save Backup + Family addresses above to unlock deposit addresses.', true);
+        showToast('Connect your wallet and save Emergency Panic + Inheritance addresses above to unlock deposit addresses.', true);
         openMultichainWalletModal();
         return;
       }
@@ -4454,13 +4454,13 @@
       const b = lastFetchedVaultInfo?.backup?.[chainId]?.trim();
       const h = lastFetchedVaultInfo?.heirs?.[chainId]?.trim();
       if (!b || !h) {
-        showToast(`⚠️ ${chainId.toUpperCase()} locked: Save both Backup (Emergency) & Family (Inheritance) addresses above first.`, true);
+        showToast(`⚠️ ${chainId.toUpperCase()} locked: Save both Emergency Panic & Inheritance addresses above first.`, true);
         switchTab('rescue');
         return;
       }
       const el = document.getElementById(elemId);
       const text = el ? (el.dataset.full || el.innerText) : '';
-      if (!text || text.includes('Bunker Unarmed') || text.includes('Bunker Doors Open') || text.includes('Save Backup') || text.includes('Epoch ') || text.includes('Heartbeat Expired') || text.includes('Connect wallet') || text.includes('Deriving') || text.includes('Egress Incomplete')) {
+      if (!text || text.includes('Bunker Unarmed') || text.includes('Bunker Doors Open') || text.includes('Save Panic') || text.includes('Save Backup') || text.includes('Epoch ') || text.includes('Heartbeat Expired') || text.includes('Connect wallet') || text.includes('Deriving') || text.includes('Egress Incomplete')) {
         showToast('No active deposit address available', true);
         return;
       }
@@ -4492,7 +4492,7 @@
           switchTab('rescue');
           destSection.scrollIntoView({ behavior: 'smooth' });
         }
-        showToast('Please enter your destination addresses below and click Save Policy to arm your bunker.', true);
+        showToast('Please enter your Emergency Panic & Inheritance addresses below and click Seal Bunker.', true);
         return;
       }
 
@@ -4520,7 +4520,7 @@
     // QR Code
     function openQr(title, address) {
       if (!localStorage.getItem('aegis_signer_account')) {
-        showToast('Connect your wallet and save Backup + Family addresses above to unlock QR codes.', true);
+        showToast('Connect your wallet and save Emergency Panic + Inheritance addresses above to unlock QR codes.', true);
         openMultichainWalletModal();
         return;
       }
@@ -4528,8 +4528,8 @@
         showToast('🛑 QR Code disabled: Bunker epoch is expired or closed.', true);
         return;
       }
-      if (!address || address.includes('Bunker Unarmed') || address.includes('Bunker Doors Open') || address.includes('Save Backup') || address.includes('Epoch ') || address.includes('Heartbeat Expired') || address.includes('Connect wallet') || address.includes('Deriving') || address.includes('Egress Incomplete')) {
-        showToast('⚠️ QR Code locked: Save both Backup (Emergency) and Family (Inheritance) addresses above first.', true);
+      if (!address || address.includes('Bunker Unarmed') || address.includes('Bunker Doors Open') || address.includes('Save Panic') || address.includes('Save Backup') || address.includes('Epoch ') || address.includes('Heartbeat Expired') || address.includes('Connect wallet') || address.includes('Deriving') || address.includes('Egress Incomplete')) {
+        showToast('⚠️ QR Code locked: Save both Emergency Panic and Inheritance addresses above first.', true);
         switchTab('rescue');
         return;
       }
@@ -4748,7 +4748,7 @@
           polBanner.classList.add('flex');
           let msgs = [];
           if (unallocated.length > 0) msgs.push(`Emergency Panic: missing backup for ${unallocated.join(', ')}`);
-          if (unallocatedHeirs.length > 0) msgs.push(`Family Inheritance: missing heir for ${unallocatedHeirs.join(', ')}`);
+          if (unallocatedHeirs.length > 0) msgs.push(`Automatic Inheritance: missing address for ${unallocatedHeirs.join(', ')}`);
           polText.innerText = `Unallocated assets detected: ${msgs.join(' · ')}. Save destination addresses to protect these assets!`;
         } else {
           polBanner.classList.add('hidden');
@@ -4789,7 +4789,7 @@
 
     function startAbortCountdown() {
       if (!localStorage.getItem('aegis_signer_account')) {
-        showToast('🛑 Connect wallet to arm or manage vault', true);
+        showToast('🛑 Connect wallet to seal or manage Bunker', true);
         return;
       }
 
@@ -5469,7 +5469,7 @@
           descBody.innerHTML = 'Transmitted as raw UTF-8 text inside Ethereum <code>Input Data (UTF-8)</code> and Solana <code>Instruction #2 (Memo Program v2)</code>. Readable directly on Etherscan &amp; Solscan without decryption (do not put raw seed phrases in Public mode).';
         }
         if (memoInput && !memoInput.value) {
-          memoInput.placeholder = 'e.g. Optional note for your family...';
+          memoInput.placeholder = 'Enter optional note for recipient...';
         }
       } else {
         if (e2eeBtn) e2eeBtn.className = 'px-2 py-0.5 rounded-full bg-nearGreen text-nearBlack transition cursor-pointer';
@@ -5481,7 +5481,7 @@
           descBody.innerHTML = 'Encrypted locally in your browser before touching NEAR RPC. Stored as <code>enc:x25519:...</code> or <code>enc:aes256:...</code> in EVM Calldata &amp; Solana SPL Memo; decryptable offline only by your heir. Switch to <strong>📄 Public Text</strong> to make raw words readable directly on Etherscan &amp; Solscan.';
         }
         if (memoInput && !memoInput.value && !(lastFetchedVaultInfo?.heir_memo?.startsWith('enc:'))) {
-          memoInput.placeholder = 'e.g. Optional note for your family...';
+          memoInput.placeholder = 'Enter optional note for recipient...';
         }
       }
     }
@@ -5586,7 +5586,7 @@
           badge.className = 'text-[#8E99AD] font-mono font-bold';
         }
         if (dot) dot.className = 'w-2 h-2 rounded-full bg-[#8E99AD]';
-        if (desc) desc.innerText = 'Connect your NEAR wallet above, enter your backup or family wallets, and seal your Bunker.';
+        if (desc) desc.innerText = 'Connect your NEAR wallet above, enter your Emergency Panic & Inheritance wallets, and seal your Bunker.';
         return;
       }
 
@@ -5672,7 +5672,7 @@
           badge.className = 'text-amber-300 font-mono font-bold';
         }
         if (dot) dot.className = 'w-2 h-2 rounded-full bg-amber-400';
-        if (desc) desc.innerText = 'Enter your backup or family wallets above and click Seal Bunker.';
+        if (desc) desc.innerText = 'Enter your Emergency Panic and Inheritance wallets above and click Seal Bunker.';
         return;
       }
 
@@ -5710,13 +5710,13 @@
       if (cooldownAlert) cooldownAlert.classList.add('hidden');
       const hasOnChainSaved = hasConfiguredDestinations(lastFetchedVaultInfo);
       if (badge) {
-        badge.innerText = hasOnChainSaved ? '🔒 Bunker Sealed & Armed (Public Keys Hidden)' : '🔓 Bunker Doors Open (Unsealed)';
+        badge.innerText = hasOnChainSaved ? '🔒 Bunker Sealed · Keys Hidden' : '🔓 Bunker Doors Open (Unsealed)';
         badge.className = hasOnChainSaved ? 'text-nearGreen font-mono font-bold' : 'text-amber-300 font-mono font-bold';
       }
       if (dot) dot.className = hasOnChainSaved ? 'w-2.5 h-2.5 rounded-full bg-nearGreen shadow-near-glow' : 'w-2.5 h-2.5 rounded-full bg-amber-400';
       if (desc) desc.innerText = hasOnChainSaved
-        ? 'Zero outgoing signatures made. Funds can only exit to your saved backup or family wallets.'
-        : 'Enter your backup or family wallets above and click Seal Bunker.';
+        ? 'Zero outgoing signatures made. Funds can only exit to your saved Emergency Panic or Inheritance wallets.'
+        : 'Enter your Emergency Panic and Inheritance wallets above and click Seal Bunker.';
     }
 
     function clearAllAddresses() {
@@ -5741,7 +5741,7 @@
         localStorage.removeItem('aegis_addresses_' + currentSigner);
       }
       checkUnallocatedFunds();
-      showToast('All address fields cleared. Enter new destinations to arm.');
+      showToast('All address fields cleared. Enter new destinations to seal Bunker.');
     }
 
     function toggleEditMode() {
