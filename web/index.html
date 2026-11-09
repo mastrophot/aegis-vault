@@ -1775,6 +1775,7 @@
       }
 
       lastFetchedVaultInfo = info;
+      syncAlertSettingsUI();
       const escrowEl = document.getElementById('gasEscrowBalanceText');
       if (escrowEl && info) {
         const rawEscrow = BigInt(info.gas_escrow_yocto || '0');
@@ -5136,11 +5137,26 @@
     }
 
     // Alert Settings & Real Zero-Metadata Telegram Push (@aegis_vault_bot)
+    // Security Guarantee: Zero Bot Token in client-side code. All Telegram polling and push
+    // dispatches are executed server-side 24/7 by the Autonomous Keeper (GitHub Actions Secrets).
     const AEGIS_TG_BOT_USERNAME = 'aegis_vault_bot';
-    const AEGIS_TG_KEY_PARTS = ['OTE1NTI5ODY5OTo=', 'QUFHYXpXWmZ1RjJWdEJpVk9odkp0ak9wclhNRDk0Snhhd2c='];
-    function getAegisTgEndpoint(method) {
-      const tk = atob(AEGIS_TG_KEY_PARTS[0]) + atob(AEGIS_TG_KEY_PARTS[1]);
-      return `https://api.telegram.org/bot${tk}/${method}`;
+
+    function isTelegramLinkedOnChain(info = lastFetchedVaultInfo) {
+      const signer = localStorage.getItem('aegis_signer_account');
+      if (!signer) return false;
+      if (info && info.alert_state) {
+        try {
+          const st = JSON.parse(info.alert_state);
+          if (st && st.tg_linked) {
+            localStorage.setItem('aegis_tg_linked_' + signer, '1');
+            return true;
+          }
+        } catch (_) {}
+      }
+      return (
+        localStorage.getItem('aegis_tg_linked_' + signer) === '1' ||
+        Boolean(localStorage.getItem('aegis_tg_chatid_' + signer))
+      );
     }
 
     async function computeAnonymousAlertTag(accountId) {
@@ -5178,7 +5194,10 @@
           window.location.href = `https://t.me/${AEGIS_TG_BOT_USERNAME}?start=${tag}`;
         }
       }
-      showToast('Press Start inside @aegis_vault_bot — waiting for confirmation...');
+      if (!lastFetchedVaultInfo) {
+        dispatchNearTransaction('request_telegram_test').catch(() => {});
+      }
+      showToast('Press Start inside @aegis_vault_bot — 24/7 Keeper will link & confirm automatically...');
 
       const btn = document.getElementById('connectTgBotBtn');
       if (btn) btn.innerText = 'Waiting for Start...';
@@ -5189,16 +5208,12 @@
       let attempts = 0;
       _tgConnectPollInterval = setInterval(async () => {
         attempts++;
-        const resolved = await resolveTelegramChatId(signer, '', true);
-        if (resolved && resolved.chatId) {
+        await fetchLiveContractState();
+        if (isTelegramLinkedOnChain(lastFetchedVaultInfo)) {
           clearInterval(_tgConnectPollInterval);
           _tgConnectPollInterval = null;
-          localStorage.setItem('aegis_tg_chatid_' + signer, resolved.chatId);
-          localStorage.setItem('aegis_tg_' + signer, resolved.chatId);
-          localStorage.setItem('aegis_tg_welcomed_' + signer, '1');
           syncAlertSettingsUI();
-          await dispatchTelegramZeroMetadataPush('test', resolved.chatId);
-          showToast('Telegram @aegis_vault_bot connected! Confirmation push delivered.');
+          showToast('Telegram @aegis_vault_bot connected! Confirmation push delivered by 24/7 Keeper.');
         } else if (attempts >= 24) {
           clearInterval(_tgConnectPollInterval);
           _tgConnectPollInterval = null;
@@ -5207,101 +5222,14 @@
       }, 2500);
     }
 
-    async function resolveTelegramChatId(signer, rawInput = '', requireExactTag = true) {
-      const clean = (rawInput || '').trim().replace(/^@+/, '');
-      if (/^-?\d{5,20}$/.test(clean)) {
-        if (signer) {
-          localStorage.setItem('aegis_tg_chatid_' + signer, clean);
-          localStorage.setItem('aegis_tg_' + signer, clean);
-        }
-        return { chatId: clean, username: clean };
-      }
-
-      const expectedTag = signer ? await computeAnonymousAlertTag(signer) : null;
-      try {
-        const res = await fetch(getAegisTgEndpoint('getUpdates') + '?limit=100');
-        const json = await res.json();
-        if (json && json.ok && Array.isArray(json.result)) {
-          const updates = json.result.slice().reverse();
-          // 1. Match strictly by anonymous SHA-256 /start tag for this wallet
-          for (const u of updates) {
-            const msg = u.message || u.edited_message || u.channel_post;
-            if (!msg || !msg.chat || !msg.chat.id) continue;
-            const text = (msg.text || '').trim();
-            const fromUser = (msg.from?.username || msg.chat?.username || '').trim();
-            if (expectedTag && text === `/start ${expectedTag}`) {
-              const cid = String(msg.chat.id);
-              if (signer) {
-                localStorage.setItem('aegis_tg_chatid_' + signer, cid);
-                localStorage.setItem('aegis_tg_' + signer, cid);
-              }
-              return { chatId: cid, username: fromUser || cid };
-            }
-          }
-          // 2. Fallback: if user already cached a verified chatId for this signer
-          if (signer && !requireExactTag) {
-            const cached = localStorage.getItem('aegis_tg_chatid_' + signer) || localStorage.getItem('aegis_tg_' + signer);
-            if (cached) return { chatId: cached, username: cached };
-          }
-        }
-      } catch (err) {
-        console.warn('Telegram getUpdates lookup failed:', err);
-      }
-      if (signer) {
-        const cached = localStorage.getItem('aegis_tg_chatid_' + signer) || localStorage.getItem('aegis_tg_' + signer);
-        if (cached) return { chatId: cached, username: cached };
-      }
-      return null;
+    async function dispatchTelegramZeroMetadataPush(_eventType) {
+      // Handled 24/7 server-side by the Autonomous Keeper (monitorAllVaultsLifecycle)
+      setTimeout(fetchLiveContractState, 1500);
+      return true;
     }
 
-    // Strict Zero-Metadata Messages (No addresses, no account IDs, no dates, no chain names, no tx hashes)
-    const ZERO_METADATA_ALERT_MESSAGES = {
-      test: '🛡 Aegis Bunker: Notification channel connected and active.',
-      reminder: '⏳ Aegis Bunker: Check-in window is nearing expiration (≤25% left). Perform a check-in to keep the bunker armed.',
-      grace: '⚠️ Aegis Bunker: Primary timer expired. Grace buffer is now active — check in immediately to cancel automatic inheritance.',
-      timelock: '🔐 Aegis Bunker: 72-hour security cooldown started for a policy or timer change. If you did not authorize this, open your bunker and cancel immediately.',
-      timelock_cancelled: '✅ Aegis Bunker: Pending 72-hour policy or timer change was cancelled.',
-      panic: '🚨 Aegis Bunker: Emergency evacuation completed.',
-      inheritance: '🔒 Aegis Bunker: Inheritance protocol completed.'
-    };
-
-    async function dispatchTelegramZeroMetadataPush(eventType, explicitChatId = null) {
-      const text = ZERO_METADATA_ALERT_MESSAGES[eventType];
-      if (!text) return false;
-      const signer = localStorage.getItem('aegis_signer_account') || '';
-      let chatId = explicitChatId || (signer ? (localStorage.getItem('aegis_tg_chatid_' + signer) || localStorage.getItem('aegis_tg_' + signer)) : null);
-      if (!chatId) {
-        const resolved = await resolveTelegramChatId(signer, '', true);
-        if (resolved && resolved.chatId) chatId = resolved.chatId;
-      }
-      if (!chatId) return false;
-      try {
-        const res = await fetch(getAegisTgEndpoint('sendMessage'), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: chatId,
-            text,
-            disable_web_page_preview: true
-          })
-        });
-        const data = await res.json();
-        return Boolean(data && data.ok);
-      } catch (err) {
-        console.warn('Telegram push error:', err);
-        return false;
-      }
-    }
-
-    function checkAndDispatchStatusAlerts(eventType, dedupScope) {
-      const signer = localStorage.getItem('aegis_signer_account');
-      if (!signer) return;
-      const hasTg = localStorage.getItem('aegis_tg_chatid_' + signer) || localStorage.getItem('aegis_tg_' + signer);
-      if (!hasTg) return;
-      const dedupKey = `aegis_tg_sent_${signer}_${eventType}_${dedupScope}`;
-      if (localStorage.getItem(dedupKey)) return;
-      localStorage.setItem(dedupKey, '1');
-      dispatchTelegramZeroMetadataPush(eventType);
+    function checkAndDispatchStatusAlerts(_eventType, _dedupScope) {
+      // Handled 24/7 server-side by the Autonomous Keeper (monitorAllVaultsLifecycle)
     }
 
     function syncAlertSettingsUI() {
@@ -5339,9 +5267,7 @@
       // Pre-warm anonymous alert tag in localStorage so button click opens Telegram synchronously
       computeAnonymousAlertTag(signer).catch(() => {});
 
-      const savedChatId = localStorage.getItem('aegis_tg_chatid_' + signer) || localStorage.getItem('aegis_tg_' + signer) || '';
-      if (savedChatId) {
-        localStorage.setItem('aegis_tg_chatid_' + signer, savedChatId);
+      if (isTelegramLinkedOnChain(lastFetchedVaultInfo)) {
         if (connBadge) {
           connBadge.innerText = 'Connected ✓';
           connBadge.className = 'text-xs font-sans font-semibold text-nearGreen bg-nearGreenMuted border border-nearGreen/40 px-2.5 py-0.5 rounded-lg whitespace-nowrap';
@@ -5359,25 +5285,6 @@
           connectBtn.innerText = 'Connect @aegis_vault_bot ↗';
         }
         setHeaderTgState(false);
-        // Silently check once if user already linked @aegis_vault_bot via /start tag
-        resolveTelegramChatId(signer, '', true).then(res => {
-          if (res && res.chatId) {
-            localStorage.setItem('aegis_tg_chatid_' + signer, res.chatId);
-            localStorage.setItem('aegis_tg_' + signer, res.chatId);
-            if (connBadge) {
-              connBadge.innerText = 'Connected ✓';
-              connBadge.className = 'text-xs font-sans font-semibold text-nearGreen bg-nearGreenMuted border border-nearGreen/40 px-2.5 py-0.5 rounded-lg whitespace-nowrap';
-            }
-            if (connectBtn) {
-              connectBtn.innerText = 'Reconnect @aegis_vault_bot ↗';
-            }
-            setHeaderTgState(true);
-            if (!localStorage.getItem('aegis_tg_welcomed_' + signer)) {
-              localStorage.setItem('aegis_tg_welcomed_' + signer, '1');
-              dispatchTelegramZeroMetadataPush('test', res.chatId);
-            }
-          }
-        });
       }
     }
 
@@ -5392,25 +5299,19 @@
         openMultichainWalletModal();
         return;
       }
-      const btn = document.getElementById('sendTestAlertBtn');
-      if (btn) btn.innerHTML = '<span>Sending...</span>';
-
-      const resolved = await resolveTelegramChatId(signer, '', true);
-      if (!resolved || !resolved.chatId) {
-        if (btn) btn.innerHTML = '<span>Send Test Ping</span>';
+      if (!isTelegramLinkedOnChain(lastFetchedVaultInfo)) {
         showToast('Click "Connect @aegis_vault_bot ↗" and press Start in Telegram first!', true);
         return;
       }
+      const btn = document.getElementById('sendTestAlertBtn');
+      if (btn) btn.innerHTML = '<span>Sending...</span>';
 
-      localStorage.setItem('aegis_tg_chatid_' + signer, resolved.chatId);
-      localStorage.setItem('aegis_tg_' + signer, resolved.chatId);
-      const ok = await dispatchTelegramZeroMetadataPush('test', resolved.chatId);
+      const res = await dispatchNearTransaction('request_telegram_test').catch(() => null);
       if (btn) btn.innerHTML = '<span>Send Test Ping</span>';
-      syncAlertSettingsUI();
-      if (ok) {
-        showToast('Real Telegram push delivered via @aegis_vault_bot!');
+      if (res !== null) {
+        showToast('Test alert queued on-chain — 24/7 Keeper delivering via @aegis_vault_bot!');
       } else {
-        showToast('Could not deliver to Telegram — make sure @aegis_vault_bot is not blocked', true);
+        showToast('Could not queue test alert on-chain', true);
       }
     }
 

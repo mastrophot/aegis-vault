@@ -196,6 +196,9 @@ pub struct VaultInfo {
     pub near_deposit_yocto: String,
     pub is_epoch_swept: bool,
     pub last_sweep_report: Option<String>,
+    pub alert_state: Option<String>,
+    pub last_cancelled_timelock_ns: Option<u64>,
+    pub last_test_alert_req_ns: Option<u64>,
 }
 
 #[derive(BorshSerialize)]
@@ -344,6 +347,7 @@ impl LastKeyVault {
             "Cannot sync activity: vault is not Active or Claiming"
         );
         let now = env::block_timestamp();
+        Self::internal_sync_elapsed_policy(&vault_owner, vault, now);
         require!(
             observed_nonce.0 <= now.saturating_add(60_000_000_000),
             "Security Guard: observed_nonce cannot be in the future"
@@ -876,10 +880,54 @@ impl LastKeyVault {
         Self::internal_capture_signer_pubkey(&caller);
         let vault = self.vaults.get_mut(&caller).expect("No vault found for account");
         require!(vault.pending_policy.is_some(), "No pending policy to cancel");
+        let now = env::block_timestamp();
         vault.pending_policy = None;
         Self::internal_clear_pending_intervals(&caller);
-        vault.last_ping_ns = env::block_timestamp();
+        let cancel_key = format!("cancel_tl:{}", caller);
+        env::storage_write(cancel_key.as_bytes(), &now.to_le_bytes());
+        vault.last_ping_ns = now;
         env::log_str(&format!("POLICY_CANCELLED: Pending policy/timers cancelled for {}", caller));
+    }
+
+    /// Requests an asynchronous Telegram test push from the 24/7 Keeper without exposing any bot token client-side.
+    pub fn request_telegram_test(&mut self) {
+        let caller = env::predecessor_account_id();
+        Self::internal_capture_signer_pubkey(&caller);
+        let now = env::block_timestamp();
+        if !self.vaults.contains_key(&caller) {
+            self.vaults.insert(caller.clone(), UserVault::new_unconfigured());
+        }
+        self.internal_register_account(&caller);
+        let key = format!("test_tg:{}", caller);
+        env::storage_write(key.as_bytes(), &now.to_le_bytes());
+        if let Some(vault) = self.vaults.get_mut(&caller) {
+            if vault.state == VaultState::Active || matches!(vault.state, VaultState::Claiming { .. }) {
+                vault.last_ping_ns = now;
+            }
+        }
+        env::log_str(&format!("TELEGRAM_TEST_REQUESTED: Queued test alert for {}", caller));
+    }
+
+    /// Records zero-metadata Telegram alert watermarks on-chain (`alert:{vault_owner}`) so the 24/7 Keeper
+    /// never duplicates notifications across restarts and the UI knows when Telegram is linked.
+    pub fn record_alert_state(&mut self, vault_owner: AccountId, alert_state_json: String) {
+        let caller = env::predecessor_account_id();
+        let is_authorized = caller == env::current_account_id()
+            || caller == vault_owner
+            || self
+                .vaults
+                .get(&vault_owner)
+                .and_then(|v| v.authorized_relayer.as_ref())
+                .map_or(false, |r| r == &caller)
+            || self.default_relayer.as_ref().map_or(false, |r| r == &caller);
+        require!(is_authorized, "Unauthorized caller for record_alert_state");
+        require!(
+            alert_state_json.len() <= 1024,
+            "Alert state JSON exceeds 1024 bytes"
+        );
+        let key = format!("alert:{}", vault_owner);
+        env::storage_write(key.as_bytes(), alert_state_json.as_bytes());
+        env::log_str(&format!("ALERT_STATE_SYNCED: Vault={}", vault_owner));
     }
 
     /// Update heartbeat interval and challenge (grace) period for caller's bunker.
@@ -1382,6 +1430,12 @@ impl LastKeyVault {
                 near_deposit_yocto: Self::internal_get_near_deposit(&target).to_string(),
                 is_epoch_swept: Self::internal_is_epoch_swept(&target, vault.epoch),
                 last_sweep_report: Self::internal_get_sweep_telemetry(&target, vault.epoch),
+                alert_state: env::storage_read(format!("alert:{}", target).as_bytes())
+                    .and_then(|b| String::from_utf8(b).ok()),
+                last_cancelled_timelock_ns: env::storage_read(format!("cancel_tl:{}", target).as_bytes())
+                    .and_then(|b| b.try_into().ok().map(u64::from_le_bytes)),
+                last_test_alert_req_ns: env::storage_read(format!("test_tg:{}", target).as_bytes())
+                    .and_then(|b| b.try_into().ok().map(u64::from_le_bytes)),
             }
         })
     }

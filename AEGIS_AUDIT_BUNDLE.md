@@ -251,6 +251,9 @@ pub struct VaultInfo {
     pub near_deposit_yocto: String,
     pub is_epoch_swept: bool,
     pub last_sweep_report: Option<String>,
+    pub alert_state: Option<String>,
+    pub last_cancelled_timelock_ns: Option<u64>,
+    pub last_test_alert_req_ns: Option<u64>,
 }
 
 #[derive(BorshSerialize)]
@@ -399,6 +402,7 @@ impl LastKeyVault {
             "Cannot sync activity: vault is not Active or Claiming"
         );
         let now = env::block_timestamp();
+        Self::internal_sync_elapsed_policy(&vault_owner, vault, now);
         require!(
             observed_nonce.0 <= now.saturating_add(60_000_000_000),
             "Security Guard: observed_nonce cannot be in the future"
@@ -931,10 +935,54 @@ impl LastKeyVault {
         Self::internal_capture_signer_pubkey(&caller);
         let vault = self.vaults.get_mut(&caller).expect("No vault found for account");
         require!(vault.pending_policy.is_some(), "No pending policy to cancel");
+        let now = env::block_timestamp();
         vault.pending_policy = None;
         Self::internal_clear_pending_intervals(&caller);
-        vault.last_ping_ns = env::block_timestamp();
+        let cancel_key = format!("cancel_tl:{}", caller);
+        env::storage_write(cancel_key.as_bytes(), &now.to_le_bytes());
+        vault.last_ping_ns = now;
         env::log_str(&format!("POLICY_CANCELLED: Pending policy/timers cancelled for {}", caller));
+    }
+
+    /// Requests an asynchronous Telegram test push from the 24/7 Keeper without exposing any bot token client-side.
+    pub fn request_telegram_test(&mut self) {
+        let caller = env::predecessor_account_id();
+        Self::internal_capture_signer_pubkey(&caller);
+        let now = env::block_timestamp();
+        if !self.vaults.contains_key(&caller) {
+            self.vaults.insert(caller.clone(), UserVault::new_unconfigured());
+        }
+        self.internal_register_account(&caller);
+        let key = format!("test_tg:{}", caller);
+        env::storage_write(key.as_bytes(), &now.to_le_bytes());
+        if let Some(vault) = self.vaults.get_mut(&caller) {
+            if vault.state == VaultState::Active || matches!(vault.state, VaultState::Claiming { .. }) {
+                vault.last_ping_ns = now;
+            }
+        }
+        env::log_str(&format!("TELEGRAM_TEST_REQUESTED: Queued test alert for {}", caller));
+    }
+
+    /// Records zero-metadata Telegram alert watermarks on-chain (`alert:{vault_owner}`) so the 24/7 Keeper
+    /// never duplicates notifications across restarts and the UI knows when Telegram is linked.
+    pub fn record_alert_state(&mut self, vault_owner: AccountId, alert_state_json: String) {
+        let caller = env::predecessor_account_id();
+        let is_authorized = caller == env::current_account_id()
+            || caller == vault_owner
+            || self
+                .vaults
+                .get(&vault_owner)
+                .and_then(|v| v.authorized_relayer.as_ref())
+                .map_or(false, |r| r == &caller)
+            || self.default_relayer.as_ref().map_or(false, |r| r == &caller);
+        require!(is_authorized, "Unauthorized caller for record_alert_state");
+        require!(
+            alert_state_json.len() <= 1024,
+            "Alert state JSON exceeds 1024 bytes"
+        );
+        let key = format!("alert:{}", vault_owner);
+        env::storage_write(key.as_bytes(), alert_state_json.as_bytes());
+        env::log_str(&format!("ALERT_STATE_SYNCED: Vault={}", vault_owner));
     }
 
     /// Update heartbeat interval and challenge (grace) period for caller's bunker.
@@ -1437,6 +1485,12 @@ impl LastKeyVault {
                 near_deposit_yocto: Self::internal_get_near_deposit(&target).to_string(),
                 is_epoch_swept: Self::internal_is_epoch_swept(&target, vault.epoch),
                 last_sweep_report: Self::internal_get_sweep_telemetry(&target, vault.epoch),
+                alert_state: env::storage_read(format!("alert:{}", target).as_bytes())
+                    .and_then(|b| String::from_utf8(b).ok()),
+                last_cancelled_timelock_ns: env::storage_read(format!("cancel_tl:{}", target).as_bytes())
+                    .and_then(|b| b.try_into().ok().map(u64::from_le_bytes)),
+                last_test_alert_req_ns: env::storage_read(format!("test_tg:{}", target).as_bytes())
+                    .and_then(|b| b.try_into().ok().map(u64::from_le_bytes)),
             }
         })
     }
@@ -3985,6 +4039,11 @@ class AegisRelayerService {
       (typeof __dirname !== 'undefined' && path && typeof path.resolve === 'function'
         ? path.resolve(__dirname, `../.credentials/${this.relayerAccountId}.json`)
         : '');
+    this.telegramCredPath =
+      config.telegramCredPath ||
+      (typeof __dirname !== 'undefined' && path && typeof path.resolve === 'function'
+        ? path.resolve(__dirname, '../.credentials/telegram-bot.json')
+        : '');
     this.telemetryPath =
       config.telemetryPath ||
       (typeof __dirname !== 'undefined' && path && typeof path.resolve === 'function'
@@ -5077,63 +5136,82 @@ class AegisRelayerService {
     return telemetryRecord;
   }
 
-  async dispatchZeroMetadataTelegramAlert(vaultOwner, eventOrState, scopeOrEpoch = 0) {
+  getTelegramBotToken() {
+    if (this._cachedTgBotToken) return this._cachedTgBotToken;
+    let tk =
+      (typeof process !== 'undefined' && process.env && (process.env.TELEGRAM_BOT_TOKEN || '').trim()) ||
+      '';
+    if (
+      !tk &&
+      this.telegramCredPath &&
+      fs &&
+      typeof fs.existsSync === 'function' &&
+      fs.existsSync(this.telegramCredPath)
+    ) {
+      try {
+        const parsed = JSON.parse(fs.readFileSync(this.telegramCredPath, 'utf8'));
+        tk = String(parsed.botToken || parsed.token || '').trim();
+      } catch (_) {}
+    }
+    this._cachedTgBotToken = tk;
+    return tk;
+  }
+
+  _encryptChatId(chatIdStr, tk, vaultOwner) {
+    const plain = Buffer.from(String(chatIdStr), 'utf8');
+    const maskHex = ethers
+      .sha256(
+        ethers.toUtf8Bytes(`aegis_cid_mask_v1:${tk}:${String(vaultOwner).trim().toLowerCase()}`)
+      )
+      .slice(2);
+    const mask = Buffer.from(maskHex, 'hex');
+    const out = Buffer.alloc(plain.length);
+    for (let i = 0; i < plain.length; i++) {
+      out[i] = plain[i] ^ mask[i % mask.length];
+    }
+    return out.toString('hex');
+  }
+
+  _decryptChatId(cidEncHex, tk, vaultOwner) {
     try {
-      const tk =
-        (typeof process !== 'undefined' && process.env && process.env.TELEGRAM_BOT_TOKEN) ||
-        Buffer.from('OTE1NTI5ODY5OTo=', 'base64').toString('utf8') +
-          Buffer.from('QUFHYXpXWmZ1RjJWdEJpVk9odkp0ak9wclhNRDk0Snhhd2c=', 'base64').toString('utf8');
-      if (!tk || !vaultOwner) return false;
-
-      const raw = String(eventOrState || '').toLowerCase();
-      let evtKey = raw;
-      if (raw.includes('inherit')) evtKey = 'inheritance';
-      else if (raw.includes('evac') || raw === 'panic') evtKey = 'panic';
-
-      const messages = {
-        test: '🛡 Aegis Bunker: Notification channel connected and active.',
-        reminder: '⏳ Aegis Bunker: Check-in window is nearing expiration (≤25% left). Perform a check-in to keep the bunker armed.',
-        grace: '⚠️ Aegis Bunker: Primary timer expired. Grace buffer is now active — check in immediately to cancel automatic inheritance.',
-        timelock: '🔐 Aegis Bunker: 72-hour security cooldown started for a policy or timer change. If you did not authorize this, open your bunker and cancel immediately.',
-        timelock_cancelled: '✅ Aegis Bunker: Pending 72-hour policy or timer change was cancelled.',
-        panic: '🚨 Aegis Bunker: Emergency evacuation completed.',
-        inheritance: '🔒 Aegis Bunker: Inheritance protocol completed.'
-      };
-      const text = messages[evtKey];
-      if (!text) return false;
-
-      const dedupKey = `aegis_tg_sent_${vaultOwner}_${evtKey}_${scopeOrEpoch}`;
-      if (!this._sentTelegramAlerts) this._sentTelegramAlerts = new Set();
-      if (this._sentTelegramAlerts.has(dedupKey)) return false;
-      if (typeof localStorage !== 'undefined') {
-        if (localStorage.getItem(dedupKey)) return false;
-        localStorage.setItem(dedupKey, '1');
+      if (!cidEncHex || typeof cidEncHex !== 'string') return null;
+      const enc = Buffer.from(cidEncHex, 'hex');
+      const maskHex = ethers
+        .sha256(
+          ethers.toUtf8Bytes(`aegis_cid_mask_v1:${tk}:${String(vaultOwner).trim().toLowerCase()}`)
+        )
+        .slice(2);
+      const mask = Buffer.from(maskHex, 'hex');
+      const out = Buffer.alloc(enc.length);
+      for (let i = 0; i < enc.length; i++) {
+        out[i] = enc[i] ^ mask[i % mask.length];
       }
-      this._sentTelegramAlerts.add(dedupKey);
+      const str = out.toString('utf8').trim();
+      return /^-?\d+$/.test(str) ? str : null;
+    } catch (_) {
+      return null;
+    }
+  }
 
-      const tagHex = ethers
-        .sha256(ethers.toUtf8Bytes('aegis_alert_v1:' + String(vaultOwner).trim().toLowerCase()))
-        .slice(2, 34);
-      const expectedTag = `v1_${tagHex}`;
+  _getTelegramAlertMessages() {
+    return {
+      test: '🛡 Aegis Bunker: Notification channel connected and active.',
+      reminder:
+        '⏳ Aegis Bunker: Check-in window is nearing expiration (≤25% left). Perform a check-in to keep the bunker armed.',
+      grace:
+        '⚠️ Aegis Bunker: Primary timer expired. Grace buffer is now active — check in immediately to cancel automatic inheritance.',
+      timelock:
+        '🔐 Aegis Bunker: 72-hour security cooldown started for a policy or timer change. If you did not authorize this, open your bunker and cancel immediately.',
+      timelock_cancelled: '✅ Aegis Bunker: Pending 72-hour policy or timer change was cancelled.',
+      panic: '🚨 Aegis Bunker: Emergency evacuation completed.',
+      inheritance: '🔒 Aegis Bunker: Inheritance protocol completed.'
+    };
+  }
 
-      let chatId = null;
-      const updRes = await fetch(`https://api.telegram.org/bot${tk}/getUpdates?limit=100`);
-      const updJson = await updRes.json();
-      if (updJson && updJson.ok && Array.isArray(updJson.result)) {
-        for (let i = updJson.result.length - 1; i >= 0; i--) {
-          const msg = updJson.result[i].message;
-          if (msg && msg.chat && msg.chat.id && (msg.text || '').trim() === `/start ${expectedTag}`) {
-            chatId = String(msg.chat.id);
-            break;
-          }
-        }
-      }
-      if (!chatId && typeof localStorage !== 'undefined') {
-        chatId = localStorage.getItem(`aegis_tg_chatid_${vaultOwner}`) || localStorage.getItem(`aegis_tg_${vaultOwner}`);
-      }
-      if (!chatId) return false;
-
-      await fetch(`https://api.telegram.org/bot${tk}/sendMessage`, {
+  async _sendTelegramText(tk, chatId, text) {
+    if (!tk || !chatId || !text) return false;
+    try {
+      const res = await fetch(`https://api.telegram.org/bot${tk}/sendMessage`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -5142,9 +5220,324 @@ class AegisRelayerService {
           disable_web_page_preview: true
         })
       });
-      return true;
+      return res.ok;
     } catch (_) {
       return false;
+    }
+  }
+
+  async dispatchZeroMetadataTelegramAlert(vaultOwner, eventOrState, scopeOrEpoch = 0) {
+    try {
+      const tk = this.getTelegramBotToken();
+      if (!tk || !vaultOwner) return false;
+
+      const raw = String(eventOrState || '').toLowerCase();
+      let evtKey = raw;
+      if (raw.includes('inherit')) evtKey = 'inheritance';
+      else if (raw.includes('evac') || raw === 'panic') evtKey = 'panic';
+
+      const messages = this._getTelegramAlertMessages();
+      const text = messages[evtKey];
+      if (!text) return false;
+
+      const dedupKey = `aegis_tg_sent_${vaultOwner}_${evtKey}_${scopeOrEpoch}`;
+      if (!this._sentTelegramAlerts) this._sentTelegramAlerts = new Set();
+      if (this._sentTelegramAlerts.has(dedupKey)) return false;
+
+      const vInfo = await this.getVaultInfo(vaultOwner).catch(() => null);
+      let alertState = {};
+      if (vInfo && vInfo.alert_state) {
+        try {
+          alertState = JSON.parse(vInfo.alert_state) || {};
+        } catch (_) {}
+      }
+      if (evtKey === 'panic' && alertState.panic_ep === scopeOrEpoch) return false;
+      if (evtKey === 'inheritance' && alertState.inh_ep === scopeOrEpoch) return false;
+
+      const tagHex = ethers
+        .sha256(ethers.toUtf8Bytes('aegis_alert_v1:' + String(vaultOwner).trim().toLowerCase()))
+        .slice(2, 34);
+      const expectedTag = `v1_${tagHex}`;
+
+      let chatId = this._decryptChatId(alertState.cid_enc, tk, vaultOwner);
+      if (!chatId) {
+        const updRes = await fetch(`https://api.telegram.org/bot${tk}/getUpdates?limit=100`);
+        const updJson = await updRes.json();
+        if (updJson && updJson.ok && Array.isArray(updJson.result)) {
+          for (let i = updJson.result.length - 1; i >= 0; i--) {
+            const msg = updJson.result[i].message;
+            if (msg && msg.chat && msg.chat.id && (msg.text || '').trim() === `/start ${expectedTag}`) {
+              chatId = String(msg.chat.id);
+              alertState.cid_enc = this._encryptChatId(chatId, tk, vaultOwner);
+              alertState.tg_linked = true;
+              break;
+            }
+          }
+        }
+      }
+      if (!chatId) return false;
+
+      this._sentTelegramAlerts.add(dedupKey);
+      const sent = await this._sendTelegramText(tk, chatId, text);
+      if (sent && this.hasSignerKey) {
+        if (evtKey === 'panic') alertState.panic_ep = scopeOrEpoch;
+        if (evtKey === 'inheritance') alertState.inh_ep = scopeOrEpoch;
+        await this.callContract(
+          'record_alert_state',
+          {
+            vault_owner: vaultOwner,
+            alert_state_json: JSON.stringify(alertState)
+          },
+          '30000000000000',
+          '0'
+        ).catch(() => {});
+      }
+      return sent;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /**
+   * Autonomous 24/7 Keeper Lifecycle Monitor (works with browser tab CLOSED or OPEN):
+   * 1. Syncs outgoing wallet transactions (`sync_owner_activity`) to reset heartbeat timer on any owner tx
+   * 2. Promotes elapsed 72-hour timelock policies (`apply_policy`)
+   * 3. Links Telegram (`/start v1_<tag>`) and dispatches all 7 alerts (`test`, `timelock`, `timelock_cancelled`,
+   *    `reminder` at <=25%, `grace` at 0s, `panic`, `inheritance`) with on-chain deduplication (`record_alert_state`)
+   */
+  async monitorAllVaultsLifecycle() {
+    try {
+      const tk = this.getTelegramBotToken();
+      const tagMap = new Map();
+      if (tk) {
+        try {
+          const updRes = await fetch(`https://api.telegram.org/bot${tk}/getUpdates?limit=100`);
+          const updJson = await updRes.json();
+          if (updJson && updJson.ok && Array.isArray(updJson.result)) {
+            for (const item of updJson.result) {
+              const msg = item && item.message;
+              const txt = msg && msg.text ? msg.text.trim() : '';
+              if (msg && msg.chat && msg.chat.id && txt.startsWith('/start v1_')) {
+                const tag = txt.slice('/start '.length).trim();
+                tagMap.set(tag, {
+                  chatId: String(msg.chat.id),
+                  updateId: String(item.update_id)
+                });
+              }
+            }
+          }
+        } catch (_) {}
+      }
+
+      const accounts = await this.getRegisteredAccounts();
+      if (!accounts || accounts.length === 0) return;
+
+      if (!this._ownerKeyNonceMap) this._ownerKeyNonceMap = new Map();
+      if (!this._dormantAccountsCache) this._dormantAccountsCache = new Map();
+      const messages = this._getTelegramAlertMessages();
+      const nowMs = Date.now();
+
+      for (const acc of accounts) {
+        const tagHex = ethers
+          .sha256(ethers.toUtf8Bytes('aegis_alert_v1:' + String(acc).trim().toLowerCase()))
+          .slice(2, 34);
+        const expectedTag = `v1_${tagHex}`;
+        const tagEntry = tagMap.get(expectedTag);
+
+        const lastDormantCheck = this._dormantAccountsCache.get(acc) || 0;
+        if (!tagEntry && lastDormantCheck > 0 && nowMs - lastDormantCheck < 15000) {
+          continue;
+        }
+
+        const v = await this.getVaultInfo(acc).catch(() => null);
+        if (!v) continue;
+
+        const state = typeof v.state === 'string' ? v.state : Object.keys(v.state || {})[0];
+        let alertState = {};
+        const hadExistingAlertState = Boolean(v.alert_state);
+        if (v.alert_state) {
+          try {
+            alertState = JSON.parse(v.alert_state) || {};
+          } catch (_) {}
+        }
+        let alertDirty = false;
+
+        // Mark dormant if Unconfigured or already-swept Evacuated/Inheritance without pending actions
+        if (
+          state === 'Unconfigured' ||
+          ((state === 'Evacuated' || state === 'Inheritance') && v.is_epoch_swept)
+        ) {
+          this._dormantAccountsCache.set(acc, nowMs);
+        } else {
+          this._dormantAccountsCache.delete(acc);
+        }
+
+        // 1. Autonomous Wallet Transaction Activity Reset (`sync_owner_activity`)
+        if (state === 'Active' || state === 'Claiming') {
+          try {
+            const akList = await this.nearRpc('query', {
+              request_type: 'view_access_key_list',
+              finality: 'optimistic',
+              account_id: acc
+            });
+            const nowNsBig = BigInt(v.current_time_ns || BigInt(Date.now()) * 1000000n);
+            const maxAllowedNonce = nowNsBig + 60000000000n;
+            let maxNonce = 0n;
+            if (akList && Array.isArray(akList.keys)) {
+              for (const k of akList.keys) {
+                const n = BigInt(k?.access_key?.nonce || 0);
+                if (n <= maxAllowedNonce && n > maxNonce) maxNonce = n;
+              }
+            }
+            const curPingNs = BigInt(v.last_ping_ns || 0);
+            const prevTrack = this._ownerKeyNonceMap.get(acc);
+            if (!prevTrack) {
+              this._ownerKeyNonceMap.set(acc, { maxNonce, lastPingNs: curPingNs });
+            } else if (maxNonce > prevTrack.maxNonce) {
+              if (curPingNs <= prevTrack.lastPingNs && this.hasSignerKey) {
+                await this.callContract(
+                  'sync_owner_activity',
+                  { vault_owner: acc, observed_nonce: maxNonce.toString() },
+                  '30000000000000',
+                  '0'
+                );
+                console.log(
+                  `⚡ [Autonomous Activity Sync] Reset timer for ${acc} via outgoing wallet tx (nonce ${maxNonce.toString()})`
+                );
+                v.last_ping_ns = v.current_time_ns;
+                this._ownerKeyNonceMap.set(acc, {
+                  maxNonce,
+                  lastPingNs: BigInt(v.current_time_ns || curPingNs)
+                });
+              } else {
+                this._ownerKeyNonceMap.set(acc, { maxNonce, lastPingNs: curPingNs });
+              }
+            } else if (curPingNs > prevTrack.lastPingNs) {
+              this._ownerKeyNonceMap.set(acc, { maxNonce, lastPingNs: curPingNs });
+            }
+          } catch (_) {}
+        }
+
+        // 2. Autonomous 72-Hour Cooldown Promotion (`apply_policy`)
+        if (
+          alertState.timelock_eff &&
+          alertState.timelock_applied !== alertState.timelock_eff &&
+          !v.pending_policy &&
+          BigInt(v.current_time_ns || 0) >= BigInt(alertState.timelock_eff) &&
+          this.hasSignerKey
+        ) {
+          try {
+            await this.callContract('apply_policy', { account_id: acc }, '30000000000000', '0');
+            console.log(`🔓 [Autonomous Cooldown] Promoted elapsed 72h policy on-chain for ${acc}`);
+          } catch (_) {}
+          alertState.timelock_applied = alertState.timelock_eff;
+          alertDirty = true;
+        }
+
+        // 3. Autonomous Telegram Linking & All 7 Alerts
+        if (tk) {
+          let chatId = this._decryptChatId(alertState.cid_enc, tk, acc);
+          if (tagEntry) {
+            const newCidEnc = this._encryptChatId(tagEntry.chatId, tk, acc);
+            chatId = tagEntry.chatId;
+            if (alertState.cid_enc !== newCidEnc || alertState.last_start_uid !== tagEntry.updateId) {
+              await this._sendTelegramText(tk, chatId, messages.test);
+              alertState.tg_linked = true;
+              alertState.cid_enc = newCidEnc;
+              alertState.last_start_uid = tagEntry.updateId;
+              if (!hadExistingAlertState) {
+                if (v.last_cancelled_timelock_ns) {
+                  alertState.cancelled_tl = String(v.last_cancelled_timelock_ns);
+                }
+                if (v.is_epoch_swept && state === 'Evacuated') alertState.panic_ep = v.epoch;
+                if (v.is_epoch_swept && state === 'Inheritance') alertState.inh_ep = v.epoch;
+              }
+              alertDirty = true;
+              console.log(`📲 [Telegram Keeper] Linked Telegram alerts for ${acc}`);
+            }
+          }
+
+          if (chatId) {
+            // (a) Explicit Test Alert request (`request_telegram_test`)
+            if (
+              v.last_test_alert_req_ns &&
+              String(v.last_test_alert_req_ns) !== alertState.last_test_req
+            ) {
+              await this._sendTelegramText(tk, chatId, messages.test);
+              alertState.last_test_req = String(v.last_test_alert_req_ns);
+              alertDirty = true;
+              console.log(`📲 [Telegram Keeper] Sent requested test alert for ${acc}`);
+            }
+
+            // (b) 72h Cooldown Started (`timelock`)
+            if (v.pending_policy && v.pending_policy.effective_at_ns) {
+              const eff = String(v.pending_policy.effective_at_ns);
+              if (alertState.timelock !== eff) {
+                await this._sendTelegramText(tk, chatId, messages.timelock);
+                alertState.timelock = eff;
+                alertState.timelock_eff = eff;
+                alertDirty = true;
+                console.log(`📲 [Telegram Keeper] Sent 72h timelock alert for ${acc}`);
+              }
+            }
+
+            // (c) 72h Cooldown Cancelled (`timelock_cancelled`)
+            if (v.last_cancelled_timelock_ns) {
+              const canc = String(v.last_cancelled_timelock_ns);
+              if (alertState.cancelled_tl !== canc) {
+                await this._sendTelegramText(tk, chatId, messages.timelock_cancelled);
+                alertState.cancelled_tl = canc;
+                alertDirty = true;
+                console.log(`📲 [Telegram Keeper] Sent timelock_cancelled alert for ${acc}`);
+              }
+            }
+
+            // (d) Check-in Reminder (<=25%) & (e) Grace Buffer Active (0s)
+            if (state === 'Active' || state === 'Claiming') {
+              const nowNs = Number(v.current_time_ns || Date.now() * 1e6);
+              const lastPingNs = Number(v.last_ping_ns || nowNs);
+              const hbNs = Number(v.heartbeat_interval_ns || 0);
+              const cpNs = Number(v.challenge_period_ns || 0);
+              const elapsedNs = Math.max(0, nowNs - lastPingNs);
+              const remHbNs = hbNs - elapsedNs;
+              const remTotalNs = hbNs + cpNs - elapsedNs;
+              const pingScope = String(v.last_ping_ns);
+
+              if (hbNs > 0 && remHbNs > 0 && remHbNs <= hbNs * 0.25) {
+                if (alertState.reminder !== pingScope) {
+                  await this._sendTelegramText(tk, chatId, messages.reminder);
+                  alertState.reminder = pingScope;
+                  alertDirty = true;
+                  console.log(`📲 [Telegram Keeper] Sent <=25% check-in reminder for ${acc}`);
+                }
+              } else if (hbNs > 0 && remHbNs <= 0 && remTotalNs > 0) {
+                if (alertState.grace !== pingScope) {
+                  await this._sendTelegramText(tk, chatId, messages.grace);
+                  alertState.grace = pingScope;
+                  alertDirty = true;
+                  console.log(`📲 [Telegram Keeper] Sent grace buffer alert for ${acc}`);
+                }
+              }
+            }
+          }
+        }
+
+        if (alertDirty && this.hasSignerKey) {
+          await this.callContract(
+            'record_alert_state',
+            {
+              vault_owner: acc,
+              alert_state_json: JSON.stringify(alertState)
+            },
+            '30000000000000',
+            '0'
+          ).catch(err => {
+            console.warn(`[record_alert_state] warning for ${acc}:`, err.message);
+          });
+        }
+      }
+    } catch (err) {
+      console.warn('[monitorAllVaultsLifecycle] Notice:', err.message);
     }
   }
 
@@ -5311,6 +5704,7 @@ class AegisRelayerService {
 
   async _executeSweepAllActionable() {
     await this.init({ requireSigner: false });
+    await this.monitorAllVaultsLifecycle();
     console.log(`🔍 [Aegis Relayer] Querying get_actionable_vaults on ${this.contractId}...`);
     const actionable = await this.getActionableVaults({ throwOnError: true });
 
@@ -7913,6 +8307,7 @@ if (typeof window !== "undefined") {
       }
 
       lastFetchedVaultInfo = info;
+      syncAlertSettingsUI();
       const escrowEl = document.getElementById('gasEscrowBalanceText');
       if (escrowEl && info) {
         const rawEscrow = BigInt(info.gas_escrow_yocto || '0');
@@ -11274,11 +11669,26 @@ if (typeof window !== "undefined") {
     }
 
     // Alert Settings & Real Zero-Metadata Telegram Push (@aegis_vault_bot)
+    // Security Guarantee: Zero Bot Token in client-side code. All Telegram polling and push
+    // dispatches are executed server-side 24/7 by the Autonomous Keeper (GitHub Actions Secrets).
     const AEGIS_TG_BOT_USERNAME = 'aegis_vault_bot';
-    const AEGIS_TG_KEY_PARTS = ['OTE1NTI5ODY5OTo=', 'QUFHYXpXWmZ1RjJWdEJpVk9odkp0ak9wclhNRDk0Snhhd2c='];
-    function getAegisTgEndpoint(method) {
-      const tk = atob(AEGIS_TG_KEY_PARTS[0]) + atob(AEGIS_TG_KEY_PARTS[1]);
-      return `https://api.telegram.org/bot${tk}/${method}`;
+
+    function isTelegramLinkedOnChain(info = lastFetchedVaultInfo) {
+      const signer = localStorage.getItem('aegis_signer_account');
+      if (!signer) return false;
+      if (info && info.alert_state) {
+        try {
+          const st = JSON.parse(info.alert_state);
+          if (st && st.tg_linked) {
+            localStorage.setItem('aegis_tg_linked_' + signer, '1');
+            return true;
+          }
+        } catch (_) {}
+      }
+      return (
+        localStorage.getItem('aegis_tg_linked_' + signer) === '1' ||
+        Boolean(localStorage.getItem('aegis_tg_chatid_' + signer))
+      );
     }
 
     async function computeAnonymousAlertTag(accountId) {
@@ -11316,7 +11726,10 @@ if (typeof window !== "undefined") {
           window.location.href = `https://t.me/${AEGIS_TG_BOT_USERNAME}?start=${tag}`;
         }
       }
-      showToast('Press Start inside @aegis_vault_bot — waiting for confirmation...');
+      if (!lastFetchedVaultInfo) {
+        dispatchNearTransaction('request_telegram_test').catch(() => {});
+      }
+      showToast('Press Start inside @aegis_vault_bot — 24/7 Keeper will link & confirm automatically...');
 
       const btn = document.getElementById('connectTgBotBtn');
       if (btn) btn.innerText = 'Waiting for Start...';
@@ -11327,16 +11740,12 @@ if (typeof window !== "undefined") {
       let attempts = 0;
       _tgConnectPollInterval = setInterval(async () => {
         attempts++;
-        const resolved = await resolveTelegramChatId(signer, '', true);
-        if (resolved && resolved.chatId) {
+        await fetchLiveContractState();
+        if (isTelegramLinkedOnChain(lastFetchedVaultInfo)) {
           clearInterval(_tgConnectPollInterval);
           _tgConnectPollInterval = null;
-          localStorage.setItem('aegis_tg_chatid_' + signer, resolved.chatId);
-          localStorage.setItem('aegis_tg_' + signer, resolved.chatId);
-          localStorage.setItem('aegis_tg_welcomed_' + signer, '1');
           syncAlertSettingsUI();
-          await dispatchTelegramZeroMetadataPush('test', resolved.chatId);
-          showToast('Telegram @aegis_vault_bot connected! Confirmation push delivered.');
+          showToast('Telegram @aegis_vault_bot connected! Confirmation push delivered by 24/7 Keeper.');
         } else if (attempts >= 24) {
           clearInterval(_tgConnectPollInterval);
           _tgConnectPollInterval = null;
@@ -11345,101 +11754,14 @@ if (typeof window !== "undefined") {
       }, 2500);
     }
 
-    async function resolveTelegramChatId(signer, rawInput = '', requireExactTag = true) {
-      const clean = (rawInput || '').trim().replace(/^@+/, '');
-      if (/^-?\d{5,20}$/.test(clean)) {
-        if (signer) {
-          localStorage.setItem('aegis_tg_chatid_' + signer, clean);
-          localStorage.setItem('aegis_tg_' + signer, clean);
-        }
-        return { chatId: clean, username: clean };
-      }
-
-      const expectedTag = signer ? await computeAnonymousAlertTag(signer) : null;
-      try {
-        const res = await fetch(getAegisTgEndpoint('getUpdates') + '?limit=100');
-        const json = await res.json();
-        if (json && json.ok && Array.isArray(json.result)) {
-          const updates = json.result.slice().reverse();
-          // 1. Match strictly by anonymous SHA-256 /start tag for this wallet
-          for (const u of updates) {
-            const msg = u.message || u.edited_message || u.channel_post;
-            if (!msg || !msg.chat || !msg.chat.id) continue;
-            const text = (msg.text || '').trim();
-            const fromUser = (msg.from?.username || msg.chat?.username || '').trim();
-            if (expectedTag && text === `/start ${expectedTag}`) {
-              const cid = String(msg.chat.id);
-              if (signer) {
-                localStorage.setItem('aegis_tg_chatid_' + signer, cid);
-                localStorage.setItem('aegis_tg_' + signer, cid);
-              }
-              return { chatId: cid, username: fromUser || cid };
-            }
-          }
-          // 2. Fallback: if user already cached a verified chatId for this signer
-          if (signer && !requireExactTag) {
-            const cached = localStorage.getItem('aegis_tg_chatid_' + signer) || localStorage.getItem('aegis_tg_' + signer);
-            if (cached) return { chatId: cached, username: cached };
-          }
-        }
-      } catch (err) {
-        console.warn('Telegram getUpdates lookup failed:', err);
-      }
-      if (signer) {
-        const cached = localStorage.getItem('aegis_tg_chatid_' + signer) || localStorage.getItem('aegis_tg_' + signer);
-        if (cached) return { chatId: cached, username: cached };
-      }
-      return null;
+    async function dispatchTelegramZeroMetadataPush(_eventType) {
+      // Handled 24/7 server-side by the Autonomous Keeper (monitorAllVaultsLifecycle)
+      setTimeout(fetchLiveContractState, 1500);
+      return true;
     }
 
-    // Strict Zero-Metadata Messages (No addresses, no account IDs, no dates, no chain names, no tx hashes)
-    const ZERO_METADATA_ALERT_MESSAGES = {
-      test: '🛡 Aegis Bunker: Notification channel connected and active.',
-      reminder: '⏳ Aegis Bunker: Check-in window is nearing expiration (≤25% left). Perform a check-in to keep the bunker armed.',
-      grace: '⚠️ Aegis Bunker: Primary timer expired. Grace buffer is now active — check in immediately to cancel automatic inheritance.',
-      timelock: '🔐 Aegis Bunker: 72-hour security cooldown started for a policy or timer change. If you did not authorize this, open your bunker and cancel immediately.',
-      timelock_cancelled: '✅ Aegis Bunker: Pending 72-hour policy or timer change was cancelled.',
-      panic: '🚨 Aegis Bunker: Emergency evacuation completed.',
-      inheritance: '🔒 Aegis Bunker: Inheritance protocol completed.'
-    };
-
-    async function dispatchTelegramZeroMetadataPush(eventType, explicitChatId = null) {
-      const text = ZERO_METADATA_ALERT_MESSAGES[eventType];
-      if (!text) return false;
-      const signer = localStorage.getItem('aegis_signer_account') || '';
-      let chatId = explicitChatId || (signer ? (localStorage.getItem('aegis_tg_chatid_' + signer) || localStorage.getItem('aegis_tg_' + signer)) : null);
-      if (!chatId) {
-        const resolved = await resolveTelegramChatId(signer, '', true);
-        if (resolved && resolved.chatId) chatId = resolved.chatId;
-      }
-      if (!chatId) return false;
-      try {
-        const res = await fetch(getAegisTgEndpoint('sendMessage'), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: chatId,
-            text,
-            disable_web_page_preview: true
-          })
-        });
-        const data = await res.json();
-        return Boolean(data && data.ok);
-      } catch (err) {
-        console.warn('Telegram push error:', err);
-        return false;
-      }
-    }
-
-    function checkAndDispatchStatusAlerts(eventType, dedupScope) {
-      const signer = localStorage.getItem('aegis_signer_account');
-      if (!signer) return;
-      const hasTg = localStorage.getItem('aegis_tg_chatid_' + signer) || localStorage.getItem('aegis_tg_' + signer);
-      if (!hasTg) return;
-      const dedupKey = `aegis_tg_sent_${signer}_${eventType}_${dedupScope}`;
-      if (localStorage.getItem(dedupKey)) return;
-      localStorage.setItem(dedupKey, '1');
-      dispatchTelegramZeroMetadataPush(eventType);
+    function checkAndDispatchStatusAlerts(_eventType, _dedupScope) {
+      // Handled 24/7 server-side by the Autonomous Keeper (monitorAllVaultsLifecycle)
     }
 
     function syncAlertSettingsUI() {
@@ -11477,9 +11799,7 @@ if (typeof window !== "undefined") {
       // Pre-warm anonymous alert tag in localStorage so button click opens Telegram synchronously
       computeAnonymousAlertTag(signer).catch(() => {});
 
-      const savedChatId = localStorage.getItem('aegis_tg_chatid_' + signer) || localStorage.getItem('aegis_tg_' + signer) || '';
-      if (savedChatId) {
-        localStorage.setItem('aegis_tg_chatid_' + signer, savedChatId);
+      if (isTelegramLinkedOnChain(lastFetchedVaultInfo)) {
         if (connBadge) {
           connBadge.innerText = 'Connected ✓';
           connBadge.className = 'text-xs font-sans font-semibold text-nearGreen bg-nearGreenMuted border border-nearGreen/40 px-2.5 py-0.5 rounded-lg whitespace-nowrap';
@@ -11497,25 +11817,6 @@ if (typeof window !== "undefined") {
           connectBtn.innerText = 'Connect @aegis_vault_bot ↗';
         }
         setHeaderTgState(false);
-        // Silently check once if user already linked @aegis_vault_bot via /start tag
-        resolveTelegramChatId(signer, '', true).then(res => {
-          if (res && res.chatId) {
-            localStorage.setItem('aegis_tg_chatid_' + signer, res.chatId);
-            localStorage.setItem('aegis_tg_' + signer, res.chatId);
-            if (connBadge) {
-              connBadge.innerText = 'Connected ✓';
-              connBadge.className = 'text-xs font-sans font-semibold text-nearGreen bg-nearGreenMuted border border-nearGreen/40 px-2.5 py-0.5 rounded-lg whitespace-nowrap';
-            }
-            if (connectBtn) {
-              connectBtn.innerText = 'Reconnect @aegis_vault_bot ↗';
-            }
-            setHeaderTgState(true);
-            if (!localStorage.getItem('aegis_tg_welcomed_' + signer)) {
-              localStorage.setItem('aegis_tg_welcomed_' + signer, '1');
-              dispatchTelegramZeroMetadataPush('test', res.chatId);
-            }
-          }
-        });
       }
     }
 
@@ -11530,25 +11831,19 @@ if (typeof window !== "undefined") {
         openMultichainWalletModal();
         return;
       }
-      const btn = document.getElementById('sendTestAlertBtn');
-      if (btn) btn.innerHTML = '<span>Sending...</span>';
-
-      const resolved = await resolveTelegramChatId(signer, '', true);
-      if (!resolved || !resolved.chatId) {
-        if (btn) btn.innerHTML = '<span>Send Test Ping</span>';
+      if (!isTelegramLinkedOnChain(lastFetchedVaultInfo)) {
         showToast('Click "Connect @aegis_vault_bot ↗" and press Start in Telegram first!', true);
         return;
       }
+      const btn = document.getElementById('sendTestAlertBtn');
+      if (btn) btn.innerHTML = '<span>Sending...</span>';
 
-      localStorage.setItem('aegis_tg_chatid_' + signer, resolved.chatId);
-      localStorage.setItem('aegis_tg_' + signer, resolved.chatId);
-      const ok = await dispatchTelegramZeroMetadataPush('test', resolved.chatId);
+      const res = await dispatchNearTransaction('request_telegram_test').catch(() => null);
       if (btn) btn.innerHTML = '<span>Send Test Ping</span>';
-      syncAlertSettingsUI();
-      if (ok) {
-        showToast('Real Telegram push delivered via @aegis_vault_bot!');
+      if (res !== null) {
+        showToast('Test alert queued on-chain — 24/7 Keeper delivering via @aegis_vault_bot!');
       } else {
-        showToast('Could not deliver to Telegram — make sure @aegis_vault_bot is not blocked', true);
+        showToast('Could not queue test alert on-chain', true);
       }
     }
 

@@ -30,16 +30,17 @@ jobs:
       - name: Install Dependencies
         run: npm ci
 
-      - name: Execute Continuous 5s Autonomous Sweep Loop
+      - name: Execute Continuous 3s Autonomous Sweep & Alert Loop
         env:
           CONTRACT_ID: aegis.okgoogleok.testnet
           RELAYER_ACCOUNT_ID: keeper.aegis.okgoogleok.testnet
           RELAYER_PRIVATE_KEY: ${{ secrets.RELAYER_PRIVATE_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           NEAR_RPC_URL: https://test.rpc.fastnear.com
           SOLANA_RPC_URL: https://solana-devnet.api.onfinality.io/public
           EVM_RPC_URL: https://ethereum-sepolia-rpc.publicnode.com
         run: |
-          node relayer/service.js --daemon-minutes 55 --interval-ms 5000
+          node relayer/service.js --daemon-minutes 55 --interval-ms 3000
 
       - name: Chain Next 24/7 Keeper Window
         if: always()
