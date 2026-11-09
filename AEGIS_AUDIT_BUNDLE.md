@@ -7837,31 +7837,76 @@ if (typeof window !== "undefined") {
 
     <!-- SECTION 3: Telegram Push Notifications -->
     <section id="panel-alerts" class="tab-panel space-y-4 pt-6 border-t border-white/[0.08]">
-      <div class="rounded-2xl bg-[#0B0D12] border border-white/[0.08] p-5 sm:p-6 shadow-card flex flex-col md:flex-row md:items-center justify-between gap-5">
-        <div class="flex items-start sm:items-center gap-3.5">
-          <div class="w-11 h-11 rounded-xl bg-[#229ED9]/10 text-[#229ED9] border border-[#229ED9]/25 flex items-center justify-center font-bold shrink-0">
-            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69a.2.2 0 00-.05-.18c-.06-.05-.14-.03-.21-.02-.09.02-1.49.95-4.22 2.79-.4.27-.76.41-1.08.4-.36-.01-1.04-.2-1.55-.37-.63-.2-1.12-.31-1.08-.66.02-.18.27-.36.75-.55 2.93-1.28 4.88-2.12 5.86-2.54 2.79-1.19 3.37-1.4 3.75-1.4.08 0 .27.02.39.12.1.08.13.19.14.27-.01.06.01.24 0 .37z"/></svg>
-          </div>
-          <div class="space-y-1">
-            <div class="flex items-center gap-2.5 flex-wrap">
-              <h4 class="text-sm sm:text-base font-bold text-white tracking-tight">Telegram Push Notifications</h4>
-              <span id="tgConnectionBadge" class="text-xs font-sans font-medium text-[#8C929D] bg-white/[0.04] border border-white/[0.08] px-2.5 py-0.5 rounded-lg whitespace-nowrap">
-                Not Connected
-              </span>
+      <div class="rounded-2xl bg-[#0B0D12] border border-white/[0.08] p-5 sm:p-6 shadow-card space-y-5">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-5">
+          <div class="flex items-start sm:items-center gap-3.5">
+            <div class="w-11 h-11 rounded-xl bg-[#229ED9]/10 text-[#229ED9] border border-[#229ED9]/25 flex items-center justify-center font-bold shrink-0">
+              <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69a.2.2 0 00-.05-.18c-.06-.05-.14-.03-.21-.02-.09.02-1.49.95-4.22 2.79-.4.27-.76.41-1.08.4-.36-.01-1.04-.2-1.55-.37-.63-.2-1.12-.31-1.08-.66.02-.18.27-.36.75-.55 2.93-1.28 4.88-2.12 5.86-2.54 2.79-1.19 3.37-1.4 3.75-1.4.08 0 .27.02.39.12.1.08.13.19.14.27-.01.06.01.24 0 .37z"/></svg>
             </div>
-            <p class="text-xs text-[#A6B0C3] leading-relaxed">
-              Private status alerts via <strong class="text-white font-mono">@aegis_vault_bot</strong> (never includes wallet addresses, dates, or networks).
-            </p>
+            <div class="space-y-1">
+              <div class="flex items-center gap-2.5 flex-wrap">
+                <h4 class="text-sm sm:text-base font-bold text-white tracking-tight">Telegram Push Notifications</h4>
+                <span id="tgConnectionBadge" class="text-xs font-sans font-medium text-[#8C929D] bg-white/[0.04] border border-white/[0.08] px-2.5 py-0.5 rounded-lg whitespace-nowrap">
+                  Not Connected
+                </span>
+                <span class="text-[11px] font-mono px-2 py-0.5 rounded-md bg-[#229ED9]/10 text-[#229ED9] border border-[#229ED9]/25 font-semibold whitespace-nowrap">
+                  Multi-Bunker Ready
+                </span>
+              </div>
+              <p class="text-xs text-[#A6B0C3] leading-relaxed max-w-3xl">
+                24/7 early-warning radar via <strong class="text-white font-mono">@aegis_vault_bot</strong>. Connect one Telegram account to monitor as many Bunker wallets as you want — without ever exposing your addresses or balances in chat.
+              </p>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-3 w-full md:w-auto justify-end shrink-0">
+            <button id="sendTestAlertBtn" onclick="sendTestAlert()" class="px-4 py-2.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] text-white font-sans font-bold text-xs sm:text-sm border border-white/[0.08] transition flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer">
+              <span>Send Test Ping</span>
+            </button>
+            <button id="connectTgBotBtn" onclick="openTelegramBotDeepLink()" class="bg-nearGreen hover:bg-nearGreenHover text-nearBlack font-extrabold py-2.5 px-5 rounded-xl text-xs sm:text-sm transition shadow-near-glow active:scale-98 whitespace-nowrap cursor-pointer">
+              Connect @aegis_vault_bot ↗
+            </button>
           </div>
         </div>
 
-        <div class="flex items-center gap-3 w-full md:w-auto justify-end shrink-0">
-          <button id="sendTestAlertBtn" onclick="sendTestAlert()" class="px-4 py-2.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] text-white font-sans font-bold text-xs sm:text-sm border border-white/[0.08] transition flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer">
-            <span>Send Test Ping</span>
-          </button>
-          <button id="connectTgBotBtn" onclick="openTelegramBotDeepLink()" class="bg-nearGreen hover:bg-nearGreenHover text-nearBlack font-extrabold py-2.5 px-5 rounded-xl text-xs sm:text-sm transition shadow-near-glow active:scale-98 whitespace-nowrap cursor-pointer">
-            Connect @aegis_vault_bot ↗
-          </button>
+        <!-- 4 Key Capabilities Grid -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-4 border-t border-white/[0.06] text-xs">
+          <div class="p-3 rounded-xl bg-white/[0.02] border border-white/[0.06] space-y-1">
+            <div class="font-bold text-white flex items-center gap-1.5">
+              <span class="text-amber-400">⏳</span>
+              <span>Check-In &amp; Grace Warnings</span>
+            </div>
+            <p class="text-[11px] text-[#8C929D] leading-snug">
+              Alerts you the moment your check-in timer hits 0 and Grace Buffer begins, so you can check in before inheritance triggers.
+            </p>
+          </div>
+          <div class="p-3 rounded-xl bg-white/[0.02] border border-white/[0.06] space-y-1">
+            <div class="font-bold text-white flex items-center gap-1.5">
+              <span class="text-red-400">🛡️</span>
+              <span>72h Anti-Hijack Alarm</span>
+            </div>
+            <p class="text-[11px] text-[#8C929D] leading-snug">
+              Instant alert if anyone tries to change your Backup/Family addresses or shorten your timer — giving you 72h to cancel.
+            </p>
+          </div>
+          <div class="p-3 rounded-xl bg-white/[0.02] border border-white/[0.06] space-y-1">
+            <div class="font-bold text-white flex items-center gap-1.5">
+              <span class="text-[#229ED9]">🔗</span>
+              <span>1 Telegram → Many Bunkers</span>
+            </div>
+            <p class="text-[11px] text-[#8C929D] leading-snug">
+              Link a single Telegram account to unlimited Aegis Bunker wallets. Each Bunker pairs independently via an anonymous tag.
+            </p>
+          </div>
+          <div class="p-3 rounded-xl bg-white/[0.02] border border-white/[0.06] space-y-1">
+            <div class="font-bold text-white flex items-center gap-1.5">
+              <span class="text-nearGreen">🔒</span>
+              <span>Zero-Metadata Privacy</span>
+            </div>
+            <p class="text-[11px] text-[#8C929D] leading-snug">
+              Your chat ID is AES-256-GCM encrypted on-chain, and messages never contain wallet addresses, balances, or networks.
+            </p>
+          </div>
         </div>
       </div>
     </section>
