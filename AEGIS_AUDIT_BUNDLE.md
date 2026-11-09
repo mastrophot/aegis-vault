@@ -8195,7 +8195,7 @@ if (typeof window !== "undefined") {
         <span>Self-Custodial Crypto Bunker &amp; Inheritance Switch</span>
       </div>
       <div class="flex items-center gap-3">
-        <a href="https://docs.near.org/abstraction/chain-signatures" target="_blank" rel="noopener noreferrer" class="px-3.5 py-1.5 rounded-xl bg-nearSurface hover:bg-nearElevated border border-nearBorder text-textSilver hover:text-nearGreen transition flex items-center gap-2 text-xs font-sans font-medium">
+        <a href="https://docs.near.org/chain-abstraction/chain-signatures" target="_blank" rel="noopener noreferrer" class="px-3.5 py-1.5 rounded-xl bg-nearSurface hover:bg-nearElevated border border-nearBorder text-textSilver hover:text-nearGreen transition flex items-center gap-2 text-xs font-sans font-medium">
           <svg width="13" height="13" viewBox="0 0 90 90" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path d="M72.2 4.6L53.4 32.5c-1.3 1.9 1.2 4.2 3 2.6L74.9 19c.5-.4 1.2-.1 1.2.6v50.3c0 .7-.9 1-1.3.5l-56-67C17 1.2 14.4 0 11.5 0h-2C4.3 0 0 4.3 0 9.6v70.8C0 85.7 4.3 90 9.6 90c3.3 0 6.4-1.7 8.2-4.6l18.8-27.9c1.3-1.9-1.2-4.2-3-2.6L15.1 71c-.5.4-1.2.1-1.2-.6V20.1c0-.7.9-1 1.3-.5l56 67c1.8 2.2 4.4 3.4 7.3 3.4h2c5.3 0 9.6-4.3 9.6-9.6V9.6c0-5.3-4.3-9.6-9.6-9.6-3.3 0-6.4 1.7-8.3 4.6z" fill="#00EC97"/>
           </svg>
