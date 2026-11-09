@@ -7229,14 +7229,13 @@ if (typeof window !== "undefined") {
   <main class="max-w-7xl mx-auto w-full px-4 sm:px-8 py-6 sm:py-8 space-y-6 flex-1">
 
     <!-- Top Bunker Value Proposition Brief -->
-    <div class="space-y-1.5 px-0.5">
+    <div class="space-y-1 px-0.5">
       <div class="flex flex-wrap items-center gap-2.5">
-        <span class="w-2.5 h-2.5 rounded-full bg-nearGreen radar-pulse"></span>
         <h1 class="text-lg sm:text-xl font-bold text-white tracking-tight">Zero-Signature Crypto Bunker &amp; Automatic Inheritance</h1>
         <span class="text-xs font-mono px-2.5 py-0.5 rounded-md bg-nearGreen/10 text-nearGreen border border-nearGreen/25 font-semibold">Public Keys Hidden</span>
       </div>
-      <p class="text-sm text-[#B8C4D6] leading-relaxed max-w-4xl">
-        Regular wallets permanently expose their cryptographic public key on-chain every time they sign a transaction. Your Aegis Bunker addresses only receive deposits and never sign a single outgoing transaction — until Emergency Panic sweeps 100% of funds to your backup wallet or Automatic Inheritance transfers them if your timer expires.
+      <p class="text-sm text-[#B8C4D6] leading-relaxed">
+        Outgoing transactions expose wallet public keys on-chain. Your Bunker only receives deposits and never signs a transaction until Emergency Panic or Automatic Inheritance.
       </p>
     </div>
 
@@ -7353,7 +7352,6 @@ if (typeof window !== "undefined") {
         <div class="border-b border-white/[0.08] pb-5">
           <div>
             <div class="flex items-center gap-2.5">
-              <span class="w-2.5 h-2.5 rounded-full bg-nearGreen radar-pulse"></span>
               <h3 class="text-lg sm:text-xl font-bold text-white tracking-tight">Where Your Funds Go</h3>
             </div>
             <p class="text-sm text-[#A8B4C6] mt-1">
@@ -7641,10 +7639,9 @@ if (typeof window !== "undefined") {
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2">
         <div>
           <div class="flex items-center gap-2.5">
-            <span class="w-2.5 h-2.5 rounded-full bg-nearGreen radar-pulse"></span>
-            <h3 class="text-base sm:text-lg font-extrabold text-white">Your Bunker Deposit Addresses</h3>
+            <h3 class="text-lg sm:text-xl font-bold text-white tracking-tight">Your Bunker Deposit Addresses</h3>
           </div>
-          <p class="text-xs text-[#A6B0C3] mt-0.5">Connect your wallet and save both Emergency Panic (Backup) &amp; Inheritance addresses above to unlock each network's deposit address.</p>
+          <p class="text-sm text-[#A8B4C6] mt-1">Connect your wallet and save both Emergency Panic (Backup) &amp; Inheritance addresses above to unlock each network's deposit address.</p>
         </div>
         <div class="flex items-center gap-2 self-start sm:self-auto">
           <button onclick="fetchLiveBalances(true)" class="px-3.5 py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-xs font-sans font-semibold text-textSilver hover:text-white transition flex items-center gap-2 cursor-pointer">
