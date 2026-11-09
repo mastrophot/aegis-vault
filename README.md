@@ -1,7 +1,7 @@
 # 🛡️ Aegis Vault — Autonomous Multichain Dead-Man's Switch & Panic Evacuation Bunker
 
-> **NEAR HACKATHON 2026 Submission (`Nov 2–9, 2026`)**  
-> **Official Track IDs:** `security` (AI Security & Defense — \$10,000) · `open` (Open Innovation — \$13,500) · `defi` (Unstoppable DeFi — \$10,000)  
+> **NEAR HACKATHON 2026 Submission (`Nov 1–14, 2026`)**  
+> **Official Track IDs:** `open` (Open Innovation) · `security` (AI Security & Defense) · `defi` (Unstoppable DeFi)  
 > **Core Primitive:** Native NEAR Chain Signatures (`v1.signer-prod.testnet` MPC Network) & Pure Rust Smart Contract  
 > **Live App:** [https://mastrophot.github.io/aegis-vault/](https://mastrophot.github.io/aegis-vault/)  
 > **24/7 Autonomous Cloud Keeper:** [`.github/workflows/relayer-keeper.yml`](https://github.com/mastrophot/aegis-vault/actions/workflows/relayer-keeper.yml)  
@@ -36,13 +36,13 @@
   * Vault owners can fund an isolated `gas_escrow` (`deposit_escrow` / `propose_policy`), backed by the contract's Sponsor Pool fallback (capped at `8` sponsored calls per `(vault_owner, epoch)` to prevent pool drain).
   * Stateless keepers invoke `request_sweep_signature` with **`0` attached NEAR deposit**; the contract pays the `v1.signer` MPC fee and automatically refunds **`0.005 NEAR`** execution gas to the keeper inside `on_signature_ready`.
 * **Least-Privilege `FunctionCall` Keeper (`keeper.aegis.okgoogleok.testnet`)**:
-  * Cloud keepers operate with a restricted `FunctionCall` access key (`0` NEAR transfer capability, scoped strictly to `trigger_push_inheritance`, `request_sweep_signature`, `record_sweep_telemetry`, `ping_by_relayer`, and `sweep_near`).
+  * Cloud keepers operate with a restricted `FunctionCall` access key (`ed25519:Cq8ZmZoDkPX57ZqPKsNeeYuqtjfqtFwk3QrnmcuDwfAW`, `0` NEAR transfer capability, scoped strictly to `trigger_push_inheritance`, `request_sweep_signature`, `record_sweep_telemetry`, `ping_by_relayer`, `sweep_near`, `record_alert_state`, `sync_owner_activity`, and `apply_policy`).
 * **Zero Blind-Signing Across All 4 Chains (On-Chain WASM Bytecode Verifiers)**:
   * **Bitcoin BIP-143 SegWit Preimage + Outputs Verifier (`verify_btc_sweep_payload`)**: Rejects raw 32-byte blind hashes. Parses the 182-byte BIP-143 P2WPKH preimage + serialized outputs on-chain, enforces `scriptCode` (`0x1976a914...88ac`) and `SIGHASH_ALL`, verifies `SHA256(SHA256(outputs)) == hashOutputs`, confirms Output 0 transfers `>= 546` sats strictly to the policy-locked Bech32/Base58 recipient (plus optional 0-sat `OP_RETURN`), and computes `SHA256(SHA256(preimage))` inside WASM.
   * **EVM EIP-1559 RLP Bytecode Verifier (`verify_evm_sweep_payload`)**: Decodes raw Type-2 RLP transactions on-chain, enforces `gas_limit` (`21,000..=250,000`) and `max_fee_per_gas <= 500 Gwei` caps, verifies native ETH (`value > 0`), `ERC-20 transfer` (`0xa9059cbb`), and `ERC-721 safeTransferFrom` (`0x42842e0e`) recipients, and hashes via `env::keccak256` inside WASM.
   * **Solana Structural Instruction Verifier (`verify_solana_sweep_payload`)**: Parses the full binary Solana `Message` header and compiled instructions on-chain; bans `ComputeBudget111111111111111111111111111111` (preventing priority-fee drain to validator colluders), rejects zero blockhashes, and verifies `SystemProgram::Transfer` (`lamports > 0`) or `SPL Token` / `Token-2022` + `ATA` (`amount > 0`) strictly target the policy-locked recipient.
-  * **NEAR Borsh Transaction Verifier (`verify_near_sweep_payload`)**: Parses Borsh-encoded unsigned NEAR `Transaction` bytes on-chain, verifies `receiver_id == target_destination.near`, non-zero `block_hash`, and a single `Transfer(deposit > 0)` action with no trailing actions, and computes `env::sha256` inside WASM.
-  * **Signed Sponsored Heartbeat (`ping_by_relayer`)**: Verifies owner `Ed25519` / NEP-413 signatures on-chain via `env::ed25519_verify` with monotonic timestamp anti-replay (`ping_ts:{owner}`), preventing hostile relayers from resetting a deceased owner's timer.
+  * **NEAR Borsh Transaction & NEP-141/171 Verifier (`verify_near_sweep_payload`)**: Parses Borsh-encoded unsigned NEAR `Transaction` bytes on-chain, verifies `block_hash != 0`, and validates either a native `Action::Transfer(deposit > 0)` to `target_destination.near` OR a single `Action::FunctionCall` (`ft_transfer` NEP-141 / `nft_transfer` NEP-171 with `receiver_id == target_destination.near`, `1 yoctoNEAR` deposit, and `5..=50 TGas`), computing `env::sha256` inside WASM.
+  * **Signed Sponsored Heartbeat (`ping_by_relayer`) & Passive Wallet Activity Sync (`sync_owner_activity`)**: Verifies owner `Ed25519` / NEP-413 signatures on-chain via `env::ed25519_verify` with monotonic timestamp anti-replay (`ping_ts:{owner}`), and automatically resets the check-in timer whenever the owner's NEAR wallet access key nonce increments (`sync_owner_activity` with anti-spoofing future-nonce ceiling).
 
 ---
 
@@ -161,6 +161,33 @@ Every component of Aegis Vault can be deterministically verified in under 60 sec
 | **Unauthorized Policy / Timer Takeover** | 72-hour timelock on any egress address or timer modification once armed, with instant owner `cancel_policy()` and non-blocking inheritance expiry | [`contracts/vault/src/lib.rs`](contracts/vault/src/lib.rs) |
 | **Telegram Metadata & Token Exposure** | Server-side `TELEGRAM_BOT_TOKEN` in GitHub Secrets, anonymous SHA-256 `/start v1_<tag>` linking, encrypted `cid_enc`, and zero-metadata alert strings | [`relayer/service.js`](relayer/service.js) |
 | **Delayed Sweep After Rotation** | `rotate_bunker()` snapshots `{state, destination}` in `archive:{owner}:{epoch}` so late sweeps remain cryptographically verifiable | [`contracts/vault/src/lib.rs`](contracts/vault/src/lib.rs) |
+
+---
+
+## 🛡️ Failure Cases, Edge-Case Resilience & Scoped Key Limits (`13-open` & `06-security`)
+
+### 1. Why Guardian-Less Deterministic MPC Beats Multi-Guardian Committees (`13-open.md` Objections)
+* **Lost Guardian Keys**: Traditional inheritance schemes rely on `M-of-N` human guardians who frequently lose hardware wallets or become unreachable over multi-year horizons, permanently bricking the estate. Aegis Vault eliminates human guardian committees entirely (`0-Guardian Architecture`): release rules live deterministically in `aegis.okgoogleok.testnet`, while key shares are maintained by the decentralized **NEAR MPC Network (`v1.signer-prod.testnet`)**.
+* **A Guardian (or Keeper) Who Turns Hostile**: In Aegis Vault, neither a relayer nor the autonomous keeper (`keeper.aegis.okgoogleok.testnet`) has discretionary approval power or blind-signing access:
+  1. It cannot trigger inheritance early (`require!(now >= last_heartbeat_ns + heartbeat_interval_ns + challenge_period_ns)`).
+  2. It cannot redirect funds to its own address: the on-chain WASM bytecode verifiers (`verify_btc_sweep_payload`, `verify_evm_sweep_payload`, `verify_solana_sweep_payload`, `verify_near_sweep_payload`) parse every raw unsigned transaction byte-by-byte and panic if the recipient diverges by a single bit from the owner's policy-locked `heir` or `backup` address.
+  3. It cannot infinitely reset a deceased owner's timer: `ping_by_relayer` requires an on-chain verified `Ed25519` signature from the owner's public key (`env::ed25519_verify`) with a strict 10-minute freshness window and monotonic anti-replay (`ping_ts:{owner}`).
+* **An Owner Who Is Alive But Offline / Traveling**:
+  1. **Passive Wallet Activity Sync (`sync_owner_activity`)**: The owner does not even need to open Aegis Vault — any outgoing transaction signed by any access key on the owner's NEAR wallet increments the on-chain key nonce, which the 24/7 Keeper detects via NEAR RPC (`view_access_key_list`) and uses to automatically reset the check-in clock.
+  2. **Two-Stage Grace Period + Multi-Stage Zero-Metadata Telegram Alerts**: When the primary check-in timer reaches `<= 25%` remaining, `@aegis_vault_bot` dispatches an early warning; if `0s` is reached, the vault enters the **Grace Buffer** (`challenge_period_ns`, e.g., 3–30 days in production or `1m` in Judge Demo) and dispatches a critical alert.
+  3. **Instant 1-Click Cancellation**: At any moment before `heartbeat_interval_ns + challenge_period_ns` expires, the owner can cancel a pending release via `ping()`, `cancel_grace()`, or simply by making any normal NEAR wallet transaction.
+* **Hostile Heir / Compromised Owner Session Attempting Timer or Policy Hijack**:
+  * Once a bunker is armed, any attempt to change destination addresses (`backup` / `heir`) OR shorten `heartbeat_interval_ns` / `challenge_period_ns` is locked behind a mandatory **72-hour on-chain Timelock (`pending_policy`)** and immediately triggers a Telegram security alert to the owner, who can abort the hijack in 1 click via `cancel_policy()`.
+
+### 2. Limits of the Scoped `FunctionCall` Access Key (`06-security.md` Requirements)
+The 24/7 cloud keeper (`keeper.aegis.okgoogleok.testnet`) holds **zero `FullAccess` keys** in production workflows and authenticates strictly via a protocol-enforced `FunctionCall` access key (`ed25519:Cq8ZmZoDkPX57ZqPKsNeeYuqtjfqtFwk3QrnmcuDwfAW`):
+* **Protocol-Enforced Restrictions**:
+  * **Receiver Lock**: Can only call `aegis.okgoogleok.testnet` (any call to any other contract or account is rejected by NEAR validators before execution).
+  * **Method Whitelist**: Strictly limited to `trigger_push_inheritance`, `request_sweep_signature`, `record_sweep_telemetry`, `ping_by_relayer`, `sweep_near`, `record_alert_state`, `sync_owner_activity`, and `apply_policy`.
+  * **Zero Admin / Policy Access**: Cannot call `propose_policy`, `cancel_policy`, `panic`, `ping`, or `rotate_bunker` (these additionally check `env::predecessor_account_id() == vault_owner`).
+  * **Zero Native Transfer / Key Mutation**: A `FunctionCall` key cannot execute `Action::Transfer`, `Action::AddKey`, `Action::DeleteKey`, or `Action::DeployContract`.
+* **Solving the Gas-Allowance Lockout Caveat**:
+  * As noted in NEAR's access-key documentation, an account holding only a `FunctionCall` key can lock itself out if its gas/balance runs dry. Aegis Vault solves this on-chain: `request_sweep_signature` requires **`0` attached deposit** from the keeper (the contract funds the `v1.signer-prod.testnet` MPC fee from the vault's `gas_escrow` / Sponsor Pool) and automatically transfers a **`0.005 NEAR` gas refund** back to `keeper.aegis.okgoogleok.testnet` inside `on_signature_ready`.
 
 ---
 
