@@ -1705,7 +1705,7 @@ class AegisRelayerService {
    * 1. Syncs outgoing wallet transactions (`sync_owner_activity`) to reset heartbeat timer on any owner tx
    * 2. Promotes elapsed 72-hour timelock policies (`apply_policy`)
    * 3. Links Telegram (`/start v1_<tag>`) and dispatches all 7 alerts (`test`, `timelock`, `timelock_cancelled`,
-   *    `reminder` at <=25%, `grace` at 0s, `panic`, `inheritance`) with on-chain deduplication (`record_alert_state`)
+   *    `reminder` at <=50%, `grace` at 0s, `panic`, `inheritance`) with on-chain deduplication (`record_alert_state`)
    */
   async monitorAllVaultsLifecycle() {
     try {
