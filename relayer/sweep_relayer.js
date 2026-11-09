@@ -795,6 +795,35 @@ class LastKeySweepRelayer {
       ]
     };
   }
+
+  /**
+   * Prepare NEAR NEP-141 Fungible Token Sweep (`ft_transfer` with 1 yoctoNEAR deposit)
+   */
+  prepareNearNep141Sweep({ tokenContract, fromAccount, toAccount, amountRaw, memo }) {
+    const argsObj = {
+      receiver_id: toAccount,
+      amount: BigInt(amountRaw).toString()
+    };
+    if (memo) argsObj.memo = String(memo).slice(0, 240);
+    return {
+      chain: 'NEAR_NEP141',
+      tokenContract,
+      fromAccount,
+      toAccount,
+      amountRaw: BigInt(amountRaw).toString(),
+      actions: [
+        {
+          type: 'FunctionCall',
+          params: {
+            methodName: 'ft_transfer',
+            args: argsObj,
+            gas: '30000000000000',
+            deposit: '1'
+          }
+        }
+      ]
+    };
+  }
 }
 
 module.exports = { LastKeySweepRelayer };

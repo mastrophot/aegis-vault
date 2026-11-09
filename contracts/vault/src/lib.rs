@@ -2338,9 +2338,11 @@ fn verify_btc_sweep_payload(
 }
 
 /// On-chain verification of a Borsh-encoded unsigned NEAR `Transaction` for implicit bunker sweeps (`[C4]` & `[H9]`):
-/// - Verifies `receiver_id == expected_receiver`
-/// - Verifies `block_hash != 0`
-/// - Verifies exactly 1 `Action::Transfer { deposit > 0 }` with zero trailing bytes
+/// - Supports Native NEAR `Action::Transfer` (`opcode 3`) directly to `expected_receiver` (`deposit > 0`)
+/// - Supports NEAR Native Token Standards `NEP-141` (`ft_transfer`) & `NEP-171` (`nft_transfer`) via
+///   `Action::FunctionCall` (`opcode 2`), verifying JSON `args.receiver_id == expected_receiver`,
+///   `args.amount > 0` (for `ft_transfer`), `gas in 5..=50 TGas`, and `deposit == 1 yoctoNEAR`
+/// - Verifies `block_hash != 0` and zero trailing bytes
 /// - Returns `SHA256(raw_tx)` (32 bytes) to be signed by `v1.signer`
 fn verify_near_sweep_payload(
     raw_tx: &[u8],
@@ -2381,13 +2383,10 @@ fn verify_near_sweep_payload(
         raw_tx[pos + 3],
     ]) as usize;
     pos += 4;
-    if pos + recv_len > raw_tx.len() {
-        return Err("Truncated receiver_id in NEAR transaction");
+    if recv_len < 2 || recv_len > 64 || pos + recv_len > raw_tx.len() {
+        return Err("Truncated or invalid receiver_id in NEAR transaction");
     }
     let recv_bytes = &raw_tx[pos..pos + recv_len];
-    if recv_bytes != expected_receiver.as_str().as_bytes() {
-        return Err("NEAR transaction receiver_id does not match policy-locked destination");
-    }
     pos += recv_len;
 
     // BlockHash: 32 bytes (must not be all zeros)
@@ -2400,9 +2399,8 @@ fn verify_near_sweep_payload(
     }
     pos += 32;
 
-    // Actions: u32 LE count == 1, action variant == 3 (Transfer), deposit u128 > 0
-    if pos + 4 + 1 + 16 != raw_tx.len() {
-        return Err("NEAR sweep transaction must contain exactly one Transfer action and no trailing bytes");
+    if pos + 5 > raw_tx.len() {
+        return Err("Truncated actions header in NEAR transaction");
     }
     let action_count = u32::from_le_bytes([
         raw_tx[pos],
@@ -2411,15 +2409,117 @@ fn verify_near_sweep_payload(
         raw_tx[pos + 3],
     ]);
     pos += 4;
-    if action_count != 1 || raw_tx[pos] != 3 {
-        return Err("NEAR sweep transaction must contain strictly a single Transfer action (opcode 3)");
+    if action_count != 1 {
+        return Err("NEAR sweep transaction must contain strictly a single action");
     }
+
+    let action_opcode = raw_tx[pos];
     pos += 1;
-    let mut dep_bytes = [0u8; 16];
-    dep_bytes.copy_from_slice(&raw_tx[pos..pos + 16]);
-    let deposit = u128::from_le_bytes(dep_bytes);
-    if deposit == 0 {
-        return Err("NEAR transfer deposit must be greater than zero");
+
+    match action_opcode {
+        3 => {
+            // Action::Transfer (native NEAR)
+            if recv_bytes != expected_receiver.as_str().as_bytes() {
+                return Err("NEAR transaction receiver_id does not match policy-locked destination");
+            }
+            if pos + 16 != raw_tx.len() {
+                return Err("NEAR Transfer action has invalid length or trailing bytes");
+            }
+            let mut dep_bytes = [0u8; 16];
+            dep_bytes.copy_from_slice(&raw_tx[pos..pos + 16]);
+            let deposit = u128::from_le_bytes(dep_bytes);
+            if deposit == 0 {
+                return Err("NEAR transfer deposit must be greater than zero");
+            }
+        }
+        2 => {
+            // Action::FunctionCall (NEP-141 `ft_transfer` or NEP-171 `nft_transfer`)
+            if pos + 4 > raw_tx.len() {
+                return Err("Truncated method_name length in NEAR FunctionCall");
+            }
+            let method_len = u32::from_le_bytes([
+                raw_tx[pos],
+                raw_tx[pos + 1],
+                raw_tx[pos + 2],
+                raw_tx[pos + 3],
+            ]) as usize;
+            pos += 4;
+            if pos + method_len > raw_tx.len() {
+                return Err("Truncated method_name in NEAR FunctionCall");
+            }
+            let method_name = core::str::from_utf8(&raw_tx[pos..pos + method_len])
+                .map_err(|_| "Invalid UTF-8 in NEAR FunctionCall method_name")?;
+            pos += method_len;
+            if method_name != "ft_transfer" && method_name != "nft_transfer" {
+                return Err("Only NEP-141 ft_transfer and NEP-171 nft_transfer FunctionCalls are permitted");
+            }
+
+            if pos + 4 > raw_tx.len() {
+                return Err("Truncated args length in NEAR FunctionCall");
+            }
+            let args_len = u32::from_le_bytes([
+                raw_tx[pos],
+                raw_tx[pos + 1],
+                raw_tx[pos + 2],
+                raw_tx[pos + 3],
+            ]) as usize;
+            pos += 4;
+            if args_len == 0 || args_len > 512 || pos + args_len > raw_tx.len() {
+                return Err("Invalid args length in NEAR NEP-141/NEP-171 FunctionCall");
+            }
+            let args_json: near_sdk::serde_json::Value =
+                near_sdk::serde_json::from_slice(&raw_tx[pos..pos + args_len])
+                    .map_err(|_| "Invalid JSON in NEAR NEP-141/NEP-171 FunctionCall args")?;
+            pos += args_len;
+
+            let json_recv = args_json
+                .get("receiver_id")
+                .and_then(|v| v.as_str())
+                .ok_or("Missing receiver_id in NEP-141/NEP-171 JSON args")?;
+            if json_recv != expected_receiver.as_str() {
+                return Err("NEP-141/NEP-171 receiver_id does not match policy-locked destination");
+            }
+            if method_name == "ft_transfer" {
+                let amt_str = args_json
+                    .get("amount")
+                    .and_then(|v| v.as_str())
+                    .ok_or("Missing amount string in NEP-141 ft_transfer args")?;
+                let amt = amt_str
+                    .parse::<u128>()
+                    .map_err(|_| "Invalid amount integer in NEP-141 ft_transfer args")?;
+                if amt == 0 {
+                    return Err("NEP-141 ft_transfer amount must be greater than zero");
+                }
+            } else {
+                let token_id = args_json
+                    .get("token_id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                if token_id.is_empty() {
+                    return Err("Missing token_id in NEP-171 nft_transfer args");
+                }
+            }
+
+            if pos + 8 + 16 != raw_tx.len() {
+                return Err("NEAR FunctionCall has invalid gas/deposit length or trailing bytes");
+            }
+            let mut gas_bytes = [0u8; 8];
+            gas_bytes.copy_from_slice(&raw_tx[pos..pos + 8]);
+            let gas = u64::from_le_bytes(gas_bytes);
+            pos += 8;
+            if !(5_000_000_000_000..=50_000_000_000_000).contains(&gas) {
+                return Err("NEAR NEP-141/NEP-171 gas must be between 5 TGas and 50 TGas");
+            }
+            let mut dep_bytes = [0u8; 16];
+            dep_bytes.copy_from_slice(&raw_tx[pos..pos + 16]);
+            let deposit = u128::from_le_bytes(dep_bytes);
+            if deposit != 1 {
+                return Err("NEAR NEP-141/NEP-171 transfer requires strictly 1 yoctoNEAR attached deposit");
+            }
+        }
+        _ => {
+            return Err("NEAR sweep transaction must contain strictly a Transfer (3) or NEP-141/171 FunctionCall (2) action");
+        }
     }
 
     let hash_vec = env::sha256(raw_tx);
@@ -3058,6 +3158,30 @@ mod tests {
         near_tx.extend_from_slice(&100_000_000_000_000_000_000_000u128.to_le_bytes());
         assert!(verify_near_sweep_payload(&near_tx, &target_near).is_ok());
         assert!(verify_near_sweep_payload(&near_tx, &wrong_near).is_err());
+
+        // 6. Verify NEAR NEP-141 `ft_transfer` (1 yoctoNEAR, 30 TGas) succeeds for target_near and fails for wrong_near
+        let mut nep141_tx = Vec::new();
+        nep141_tx.extend_from_slice(&(signer_str.len() as u32).to_le_bytes());
+        nep141_tx.extend_from_slice(signer_str.as_bytes());
+        nep141_tx.push(0u8);
+        nep141_tx.extend_from_slice(&[0x11u8; 32]);
+        nep141_tx.extend_from_slice(&2u64.to_le_bytes());
+        let ft_contract = "usdc.fakes.testnet";
+        nep141_tx.extend_from_slice(&(ft_contract.len() as u32).to_le_bytes());
+        nep141_tx.extend_from_slice(ft_contract.as_bytes());
+        nep141_tx.extend_from_slice(&[0x22u8; 32]);
+        nep141_tx.extend_from_slice(&1u32.to_le_bytes());
+        nep141_tx.push(2u8); // Action::FunctionCall
+        let method = "ft_transfer";
+        nep141_tx.extend_from_slice(&(method.len() as u32).to_le_bytes());
+        nep141_tx.extend_from_slice(method.as_bytes());
+        let args_str = r#"{"receiver_id":"backup.testnet","amount":"25000000"}"#;
+        nep141_tx.extend_from_slice(&(args_str.len() as u32).to_le_bytes());
+        nep141_tx.extend_from_slice(args_str.as_bytes());
+        nep141_tx.extend_from_slice(&30_000_000_000_000u64.to_le_bytes()); // 30 TGas
+        nep141_tx.extend_from_slice(&1u128.to_le_bytes()); // 1 yoctoNEAR
+        assert!(verify_near_sweep_payload(&nep141_tx, &target_near).is_ok());
+        assert!(verify_near_sweep_payload(&nep141_tx, &wrong_near).is_err());
     }
 
     #[test]

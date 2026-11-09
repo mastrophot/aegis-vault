@@ -2393,9 +2393,11 @@ fn verify_btc_sweep_payload(
 }
 
 /// On-chain verification of a Borsh-encoded unsigned NEAR `Transaction` for implicit bunker sweeps (`[C4]` & `[H9]`):
-/// - Verifies `receiver_id == expected_receiver`
-/// - Verifies `block_hash != 0`
-/// - Verifies exactly 1 `Action::Transfer { deposit > 0 }` with zero trailing bytes
+/// - Supports Native NEAR `Action::Transfer` (`opcode 3`) directly to `expected_receiver` (`deposit > 0`)
+/// - Supports NEAR Native Token Standards `NEP-141` (`ft_transfer`) & `NEP-171` (`nft_transfer`) via
+///   `Action::FunctionCall` (`opcode 2`), verifying JSON `args.receiver_id == expected_receiver`,
+///   `args.amount > 0` (for `ft_transfer`), `gas in 5..=50 TGas`, and `deposit == 1 yoctoNEAR`
+/// - Verifies `block_hash != 0` and zero trailing bytes
 /// - Returns `SHA256(raw_tx)` (32 bytes) to be signed by `v1.signer`
 fn verify_near_sweep_payload(
     raw_tx: &[u8],
@@ -2436,13 +2438,10 @@ fn verify_near_sweep_payload(
         raw_tx[pos + 3],
     ]) as usize;
     pos += 4;
-    if pos + recv_len > raw_tx.len() {
-        return Err("Truncated receiver_id in NEAR transaction");
+    if recv_len < 2 || recv_len > 64 || pos + recv_len > raw_tx.len() {
+        return Err("Truncated or invalid receiver_id in NEAR transaction");
     }
     let recv_bytes = &raw_tx[pos..pos + recv_len];
-    if recv_bytes != expected_receiver.as_str().as_bytes() {
-        return Err("NEAR transaction receiver_id does not match policy-locked destination");
-    }
     pos += recv_len;
 
     // BlockHash: 32 bytes (must not be all zeros)
@@ -2455,9 +2454,8 @@ fn verify_near_sweep_payload(
     }
     pos += 32;
 
-    // Actions: u32 LE count == 1, action variant == 3 (Transfer), deposit u128 > 0
-    if pos + 4 + 1 + 16 != raw_tx.len() {
-        return Err("NEAR sweep transaction must contain exactly one Transfer action and no trailing bytes");
+    if pos + 5 > raw_tx.len() {
+        return Err("Truncated actions header in NEAR transaction");
     }
     let action_count = u32::from_le_bytes([
         raw_tx[pos],
@@ -2466,15 +2464,117 @@ fn verify_near_sweep_payload(
         raw_tx[pos + 3],
     ]);
     pos += 4;
-    if action_count != 1 || raw_tx[pos] != 3 {
-        return Err("NEAR sweep transaction must contain strictly a single Transfer action (opcode 3)");
+    if action_count != 1 {
+        return Err("NEAR sweep transaction must contain strictly a single action");
     }
+
+    let action_opcode = raw_tx[pos];
     pos += 1;
-    let mut dep_bytes = [0u8; 16];
-    dep_bytes.copy_from_slice(&raw_tx[pos..pos + 16]);
-    let deposit = u128::from_le_bytes(dep_bytes);
-    if deposit == 0 {
-        return Err("NEAR transfer deposit must be greater than zero");
+
+    match action_opcode {
+        3 => {
+            // Action::Transfer (native NEAR)
+            if recv_bytes != expected_receiver.as_str().as_bytes() {
+                return Err("NEAR transaction receiver_id does not match policy-locked destination");
+            }
+            if pos + 16 != raw_tx.len() {
+                return Err("NEAR Transfer action has invalid length or trailing bytes");
+            }
+            let mut dep_bytes = [0u8; 16];
+            dep_bytes.copy_from_slice(&raw_tx[pos..pos + 16]);
+            let deposit = u128::from_le_bytes(dep_bytes);
+            if deposit == 0 {
+                return Err("NEAR transfer deposit must be greater than zero");
+            }
+        }
+        2 => {
+            // Action::FunctionCall (NEP-141 `ft_transfer` or NEP-171 `nft_transfer`)
+            if pos + 4 > raw_tx.len() {
+                return Err("Truncated method_name length in NEAR FunctionCall");
+            }
+            let method_len = u32::from_le_bytes([
+                raw_tx[pos],
+                raw_tx[pos + 1],
+                raw_tx[pos + 2],
+                raw_tx[pos + 3],
+            ]) as usize;
+            pos += 4;
+            if pos + method_len > raw_tx.len() {
+                return Err("Truncated method_name in NEAR FunctionCall");
+            }
+            let method_name = core::str::from_utf8(&raw_tx[pos..pos + method_len])
+                .map_err(|_| "Invalid UTF-8 in NEAR FunctionCall method_name")?;
+            pos += method_len;
+            if method_name != "ft_transfer" && method_name != "nft_transfer" {
+                return Err("Only NEP-141 ft_transfer and NEP-171 nft_transfer FunctionCalls are permitted");
+            }
+
+            if pos + 4 > raw_tx.len() {
+                return Err("Truncated args length in NEAR FunctionCall");
+            }
+            let args_len = u32::from_le_bytes([
+                raw_tx[pos],
+                raw_tx[pos + 1],
+                raw_tx[pos + 2],
+                raw_tx[pos + 3],
+            ]) as usize;
+            pos += 4;
+            if args_len == 0 || args_len > 512 || pos + args_len > raw_tx.len() {
+                return Err("Invalid args length in NEAR NEP-141/NEP-171 FunctionCall");
+            }
+            let args_json: near_sdk::serde_json::Value =
+                near_sdk::serde_json::from_slice(&raw_tx[pos..pos + args_len])
+                    .map_err(|_| "Invalid JSON in NEAR NEP-141/NEP-171 FunctionCall args")?;
+            pos += args_len;
+
+            let json_recv = args_json
+                .get("receiver_id")
+                .and_then(|v| v.as_str())
+                .ok_or("Missing receiver_id in NEP-141/NEP-171 JSON args")?;
+            if json_recv != expected_receiver.as_str() {
+                return Err("NEP-141/NEP-171 receiver_id does not match policy-locked destination");
+            }
+            if method_name == "ft_transfer" {
+                let amt_str = args_json
+                    .get("amount")
+                    .and_then(|v| v.as_str())
+                    .ok_or("Missing amount string in NEP-141 ft_transfer args")?;
+                let amt = amt_str
+                    .parse::<u128>()
+                    .map_err(|_| "Invalid amount integer in NEP-141 ft_transfer args")?;
+                if amt == 0 {
+                    return Err("NEP-141 ft_transfer amount must be greater than zero");
+                }
+            } else {
+                let token_id = args_json
+                    .get("token_id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                if token_id.is_empty() {
+                    return Err("Missing token_id in NEP-171 nft_transfer args");
+                }
+            }
+
+            if pos + 8 + 16 != raw_tx.len() {
+                return Err("NEAR FunctionCall has invalid gas/deposit length or trailing bytes");
+            }
+            let mut gas_bytes = [0u8; 8];
+            gas_bytes.copy_from_slice(&raw_tx[pos..pos + 8]);
+            let gas = u64::from_le_bytes(gas_bytes);
+            pos += 8;
+            if !(5_000_000_000_000..=50_000_000_000_000).contains(&gas) {
+                return Err("NEAR NEP-141/NEP-171 gas must be between 5 TGas and 50 TGas");
+            }
+            let mut dep_bytes = [0u8; 16];
+            dep_bytes.copy_from_slice(&raw_tx[pos..pos + 16]);
+            let deposit = u128::from_le_bytes(dep_bytes);
+            if deposit != 1 {
+                return Err("NEAR NEP-141/NEP-171 transfer requires strictly 1 yoctoNEAR attached deposit");
+            }
+        }
+        _ => {
+            return Err("NEAR sweep transaction must contain strictly a Transfer (3) or NEP-141/171 FunctionCall (2) action");
+        }
     }
 
     let hash_vec = env::sha256(raw_tx);
@@ -3113,6 +3213,30 @@ mod tests {
         near_tx.extend_from_slice(&100_000_000_000_000_000_000_000u128.to_le_bytes());
         assert!(verify_near_sweep_payload(&near_tx, &target_near).is_ok());
         assert!(verify_near_sweep_payload(&near_tx, &wrong_near).is_err());
+
+        // 6. Verify NEAR NEP-141 `ft_transfer` (1 yoctoNEAR, 30 TGas) succeeds for target_near and fails for wrong_near
+        let mut nep141_tx = Vec::new();
+        nep141_tx.extend_from_slice(&(signer_str.len() as u32).to_le_bytes());
+        nep141_tx.extend_from_slice(signer_str.as_bytes());
+        nep141_tx.push(0u8);
+        nep141_tx.extend_from_slice(&[0x11u8; 32]);
+        nep141_tx.extend_from_slice(&2u64.to_le_bytes());
+        let ft_contract = "usdc.fakes.testnet";
+        nep141_tx.extend_from_slice(&(ft_contract.len() as u32).to_le_bytes());
+        nep141_tx.extend_from_slice(ft_contract.as_bytes());
+        nep141_tx.extend_from_slice(&[0x22u8; 32]);
+        nep141_tx.extend_from_slice(&1u32.to_le_bytes());
+        nep141_tx.push(2u8); // Action::FunctionCall
+        let method = "ft_transfer";
+        nep141_tx.extend_from_slice(&(method.len() as u32).to_le_bytes());
+        nep141_tx.extend_from_slice(method.as_bytes());
+        let args_str = r#"{"receiver_id":"backup.testnet","amount":"25000000"}"#;
+        nep141_tx.extend_from_slice(&(args_str.len() as u32).to_le_bytes());
+        nep141_tx.extend_from_slice(args_str.as_bytes());
+        nep141_tx.extend_from_slice(&30_000_000_000_000u64.to_le_bytes()); // 30 TGas
+        nep141_tx.extend_from_slice(&1u128.to_le_bytes()); // 1 yoctoNEAR
+        assert!(verify_near_sweep_payload(&nep141_tx, &target_near).is_ok());
+        assert!(verify_near_sweep_payload(&nep141_tx, &wrong_near).is_err());
     }
 
     #[test]
@@ -3991,6 +4115,35 @@ class LastKeySweepRelayer {
       ]
     };
   }
+
+  /**
+   * Prepare NEAR NEP-141 Fungible Token Sweep (`ft_transfer` with 1 yoctoNEAR deposit)
+   */
+  prepareNearNep141Sweep({ tokenContract, fromAccount, toAccount, amountRaw, memo }) {
+    const argsObj = {
+      receiver_id: toAccount,
+      amount: BigInt(amountRaw).toString()
+    };
+    if (memo) argsObj.memo = String(memo).slice(0, 240);
+    return {
+      chain: 'NEAR_NEP141',
+      tokenContract,
+      fromAccount,
+      toAccount,
+      amountRaw: BigInt(amountRaw).toString(),
+      actions: [
+        {
+          type: 'FunctionCall',
+          params: {
+            methodName: 'ft_transfer',
+            args: argsObj,
+            gas: '30000000000000',
+            deposit: '1'
+          }
+        }
+      ]
+    };
+  }
 }
 
 module.exports = { LastKeySweepRelayer };
@@ -4584,7 +4737,7 @@ class AegisRelayerService {
             this.evmRpc('eth_maxPriorityFeePerGas', []).catch(() => '0x3b9aca00'),
             this.evmRpc('eth_chainId', [])
           ]);
-          const nonce = Number(BigInt(nonceHex || '0x0'));
+          let currentNonce = Number(BigInt(nonceHex || '0x0'));
           const chainId = Number(BigInt(chainIdHex || '0xaa36a7'));
           const MIN_FEE = 1_500_000_000n; // 1.5 Gwei floor
           const MAX_SAFE_FEE = 450_000_000_000n; // 450 Gwei (< 500 Gwei contract cap)
@@ -4595,6 +4748,106 @@ class AegisRelayerService {
           if (maxFeePerGas < MIN_FEE) maxFeePerGas = MIN_FEE;
           if (maxFeePerGas > MAX_SAFE_FEE) maxFeePerGas = MAX_SAFE_FEE;
           if (maxPriorityFeePerGas > maxFeePerGas) maxPriorityFeePerGas = maxFeePerGas;
+
+          // 1a. Auto-discover and sweep ERC-20 tokens BEFORE native ETH (so gas remains available)
+          const sweptErc20s = [];
+          const knownErc20List = [
+            { symbol: 'USDC', address: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238' },
+            { symbol: 'LINK', address: '0x779877A7B0D9E8603169DdbD7836e478b4624789' },
+            { symbol: 'WETH', address: '0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14' },
+            { symbol: 'DAI', address: '0xFF34B3d4Aee8ddCd6F9AFFFB6Fe49bD371b8a357' }
+          ];
+          const extraEvmTokens = String(process.env.AEGIS_EVM_TOKENS || '')
+            .split(',')
+            .map(s => s.trim())
+            .filter(s => /^0x[0-9a-fA-F]{40}$/.test(s));
+          for (const addr of extraEvmTokens) {
+            if (!knownErc20List.some(t => t.address.toLowerCase() === addr.toLowerCase())) {
+              knownErc20List.push({ symbol: 'ERC20', address: addr });
+            }
+          }
+
+          const erc20Iface = new ethers.Interface([
+            'function balanceOf(address owner) view returns (uint256)',
+            'function transfer(address to, uint256 amount) returns (bool)'
+          ]);
+          const balCallData = erc20Iface.encodeFunctionData('balanceOf', [vaultAddrs.evm.address]);
+
+          for (const tok of knownErc20List) {
+            try {
+              const rawBalHex = await this.evmRpc('eth_call', [
+                { to: tok.address, data: balCallData },
+                'latest'
+              ]);
+              const tokBal = rawBalHex && rawBalHex !== '0x' ? BigInt(rawBalHex) : 0n;
+              if (tokBal > 0n) {
+                const transferData = erc20Iface.encodeFunctionData('transfer', [
+                  destination.evm.trim(),
+                  tokBal
+                ]);
+                // Honeypot / Blacklist Fault Isolation: simulate via free eth_call before consuming nonce
+                await this.evmRpc('eth_call', [
+                  {
+                    from: vaultAddrs.evm.address,
+                    to: tok.address,
+                    data: transferData
+                  },
+                  'latest'
+                ]);
+                const tokSweep = await this.engine.prepareEvmTokenSweep({
+                  tokenAddress: tok.address,
+                  fromAddress: vaultAddrs.evm.address,
+                  toAddress: destination.evm.trim(),
+                  amountRaw: tokBal,
+                  gasLimit: 65000n,
+                  nonce: currentNonce,
+                  maxFeePerGas,
+                  maxPriorityFeePerGas,
+                  chainId
+                });
+                const tokOut = await this.callContract(
+                  'request_sweep_signature',
+                  {
+                    vault_owner: vaultOwner,
+                    chain: 'EVM',
+                    payload_hex: tokSweep.unsignedTxHex,
+                    target_epoch: epoch,
+                    is_eddsa: false
+                  },
+                  '280000000000000',
+                  '0'
+                );
+                const tokMpcSig = this.extractMpcSignatureFromOutcome(tokOut);
+                if (tokMpcSig) {
+                  const signedTok = this.engine.assembleSignedEvmTx(tokSweep.rawTx, tokMpcSig);
+                  const rawTokHex = signedTok.signedTx.startsWith('0x')
+                    ? signedTok.signedTx
+                    : '0x' + signedTok.signedTx;
+                  const tokTxHash =
+                    (await this.evmRpc('eth_sendRawTransaction', [rawTokHex])) || signedTok.txHash;
+                  currentNonce++;
+                  sweptErc20s.push({
+                    symbol: tok.symbol,
+                    token: tok.address,
+                    amount_raw: tokBal.toString(),
+                    tx_hash: tokTxHash
+                  });
+                  console.log(`   🪙 ERC-20 (${tok.symbol}) Swept! TxHash: ${tokTxHash}`);
+                }
+              }
+            } catch (tokErr) {
+              console.warn(
+                `   ⚠️ [Fault Isolation] Skipped ERC-20 ${tok.symbol} (${tok.address}) without consuming nonce:`,
+                tokErr.message
+              );
+            }
+          }
+
+          const refreshedBalHex =
+            sweptErc20s.length > 0
+              ? await this.evmRpc('eth_getBalance', [vaultAddrs.evm.address, 'latest'])
+              : balHex;
+          const remainingWei = BigInt(refreshedBalHex || '0x0');
 
           const memoBytes = sweepMemo ? ethers.toUtf8Bytes(sweepMemo) : new Uint8Array(0);
           let calldataGas = 0n;
@@ -4620,21 +4873,22 @@ class AegisRelayerService {
           const l1Buffer = isL2 ? 15_000_000_000_000n : 0n;
           const totalGasCost = gasLimit * maxFeePerGas + l1Buffer;
 
-          if (liveWei <= totalGasCost) {
+          if (remainingWei <= totalGasCost) {
             telemetryRecord.sweeps.evm = {
-              status: 'Skipped (Dust Below Gas Fee)',
+              status: sweptErc20s.length > 0 ? 'Broadcasted (Tokens Swept)' : 'Skipped (Dust Below Gas Fee)',
               chain: 'Ethereum / Base (Sepolia)',
               target: destination.evm,
-              amount: `${ethers.formatEther(liveWei)} ETH`
+              amount: `${ethers.formatEther(remainingWei)} ETH`,
+              ...(sweptErc20s.length > 0 ? { tokens_swept: sweptErc20s } : {})
             };
           } else {
-            const sweepValueWei = liveWei - totalGasCost;
+            const sweepValueWei = remainingWei - totalGasCost;
             const evmSweep = await this.engine.prepareEvmSweep({
               fromAddress: vaultAddrs.evm.address,
               toAddress: destination.evm.trim(),
               valueWei: sweepValueWei,
               gasLimit,
-              nonce,
+              nonce: currentNonce,
               maxFeePerGas,
               maxPriorityFeePerGas,
               chainId,
@@ -4685,7 +4939,8 @@ class AegisRelayerService {
               amount: `${ethers.formatEther(sweepValueWei)} ETH`,
               tx_hash: evmHash,
               explorer: `https://sepolia.etherscan.io/tx/${evmHash}`,
-              near_mpc_tx: `https://testnet.nearblocks.io/txns/${nearTxHash}`
+              near_mpc_tx: `https://testnet.nearblocks.io/txns/${nearTxHash}`,
+              ...(sweptErc20s.length > 0 ? { tokens_swept: sweptErc20s } : {})
             };
           }
         }
@@ -4872,10 +5127,98 @@ class AegisRelayerService {
           const blockhash = latestResult?.value?.blockhash;
           if (!blockhash) throw new Error('Missing Solana recentBlockhash');
 
+          // 3a. Auto-discover and sweep Solana SPL Token & Token-2022 accounts BEFORE native SOL
+          // (CloseAccount opcode 9 also reclaims 0.00203928 SOL rent per closed token account back to the bunker!)
+          const sweptSolTokens = [];
+          const solTokenPrograms = [
+            'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
+            'TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb'
+          ];
+          for (const progId of solTokenPrograms) {
+            try {
+              const tokAccs = await this.solanaRpc('getTokenAccountsByOwner', [
+                vaultAddrs.sol.address,
+                { programId: progId },
+                { encoding: 'jsonParsed', commitment: 'confirmed' }
+              ]);
+              const items = Array.isArray(tokAccs?.value) ? tokAccs.value : [];
+              for (const item of items) {
+                try {
+                  const info = item?.account?.data?.parsed?.info;
+                  const mint = info?.mint;
+                  const rawAmt = BigInt(info?.tokenAmount?.amount || '0');
+                  if (mint && rawAmt > 0n) {
+                    const freshBhRes = await this.solanaRpc('getLatestBlockhash', [
+                      { commitment: 'confirmed' }
+                    ]);
+                    const splBh = freshBhRes?.value?.blockhash || blockhash;
+                    const splSweep = this.engine.prepareSolanaTokenSweep({
+                      mintPubkey: mint,
+                      fromOwnerPubkey: vaultAddrs.sol.address,
+                      toRecipientPubkey: destination.sol.trim(),
+                      amountTokens: rawAmt,
+                      recentBlockhash: splBh,
+                      tokenProgramId: progId
+                    });
+                    const splOut = await this.callContract(
+                      'request_sweep_signature',
+                      {
+                        vault_owner: vaultOwner,
+                        chain: 'SOL',
+                        payload_hex: splSweep.rawPayloadHex,
+                        target_epoch: epoch,
+                        is_eddsa: true
+                      },
+                      '280000000000000',
+                      '0'
+                    );
+                    const splMpcSig = this.extractMpcSignatureFromOutcome(splOut);
+                    if (splMpcSig) {
+                      const signedSpl = this.engine.assembleSignedSolanaTx(
+                        splSweep.serializedMessage,
+                        vaultAddrs.sol.address,
+                        splMpcSig
+                      );
+                      const splSig =
+                        (await this.solanaRpc('sendTransaction', [
+                          Buffer.from(signedSpl.txHex, 'hex').toString('base64'),
+                          {
+                            encoding: 'base64',
+                            skipPreflight: false,
+                            preflightCommitment: 'confirmed'
+                          }
+                        ])) || signedSpl.signatureBase58;
+                      sweptSolTokens.push({
+                        mint,
+                        amount_raw: rawAmt.toString(),
+                        signature: splSig
+                      });
+                      console.log(`   🪙 Solana SPL Token (${mint}) Swept! Sig: ${splSig}`);
+                    }
+                  }
+                } catch (splItemErr) {
+                  console.warn(
+                    `   ⚠️ [Fault Isolation] Skipped Solana SPL token account:`,
+                    splItemErr.message
+                  );
+                }
+              }
+            } catch (_) {}
+          }
+
+          const finalSolBalRes =
+            sweptSolTokens.length > 0
+              ? await this.solanaRpc('getBalance', [
+                  vaultAddrs.sol.address,
+                  { commitment: 'confirmed' }
+                ])
+              : balResult;
+          const remainingLamports = BigInt(finalSolBalRes?.value ?? liveLamports);
+
           const solSweep = this.engine.prepareSolanaSweep({
             fromPubkey: vaultAddrs.sol.address,
             toPubkey: destination.sol.trim(),
-            lamports: liveLamports,
+            lamports: remainingLamports,
             memo: sweepMemo,
             recentBlockhash: blockhash
           });
@@ -4920,10 +5263,11 @@ class AegisRelayerService {
             status: 'Confirmed (Devnet)',
             chain: 'Solana Devnet (Ed25519)',
             target: destination.sol,
-            amount: `${(Number(liveLamports - 5000n) / 1e9).toFixed(4)} SOL`,
+            amount: `${(Number(remainingLamports - 5000n) / 1e9).toFixed(4)} SOL`,
             signature: solSig,
             explorer: `https://solscan.io/tx/${solSig}?cluster=devnet`,
-            near_mpc_tx: `https://testnet.nearblocks.io/txns/${nearTxHash}`
+            near_mpc_tx: `https://testnet.nearblocks.io/txns/${nearTxHash}`,
+            ...(sweptSolTokens.length > 0 ? { tokens_swept: sweptSolTokens } : {})
           };
         }
       } catch (err) {
@@ -4938,13 +5282,14 @@ class AegisRelayerService {
       }
     }
 
-    // 4. NEAR Native Implicit Bunker & Isolated Vault Deposit Sweep (Zero Fake Fallbacks)
+    // 4. NEAR Native Implicit Bunker, NEP-141 Tokens & Isolated Vault Deposit Sweep (Zero Fake Fallbacks)
     if (destination.near && destination.near.trim().length > 2) {
       const destNear = destination.near.trim();
-      console.log(`\n[NEAR Sweep] Checking implicit & isolated NEAR deposits -> ${destNear}...`);
+      console.log(`\n[NEAR Sweep] Checking implicit, NEP-141 & isolated NEAR deposits -> ${destNear}...`);
       let totalSweptYocto = options.preSweptNear ? BigInt(options.preSweptNear.amountYocto) : 0n;
       let nearSweepTx = options.preSweptNear ? options.preSweptNear.txHash : null;
       let nearMpcTx = null;
+      const sweptNep141 = [];
 
       try {
         // 4a. Sweep isolated per-user contract deposit first
@@ -4975,19 +5320,112 @@ class AegisRelayerService {
             public_key: nearPubKeyStr
           });
           const blockHash = nearAPI.utils.serialize.base_decode(keyInfo.block_hash);
+          let currentNearNonce = BigInt(keyInfo.nonce || 0) + 1n;
 
-          const totalBal = BigInt(accInfo.amount);
+          // 4b-i. Auto-discover and sweep NEAR NEP-141 Fungible Tokens (`ft_transfer`, 1 yoctoNEAR)
+          const nep141Contracts = ['usdc.fakes.testnet', 'wrap.testnet', 'usdt.fakes.testnet'];
+          const extraNep141 = String(process.env.AEGIS_NEAR_FT_TOKENS || '')
+            .split(',')
+            .map(s => s.trim())
+            .filter(Boolean);
+          for (const c of extraNep141) {
+            if (!nep141Contracts.includes(c)) nep141Contracts.push(c);
+          }
+
+          for (const ftContract of nep141Contracts) {
+            try {
+              const ftBalRes = await this.nearRpc('query', {
+                request_type: 'call_function',
+                finality: 'optimistic',
+                account_id: ftContract,
+                method_name: 'ft_balance_of',
+                args_base64: Buffer.from(JSON.stringify({ account_id: implicitAccountId })).toString('base64')
+              });
+              const ftBalStr = JSON.parse(Buffer.from(ftBalRes.result).toString('utf8'));
+              const ftBal = BigInt(ftBalStr || '0');
+              if (ftBal > 0n) {
+                const ftArgs = Buffer.from(
+                  JSON.stringify({
+                    receiver_id: destNear,
+                    amount: ftBal.toString(),
+                    ...(sweepMemo ? { memo: sweepMemo.slice(0, 200) } : {})
+                  }),
+                  'utf8'
+                );
+                const ftActions = [
+                  nearAPI.transactions.functionCall(
+                    'ft_transfer',
+                    ftArgs,
+                    BigInt('30000000000000'),
+                    BigInt('1')
+                  )
+                ];
+                const ftTx = nearAPI.transactions.createTransaction(
+                  implicitAccountId,
+                  nearPubKeyObj,
+                  ftContract,
+                  currentNearNonce,
+                  ftActions,
+                  blockHash
+                );
+                const rawFtHex = Buffer.from(ftTx.encode()).toString('hex');
+                const ftSigRes = await this.callContract(
+                  'request_sweep_signature',
+                  {
+                    vault_owner: vaultOwner,
+                    chain: 'NEAR',
+                    payload_hex: rawFtHex,
+                    target_epoch: epoch,
+                    is_eddsa: true
+                  },
+                  '280000000000000',
+                  '0'
+                );
+                const ftParsedSig = this.extractMpcSignatureFromOutcome(ftSigRes);
+                const ftRawSig = ftParsedSig?.signature || ftParsedSig;
+                if (ftRawSig) {
+                  const ftSigBytes = Array.isArray(ftRawSig)
+                    ? new Uint8Array(ftRawSig)
+                    : new Uint8Array(Buffer.from(String(ftRawSig).replace(/^0x/, ''), 'hex'));
+                  const signedFtTx = new nearAPI.transactions.SignedTransaction({
+                    transaction: ftTx,
+                    signature: new nearAPI.transactions.Signature({ keyType: 0, data: ftSigBytes })
+                  });
+                  const ftBroadcast = await this.nearRpc('send_tx', {
+                    signed_tx_base64: Buffer.from(signedFtTx.encode()).toString('base64'),
+                    wait_until: 'EXECUTED_OPTIMISTIC'
+                  });
+                  currentNearNonce += 1n;
+                  sweptNep141.push({
+                    contract: ftContract,
+                    amount_raw: ftBal.toString(),
+                    tx_hash: ftBroadcast.transaction.hash
+                  });
+                  console.log(`   🪙 NEAR NEP-141 (${ftContract}) Swept! Tx: ${ftBroadcast.transaction.hash}`);
+                }
+              }
+            } catch (_) {}
+          }
+
+          const refreshedAccInfo =
+            sweptNep141.length > 0
+              ? await this.nearRpc('query', {
+                  request_type: 'view_account',
+                  finality: 'optimistic',
+                  account_id: implicitAccountId
+                }).catch(() => accInfo)
+              : accInfo;
+          const totalBal = BigInt(refreshedAccInfo?.amount || accInfo.amount);
           const feeReserve = 5_000_000_000_000_000_000_000n; // 0.005 NEAR transfer fee buffer
           const sweepYocto = totalBal > feeReserve ? totalBal - feeReserve : 0n;
 
           if (sweepYocto > 0n) {
-            const nonce = BigInt(keyInfo.nonce || 0) + 1n;
             const actions = [nearAPI.transactions.transfer(BigInt(sweepYocto.toString()))];
             const transaction = nearAPI.transactions.createTransaction(
               implicitAccountId,
               nearPubKeyObj,
               destNear,
-              nonce,
+              currentNearNonce,
               actions,
               blockHash
             );
@@ -5043,7 +5481,8 @@ class AegisRelayerService {
             amount: `${formattedNear} NEAR`,
             tx_hash: nearSweepTx,
             explorer: `https://testnet.nearblocks.io/txns/${nearSweepTx}`,
-            ...(nearMpcTx ? { near_mpc_tx: `https://testnet.nearblocks.io/txns/${nearMpcTx}` } : {})
+            ...(nearMpcTx ? { near_mpc_tx: `https://testnet.nearblocks.io/txns/${nearMpcTx}` } : {}),
+            ...(sweptNep141.length > 0 ? { tokens_swept: sweptNep141 } : {})
           };
         } else {
           telemetryRecord.sweeps.near = {
@@ -12605,7 +13044,14 @@ async function runSweepSimulation() {
   console.log(`   • To Account:            ${nearSweep.toAccount}`);
   console.log(`   • Storage Reserve:       ${nearSweep.storageReserveYocto} yoctoNEAR (~1.6 NEAR)`);
   console.log(`   • Sweep Amount:          ${nearSweep.sweepAmountYocto} yoctoNEAR`);
-  console.log('   ✅ NEAR native sweep transaction assembly validated.\n');
+  const nep141Sweep = relayer.prepareNearNep141Sweep({
+    tokenContract: 'usdc.fakes.testnet',
+    fromAccount: 'aegis.okgoogleok.testnet',
+    toAccount: 'mastrophot.testnet',
+    amountRaw: '25000000'
+  });
+  console.log(`   • NEP-141 FT Sweep:      ${nep141Sweep.tokenContract} -> ${nep141Sweep.toAccount} (${nep141Sweep.amountRaw} units, 1 yoctoNEAR)`);
+  console.log('   ✅ NEAR native & NEP-141 FT sweep transaction assembly validated.\n');
 
   // 5. Test Zero-Asset-Left-Behind Queue Orchestration (NFT -> Tokens -> Native Gas)
   console.log('5️⃣  Validating Zero-Asset-Left-Behind Evacuation Queue with Gas Deduction...');

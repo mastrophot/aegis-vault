@@ -583,7 +583,7 @@ class AegisRelayerService {
             this.evmRpc('eth_maxPriorityFeePerGas', []).catch(() => '0x3b9aca00'),
             this.evmRpc('eth_chainId', [])
           ]);
-          const nonce = Number(BigInt(nonceHex || '0x0'));
+          let currentNonce = Number(BigInt(nonceHex || '0x0'));
           const chainId = Number(BigInt(chainIdHex || '0xaa36a7'));
           const MIN_FEE = 1_500_000_000n; // 1.5 Gwei floor
           const MAX_SAFE_FEE = 450_000_000_000n; // 450 Gwei (< 500 Gwei contract cap)
@@ -594,6 +594,106 @@ class AegisRelayerService {
           if (maxFeePerGas < MIN_FEE) maxFeePerGas = MIN_FEE;
           if (maxFeePerGas > MAX_SAFE_FEE) maxFeePerGas = MAX_SAFE_FEE;
           if (maxPriorityFeePerGas > maxFeePerGas) maxPriorityFeePerGas = maxFeePerGas;
+
+          // 1a. Auto-discover and sweep ERC-20 tokens BEFORE native ETH (so gas remains available)
+          const sweptErc20s = [];
+          const knownErc20List = [
+            { symbol: 'USDC', address: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238' },
+            { symbol: 'LINK', address: '0x779877A7B0D9E8603169DdbD7836e478b4624789' },
+            { symbol: 'WETH', address: '0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14' },
+            { symbol: 'DAI', address: '0xFF34B3d4Aee8ddCd6F9AFFFB6Fe49bD371b8a357' }
+          ];
+          const extraEvmTokens = String(process.env.AEGIS_EVM_TOKENS || '')
+            .split(',')
+            .map(s => s.trim())
+            .filter(s => /^0x[0-9a-fA-F]{40}$/.test(s));
+          for (const addr of extraEvmTokens) {
+            if (!knownErc20List.some(t => t.address.toLowerCase() === addr.toLowerCase())) {
+              knownErc20List.push({ symbol: 'ERC20', address: addr });
+            }
+          }
+
+          const erc20Iface = new ethers.Interface([
+            'function balanceOf(address owner) view returns (uint256)',
+            'function transfer(address to, uint256 amount) returns (bool)'
+          ]);
+          const balCallData = erc20Iface.encodeFunctionData('balanceOf', [vaultAddrs.evm.address]);
+
+          for (const tok of knownErc20List) {
+            try {
+              const rawBalHex = await this.evmRpc('eth_call', [
+                { to: tok.address, data: balCallData },
+                'latest'
+              ]);
+              const tokBal = rawBalHex && rawBalHex !== '0x' ? BigInt(rawBalHex) : 0n;
+              if (tokBal > 0n) {
+                const transferData = erc20Iface.encodeFunctionData('transfer', [
+                  destination.evm.trim(),
+                  tokBal
+                ]);
+                // Honeypot / Blacklist Fault Isolation: simulate via free eth_call before consuming nonce
+                await this.evmRpc('eth_call', [
+                  {
+                    from: vaultAddrs.evm.address,
+                    to: tok.address,
+                    data: transferData
+                  },
+                  'latest'
+                ]);
+                const tokSweep = await this.engine.prepareEvmTokenSweep({
+                  tokenAddress: tok.address,
+                  fromAddress: vaultAddrs.evm.address,
+                  toAddress: destination.evm.trim(),
+                  amountRaw: tokBal,
+                  gasLimit: 65000n,
+                  nonce: currentNonce,
+                  maxFeePerGas,
+                  maxPriorityFeePerGas,
+                  chainId
+                });
+                const tokOut = await this.callContract(
+                  'request_sweep_signature',
+                  {
+                    vault_owner: vaultOwner,
+                    chain: 'EVM',
+                    payload_hex: tokSweep.unsignedTxHex,
+                    target_epoch: epoch,
+                    is_eddsa: false
+                  },
+                  '280000000000000',
+                  '0'
+                );
+                const tokMpcSig = this.extractMpcSignatureFromOutcome(tokOut);
+                if (tokMpcSig) {
+                  const signedTok = this.engine.assembleSignedEvmTx(tokSweep.rawTx, tokMpcSig);
+                  const rawTokHex = signedTok.signedTx.startsWith('0x')
+                    ? signedTok.signedTx
+                    : '0x' + signedTok.signedTx;
+                  const tokTxHash =
+                    (await this.evmRpc('eth_sendRawTransaction', [rawTokHex])) || signedTok.txHash;
+                  currentNonce++;
+                  sweptErc20s.push({
+                    symbol: tok.symbol,
+                    token: tok.address,
+                    amount_raw: tokBal.toString(),
+                    tx_hash: tokTxHash
+                  });
+                  console.log(`   🪙 ERC-20 (${tok.symbol}) Swept! TxHash: ${tokTxHash}`);
+                }
+              }
+            } catch (tokErr) {
+              console.warn(
+                `   ⚠️ [Fault Isolation] Skipped ERC-20 ${tok.symbol} (${tok.address}) without consuming nonce:`,
+                tokErr.message
+              );
+            }
+          }
+
+          const refreshedBalHex =
+            sweptErc20s.length > 0
+              ? await this.evmRpc('eth_getBalance', [vaultAddrs.evm.address, 'latest'])
+              : balHex;
+          const remainingWei = BigInt(refreshedBalHex || '0x0');
 
           const memoBytes = sweepMemo ? ethers.toUtf8Bytes(sweepMemo) : new Uint8Array(0);
           let calldataGas = 0n;
@@ -619,21 +719,22 @@ class AegisRelayerService {
           const l1Buffer = isL2 ? 15_000_000_000_000n : 0n;
           const totalGasCost = gasLimit * maxFeePerGas + l1Buffer;
 
-          if (liveWei <= totalGasCost) {
+          if (remainingWei <= totalGasCost) {
             telemetryRecord.sweeps.evm = {
-              status: 'Skipped (Dust Below Gas Fee)',
+              status: sweptErc20s.length > 0 ? 'Broadcasted (Tokens Swept)' : 'Skipped (Dust Below Gas Fee)',
               chain: 'Ethereum / Base (Sepolia)',
               target: destination.evm,
-              amount: `${ethers.formatEther(liveWei)} ETH`
+              amount: `${ethers.formatEther(remainingWei)} ETH`,
+              ...(sweptErc20s.length > 0 ? { tokens_swept: sweptErc20s } : {})
             };
           } else {
-            const sweepValueWei = liveWei - totalGasCost;
+            const sweepValueWei = remainingWei - totalGasCost;
             const evmSweep = await this.engine.prepareEvmSweep({
               fromAddress: vaultAddrs.evm.address,
               toAddress: destination.evm.trim(),
               valueWei: sweepValueWei,
               gasLimit,
-              nonce,
+              nonce: currentNonce,
               maxFeePerGas,
               maxPriorityFeePerGas,
               chainId,
@@ -684,7 +785,8 @@ class AegisRelayerService {
               amount: `${ethers.formatEther(sweepValueWei)} ETH`,
               tx_hash: evmHash,
               explorer: `https://sepolia.etherscan.io/tx/${evmHash}`,
-              near_mpc_tx: `https://testnet.nearblocks.io/txns/${nearTxHash}`
+              near_mpc_tx: `https://testnet.nearblocks.io/txns/${nearTxHash}`,
+              ...(sweptErc20s.length > 0 ? { tokens_swept: sweptErc20s } : {})
             };
           }
         }
@@ -871,10 +973,98 @@ class AegisRelayerService {
           const blockhash = latestResult?.value?.blockhash;
           if (!blockhash) throw new Error('Missing Solana recentBlockhash');
 
+          // 3a. Auto-discover and sweep Solana SPL Token & Token-2022 accounts BEFORE native SOL
+          // (CloseAccount opcode 9 also reclaims 0.00203928 SOL rent per closed token account back to the bunker!)
+          const sweptSolTokens = [];
+          const solTokenPrograms = [
+            'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
+            'TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb'
+          ];
+          for (const progId of solTokenPrograms) {
+            try {
+              const tokAccs = await this.solanaRpc('getTokenAccountsByOwner', [
+                vaultAddrs.sol.address,
+                { programId: progId },
+                { encoding: 'jsonParsed', commitment: 'confirmed' }
+              ]);
+              const items = Array.isArray(tokAccs?.value) ? tokAccs.value : [];
+              for (const item of items) {
+                try {
+                  const info = item?.account?.data?.parsed?.info;
+                  const mint = info?.mint;
+                  const rawAmt = BigInt(info?.tokenAmount?.amount || '0');
+                  if (mint && rawAmt > 0n) {
+                    const freshBhRes = await this.solanaRpc('getLatestBlockhash', [
+                      { commitment: 'confirmed' }
+                    ]);
+                    const splBh = freshBhRes?.value?.blockhash || blockhash;
+                    const splSweep = this.engine.prepareSolanaTokenSweep({
+                      mintPubkey: mint,
+                      fromOwnerPubkey: vaultAddrs.sol.address,
+                      toRecipientPubkey: destination.sol.trim(),
+                      amountTokens: rawAmt,
+                      recentBlockhash: splBh,
+                      tokenProgramId: progId
+                    });
+                    const splOut = await this.callContract(
+                      'request_sweep_signature',
+                      {
+                        vault_owner: vaultOwner,
+                        chain: 'SOL',
+                        payload_hex: splSweep.rawPayloadHex,
+                        target_epoch: epoch,
+                        is_eddsa: true
+                      },
+                      '280000000000000',
+                      '0'
+                    );
+                    const splMpcSig = this.extractMpcSignatureFromOutcome(splOut);
+                    if (splMpcSig) {
+                      const signedSpl = this.engine.assembleSignedSolanaTx(
+                        splSweep.serializedMessage,
+                        vaultAddrs.sol.address,
+                        splMpcSig
+                      );
+                      const splSig =
+                        (await this.solanaRpc('sendTransaction', [
+                          Buffer.from(signedSpl.txHex, 'hex').toString('base64'),
+                          {
+                            encoding: 'base64',
+                            skipPreflight: false,
+                            preflightCommitment: 'confirmed'
+                          }
+                        ])) || signedSpl.signatureBase58;
+                      sweptSolTokens.push({
+                        mint,
+                        amount_raw: rawAmt.toString(),
+                        signature: splSig
+                      });
+                      console.log(`   🪙 Solana SPL Token (${mint}) Swept! Sig: ${splSig}`);
+                    }
+                  }
+                } catch (splItemErr) {
+                  console.warn(
+                    `   ⚠️ [Fault Isolation] Skipped Solana SPL token account:`,
+                    splItemErr.message
+                  );
+                }
+              }
+            } catch (_) {}
+          }
+
+          const finalSolBalRes =
+            sweptSolTokens.length > 0
+              ? await this.solanaRpc('getBalance', [
+                  vaultAddrs.sol.address,
+                  { commitment: 'confirmed' }
+                ])
+              : balResult;
+          const remainingLamports = BigInt(finalSolBalRes?.value ?? liveLamports);
+
           const solSweep = this.engine.prepareSolanaSweep({
             fromPubkey: vaultAddrs.sol.address,
             toPubkey: destination.sol.trim(),
-            lamports: liveLamports,
+            lamports: remainingLamports,
             memo: sweepMemo,
             recentBlockhash: blockhash
           });
@@ -919,10 +1109,11 @@ class AegisRelayerService {
             status: 'Confirmed (Devnet)',
             chain: 'Solana Devnet (Ed25519)',
             target: destination.sol,
-            amount: `${(Number(liveLamports - 5000n) / 1e9).toFixed(4)} SOL`,
+            amount: `${(Number(remainingLamports - 5000n) / 1e9).toFixed(4)} SOL`,
             signature: solSig,
             explorer: `https://solscan.io/tx/${solSig}?cluster=devnet`,
-            near_mpc_tx: `https://testnet.nearblocks.io/txns/${nearTxHash}`
+            near_mpc_tx: `https://testnet.nearblocks.io/txns/${nearTxHash}`,
+            ...(sweptSolTokens.length > 0 ? { tokens_swept: sweptSolTokens } : {})
           };
         }
       } catch (err) {
@@ -937,13 +1128,14 @@ class AegisRelayerService {
       }
     }
 
-    // 4. NEAR Native Implicit Bunker & Isolated Vault Deposit Sweep (Zero Fake Fallbacks)
+    // 4. NEAR Native Implicit Bunker, NEP-141 Tokens & Isolated Vault Deposit Sweep (Zero Fake Fallbacks)
     if (destination.near && destination.near.trim().length > 2) {
       const destNear = destination.near.trim();
-      console.log(`\n[NEAR Sweep] Checking implicit & isolated NEAR deposits -> ${destNear}...`);
+      console.log(`\n[NEAR Sweep] Checking implicit, NEP-141 & isolated NEAR deposits -> ${destNear}...`);
       let totalSweptYocto = options.preSweptNear ? BigInt(options.preSweptNear.amountYocto) : 0n;
       let nearSweepTx = options.preSweptNear ? options.preSweptNear.txHash : null;
       let nearMpcTx = null;
+      const sweptNep141 = [];
 
       try {
         // 4a. Sweep isolated per-user contract deposit first
@@ -974,19 +1166,112 @@ class AegisRelayerService {
             public_key: nearPubKeyStr
           });
           const blockHash = nearAPI.utils.serialize.base_decode(keyInfo.block_hash);
+          let currentNearNonce = BigInt(keyInfo.nonce || 0) + 1n;
 
-          const totalBal = BigInt(accInfo.amount);
+          // 4b-i. Auto-discover and sweep NEAR NEP-141 Fungible Tokens (`ft_transfer`, 1 yoctoNEAR)
+          const nep141Contracts = ['usdc.fakes.testnet', 'wrap.testnet', 'usdt.fakes.testnet'];
+          const extraNep141 = String(process.env.AEGIS_NEAR_FT_TOKENS || '')
+            .split(',')
+            .map(s => s.trim())
+            .filter(Boolean);
+          for (const c of extraNep141) {
+            if (!nep141Contracts.includes(c)) nep141Contracts.push(c);
+          }
+
+          for (const ftContract of nep141Contracts) {
+            try {
+              const ftBalRes = await this.nearRpc('query', {
+                request_type: 'call_function',
+                finality: 'optimistic',
+                account_id: ftContract,
+                method_name: 'ft_balance_of',
+                args_base64: Buffer.from(JSON.stringify({ account_id: implicitAccountId })).toString('base64')
+              });
+              const ftBalStr = JSON.parse(Buffer.from(ftBalRes.result).toString('utf8'));
+              const ftBal = BigInt(ftBalStr || '0');
+              if (ftBal > 0n) {
+                const ftArgs = Buffer.from(
+                  JSON.stringify({
+                    receiver_id: destNear,
+                    amount: ftBal.toString(),
+                    ...(sweepMemo ? { memo: sweepMemo.slice(0, 200) } : {})
+                  }),
+                  'utf8'
+                );
+                const ftActions = [
+                  nearAPI.transactions.functionCall(
+                    'ft_transfer',
+                    ftArgs,
+                    BigInt('30000000000000'),
+                    BigInt('1')
+                  )
+                ];
+                const ftTx = nearAPI.transactions.createTransaction(
+                  implicitAccountId,
+                  nearPubKeyObj,
+                  ftContract,
+                  currentNearNonce,
+                  ftActions,
+                  blockHash
+                );
+                const rawFtHex = Buffer.from(ftTx.encode()).toString('hex');
+                const ftSigRes = await this.callContract(
+                  'request_sweep_signature',
+                  {
+                    vault_owner: vaultOwner,
+                    chain: 'NEAR',
+                    payload_hex: rawFtHex,
+                    target_epoch: epoch,
+                    is_eddsa: true
+                  },
+                  '280000000000000',
+                  '0'
+                );
+                const ftParsedSig = this.extractMpcSignatureFromOutcome(ftSigRes);
+                const ftRawSig = ftParsedSig?.signature || ftParsedSig;
+                if (ftRawSig) {
+                  const ftSigBytes = Array.isArray(ftRawSig)
+                    ? new Uint8Array(ftRawSig)
+                    : new Uint8Array(Buffer.from(String(ftRawSig).replace(/^0x/, ''), 'hex'));
+                  const signedFtTx = new nearAPI.transactions.SignedTransaction({
+                    transaction: ftTx,
+                    signature: new nearAPI.transactions.Signature({ keyType: 0, data: ftSigBytes })
+                  });
+                  const ftBroadcast = await this.nearRpc('send_tx', {
+                    signed_tx_base64: Buffer.from(signedFtTx.encode()).toString('base64'),
+                    wait_until: 'EXECUTED_OPTIMISTIC'
+                  });
+                  currentNearNonce += 1n;
+                  sweptNep141.push({
+                    contract: ftContract,
+                    amount_raw: ftBal.toString(),
+                    tx_hash: ftBroadcast.transaction.hash
+                  });
+                  console.log(`   🪙 NEAR NEP-141 (${ftContract}) Swept! Tx: ${ftBroadcast.transaction.hash}`);
+                }
+              }
+            } catch (_) {}
+          }
+
+          const refreshedAccInfo =
+            sweptNep141.length > 0
+              ? await this.nearRpc('query', {
+                  request_type: 'view_account',
+                  finality: 'optimistic',
+                  account_id: implicitAccountId
+                }).catch(() => accInfo)
+              : accInfo;
+          const totalBal = BigInt(refreshedAccInfo?.amount || accInfo.amount);
           const feeReserve = 5_000_000_000_000_000_000_000n; // 0.005 NEAR transfer fee buffer
           const sweepYocto = totalBal > feeReserve ? totalBal - feeReserve : 0n;
 
           if (sweepYocto > 0n) {
-            const nonce = BigInt(keyInfo.nonce || 0) + 1n;
             const actions = [nearAPI.transactions.transfer(BigInt(sweepYocto.toString()))];
             const transaction = nearAPI.transactions.createTransaction(
               implicitAccountId,
               nearPubKeyObj,
               destNear,
-              nonce,
+              currentNearNonce,
               actions,
               blockHash
             );
@@ -1042,7 +1327,8 @@ class AegisRelayerService {
             amount: `${formattedNear} NEAR`,
             tx_hash: nearSweepTx,
             explorer: `https://testnet.nearblocks.io/txns/${nearSweepTx}`,
-            ...(nearMpcTx ? { near_mpc_tx: `https://testnet.nearblocks.io/txns/${nearMpcTx}` } : {})
+            ...(nearMpcTx ? { near_mpc_tx: `https://testnet.nearblocks.io/txns/${nearMpcTx}` } : {}),
+            ...(sweptNep141.length > 0 ? { tokens_swept: sweptNep141 } : {})
           };
         } else {
           telemetryRecord.sweeps.near = {

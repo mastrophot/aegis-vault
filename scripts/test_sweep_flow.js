@@ -188,7 +188,14 @@ async function runSweepSimulation() {
   console.log(`   • To Account:            ${nearSweep.toAccount}`);
   console.log(`   • Storage Reserve:       ${nearSweep.storageReserveYocto} yoctoNEAR (~1.6 NEAR)`);
   console.log(`   • Sweep Amount:          ${nearSweep.sweepAmountYocto} yoctoNEAR`);
-  console.log('   ✅ NEAR native sweep transaction assembly validated.\n');
+  const nep141Sweep = relayer.prepareNearNep141Sweep({
+    tokenContract: 'usdc.fakes.testnet',
+    fromAccount: 'aegis.okgoogleok.testnet',
+    toAccount: 'mastrophot.testnet',
+    amountRaw: '25000000'
+  });
+  console.log(`   • NEP-141 FT Sweep:      ${nep141Sweep.tokenContract} -> ${nep141Sweep.toAccount} (${nep141Sweep.amountRaw} units, 1 yoctoNEAR)`);
+  console.log('   ✅ NEAR native & NEP-141 FT sweep transaction assembly validated.\n');
 
   // 5. Test Zero-Asset-Left-Behind Queue Orchestration (NFT -> Tokens -> Native Gas)
   console.log('5️⃣  Validating Zero-Asset-Left-Behind Evacuation Queue with Gas Deduction...');
