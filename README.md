@@ -4,9 +4,10 @@
 > **Official Track IDs:** `security` (AI Security & Defense — \$10,000) · `open` (Open Innovation — \$13,500) · `defi` (Unstoppable DeFi — \$10,000)  
 > **Core Primitive:** Native NEAR Chain Signatures (`v1.signer-prod.testnet` MPC Network) & Pure Rust Smart Contract  
 > **Live App:** [https://mastrophot.github.io/aegis-vault/](https://mastrophot.github.io/aegis-vault/)  
-> **Live Edge Keeper API:** [https://aegis-keeper.rain-ellipse.workers.dev/health](https://aegis-keeper.rain-ellipse.workers.dev/health)  
+> **24/7 Autonomous Cloud Keeper:** [`.github/workflows/relayer-keeper.yml`](https://github.com/mastrophot/aegis-vault/actions/workflows/relayer-keeper.yml)  
 > **NEAR Testnet Contract:** [`aegis.okgoogleok.testnet`](https://testnet.nearblocks.io/address/aegis.okgoogleok.testnet)  
-> **Least-Privilege Keeper Account:** [`keeper.aegis.okgoogleok.testnet`](https://testnet.nearblocks.io/address/keeper.aegis.okgoogleok.testnet)
+> **Least-Privilege Keeper Account:** [`keeper.aegis.okgoogleok.testnet`](https://testnet.nearblocks.io/address/keeper.aegis.okgoogleok.testnet)  
+> **Zero-Metadata Telegram Alerts Bot:** [`@aegis_vault_bot`](https://t.me/aegis_vault_bot)
 
 ---
 
@@ -89,8 +90,8 @@
 * [`contracts/vault/src/lib.rs`](contracts/vault/src/lib.rs): Hardened Rust smart contract (`near-sdk 5.5.0`) — state machine, 72h policy timelock, Bitcoin BIP-143 preimage + outputs verifier, EVM EIP-1559 RLP verifier, Solana compiled-instruction verifier, NEAR Borsh transaction verifier, `ed25519_verify` NEP-413 sponsored ping, Per-Vault Gas Escrow + keeper refund, isolated NEAR vault deposits, epoch archiving, and on-chain sweep telemetry.
 * [`relayer/service.js`](relayer/service.js) & [`relayer/sweep_relayer.js`](relayer/sweep_relayer.js): Stateless multichain sweep engine — automated native sweeps across Bitcoin (multi-UTXO SegWit PSBT + `OP_RETURN` anchor), EVM (dynamic gas estimation + EIP-1559 fee clamp), Solana (Base58 Ed25519 signature), and NEAR (isolated + implicit bunker), plus verifiable builders for ERC-20, ERC-721, and Solana SPL/Token-2022 sweeps with honeypot fault isolation.
 * [`workers/keeper/`](workers/keeper/): Serverless Cloudflare Worker (`nodejs_compat`) running at the edge for instant `<1s` `POST /trigger` sweeps and scheduled autonomous checks.
-* [`.github/workflows/relayer-keeper.yml`](.github/workflows/relayer-keeper.yml): Autonomous GitHub Actions cloud keeper (`*/5 * * * *`) powered by the restricted `FunctionCall` key on `keeper.aegis.okgoogleok.testnet`.
-* [`src/wallet-selector.js`](src/wallet-selector.js) & [`web/index.html`](web/index.html): Static zero-backend Web3 interface with NEAR Wallet Selector, live MPC address derivation, client-side X25519/AES-256 E2EE testament sealing & offline decryption modal, Judge Demo Mode (`2m + 30s`), and real-time on-chain evacuation telemetry.
+* [`.github/workflows/relayer-keeper.yml`](.github/workflows/relayer-keeper.yml): Autonomous 24/7 GitHub Actions cloud keeper (`*/5 * * * *` chained 55m windows, 3s polling) powered by the restricted `FunctionCall` key on `keeper.aegis.okgoogleok.testnet` and `TELEGRAM_BOT_TOKEN` secret.
+* [`src/wallet-selector.js`](src/wallet-selector.js) & [`web/index.html`](web/index.html): Static zero-backend Web3 interface with NEAR Wallet Selector, live MPC address derivation, client-side X25519/AES-256 E2EE testament sealing & offline decryption modal, Judge Demo Mode (`3m + 1m`), and real-time on-chain evacuation telemetry.
 * [`scripts/decrypt_testament.js`](scripts/decrypt_testament.js): Zero-server offline CLI decryptor for heirs (`enc:x25519:` & `enc:aes256:`).
 * [`scripts/test_sweep_flow.js`](scripts/test_sweep_flow.js): End-to-end cryptographic test suite validating all multichain sweep pipelines.
 * [`AEGIS_AUDIT_BUNDLE.md`](AEGIS_AUDIT_BUNDLE.md): Complete single-file architectural and source-code audit dossier.
@@ -105,7 +106,7 @@ Every component of Aegis Vault can be deterministically verified in under 60 sec
    ```bash
    cd contracts/vault && cargo test
    ```
-   **See Y**: `8 passed; 0 failed` — confirms 72h timelock enforcement, EVM EIP-1559 RLP fee/recipient verification, Bitcoin BIP-143 preimage + output verification & recipient-hijack rejection, Solana `ComputeBudget` & decoy rejection, NEAR Borsh transaction verification & `FunctionCall` rejection, and `ed25519_verify` NEP-413 replay protection.
+   **See Y**: `9 passed; 0 failed` — confirms 72h timelock enforcement on both destination policies and heartbeat/grace timers (`test_timer_downgrade_attack_blocked_on_armed_bunker`), EVM EIP-1559 RLP fee/recipient verification, Bitcoin BIP-143 preimage + output verification & recipient-hijack rejection, Solana `ComputeBudget` & decoy rejection, NEAR Borsh transaction verification & `FunctionCall` rejection, and `ed25519_verify` NEP-413 replay protection.
 
 2. **Do X (Run End-to-End Multichain Relayer & MPC Derivation Suite)**:
    ```bash
@@ -113,11 +114,11 @@ Every component of Aegis Vault can be deterministically verified in under 60 sec
    ```
    **See Y**: `🚀 ALL MULTICHAIN RELAYER PIPELINES PASSED (100%)` — derives live BTC/EVM/SOL bunker addresses from `v1.signer-prod.testnet` for `aegis.okgoogleok.testnet`, constructs verifiable EVM EIP-1559, Bitcoin BIP-143 SegWit PSBT, Solana System/SPL/Token-2022, and NEAR transactions, and validates fault-isolated queue execution.
 
-3. **Do X (Verify Live 24/7 Edge Keeper & On-Chain Contract State)**:
+3. **Do X (Verify Live On-Chain Contract State via NEAR RPC)**:
    ```bash
-   curl -s https://aegis-keeper.rain-ellipse.workers.dev/health
+   node relayer/service.js --once
    ```
-   **See Y**: JSON response `{"status":"online","worker":"aegis-keeper","contract":"aegis.okgoogleok.testnet","relayer":"keeper.aegis.okgoogleok.testnet","signerConfigured":true}`.
+   **See Y**: Queries `get_actionable_vaults` on `aegis.okgoogleok.testnet`, synchronizes wallet activity (`sync_owner_activity`), promotes elapsed 72h policies (`apply_policy`), and executes multichain sweeps for any expired or evacuated vaults.
 
 4. **Do X (Verify Offline Client-Side E2EE Testament Encryption & Decryption)**:
    ```bash
@@ -140,7 +141,7 @@ Every component of Aegis Vault can be deterministically verified in under 60 sec
    **See Y**: Outputs `Seed phrase in safe #42` decrypted 100% offline using only the heir's Solana Ed25519 keypair.
 
 5. **Do X (Test Live Web App in Browser)**:
-   Open [https://mastrophot.github.io/aegis-vault/](https://mastrophot.github.io/aegis-vault/) -> connect any NEAR Testnet wallet (Meteor / MyNearWallet / Nightly) -> configure Backup/Heir addresses in **1. Rescue & Inheritance** -> view deterministic MPC bunker addresses in **2. Safe Bunker Deposits** -> test **Judge Demo Mode (`2m + 30s`)** or hold the red **PANIC EVACUATE** button for 3 seconds.
+   Open [https://mastrophot.github.io/aegis-vault/](https://mastrophot.github.io/aegis-vault/) -> connect any NEAR Testnet wallet (Meteor / MyNearWallet / Nightly) -> configure Backup/Heir addresses in **1. Rescue & Inheritance** -> view deterministic MPC bunker addresses in **2. Safe Bunker Deposits** -> test **Judge Demo Mode (`3m + 1m`)** or hold the red **PANIC EVACUATE** button for 3 seconds.
    **See Y**: Real NEAR Testnet transactions confirmed on `aegis.okgoogleok.testnet`, live multichain sweep status in the Evacuation Monitor modal, and direct explorer proof links (`NearBlocks`, `Etherscan`, `Mempool.space`, `Solscan`).
 
 ---
@@ -154,10 +155,11 @@ Every component of Aegis Vault can be deterministically verified in under 60 sec
 | **Solana Fee-Drain & Decoy Accounts** | Full compiled-instruction parser; bans `ComputeBudget`, rejects zero blockhash, verifies `lamports/amount > 0` to heir/backup | [`contracts/vault/src/lib.rs`](contracts/vault/src/lib.rs) |
 | **Relayer Blind-Signing (NEAR)** | Full Borsh `Transaction` parser; verifies `receiver_id == policy_dest.near`, `block_hash != 0`, single `Transfer(deposit > 0)`, WASM `sha256` | [`contracts/vault/src/lib.rs`](contracts/vault/src/lib.rs) |
 | **Hostile Relayer Timer Reset** | `ping_by_relayer` requires `env::ed25519_verify` over owner's key + 10m freshness + monotonic `ping_ts:{owner}` anti-replay | [`contracts/vault/src/lib.rs`](contracts/vault/src/lib.rs) |
-| **Keeper Key Compromise** | Dedicated `keeper.aegis.okgoogleok.testnet` uses restricted `FunctionCall` key (`0` transfer rights, 5 whitelisted methods) | On-Chain Access Key |
+| **Keeper Key Compromise** | Dedicated `keeper.aegis.okgoogleok.testnet` uses restricted `FunctionCall` key (`0` transfer rights, whitelisted methods only) | On-Chain Access Key |
 | **Keeper Gas Depletion & Drain** | `0`-deposit `request_sweep_signature` funded via Per-Vault `gas_escrow` / Sponsor Pool (capped at 8 calls/epoch) + `0.005 NEAR` keeper refund | [`contracts/vault/src/lib.rs`](contracts/vault/src/lib.rs) |
-| **Plaintext Testament Leakage** | Client-side `X25519` (`Ed25519 -> Curve25519`) & `PBKDF2-AES-256-GCM` encryption before RPC submission | [`src/wallet-selector.js`](src/wallet-selector.js) |
-| **Unauthorized Policy Takeover** | 72-hour timelock on any egress modification once armed, with instant owner `cancel_policy()` and non-blocking inheritance expiry | [`contracts/vault/src/lib.rs`](contracts/vault/src/lib.rs) |
+| **Plaintext Testament Leakage** | Client-side `X25519` (`Ed25519 -> Curve25519`) & `PBKDF2-AES-256-GCM` encryption before RPC submission; strictly suppressed on `panic` | [`src/wallet-selector.js`](src/wallet-selector.js) |
+| **Unauthorized Policy / Timer Takeover** | 72-hour timelock on any egress address or timer modification once armed, with instant owner `cancel_policy()` and non-blocking inheritance expiry | [`contracts/vault/src/lib.rs`](contracts/vault/src/lib.rs) |
+| **Telegram Metadata & Token Exposure** | Server-side `TELEGRAM_BOT_TOKEN` in GitHub Secrets, anonymous SHA-256 `/start v1_<tag>` linking, encrypted `cid_enc`, and zero-metadata alert strings | [`relayer/service.js`](relayer/service.js) |
 | **Delayed Sweep After Rotation** | `rotate_bunker()` snapshots `{state, destination}` in `archive:{owner}:{epoch}` so late sweeps remain cryptographically verifiable | [`contracts/vault/src/lib.rs`](contracts/vault/src/lib.rs) |
 
 ---
