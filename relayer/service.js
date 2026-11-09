@@ -1514,15 +1514,29 @@ class AegisRelayerService {
 
   _encryptChatId(chatIdStr, tk, vaultOwner) {
     const plain = Buffer.from(String(chatIdStr), 'utf8');
-    const maskHex = ethers
-      .sha256(
-        ethers.toUtf8Bytes(`aegis_cid_mask_v1:${tk}:${String(vaultOwner).trim().toLowerCase()}`)
-      )
+    const ownerClean = String(vaultOwner).trim().toLowerCase();
+    const keyHex = ethers
+      .sha256(ethers.toUtf8Bytes(`aegis_cid_mask_v1:${tk}:${ownerClean}`))
       .slice(2);
-    const mask = Buffer.from(maskHex, 'hex');
+    const key = Buffer.from(keyHex, 'hex');
+
+    if (typeof process !== 'undefined' && !process.browser && typeof require !== 'undefined') {
+      try {
+        const nodeCrypto = require('crypto');
+        const ivHex = ethers
+          .sha256(ethers.toUtf8Bytes(`aegis_cid_iv_v1:${tk}:${ownerClean}:${String(chatIdStr)}`))
+          .slice(2, 26); // 12-byte GCM IV
+        const iv = Buffer.from(ivHex, 'hex');
+        const cipher = nodeCrypto.createCipheriv('aes-256-gcm', key, iv);
+        const enc = Buffer.concat([cipher.update(plain), cipher.final()]);
+        const tag = cipher.getAuthTag();
+        return `gcm:${ivHex}:${tag.toString('hex')}:${enc.toString('hex')}`;
+      } catch (_) {}
+    }
+
     const out = Buffer.alloc(plain.length);
     for (let i = 0; i < plain.length; i++) {
-      out[i] = plain[i] ^ mask[i % mask.length];
+      out[i] = plain[i] ^ key[i % key.length];
     }
     return out.toString('hex');
   }
@@ -1530,16 +1544,32 @@ class AegisRelayerService {
   _decryptChatId(cidEncHex, tk, vaultOwner) {
     try {
       if (!cidEncHex || typeof cidEncHex !== 'string') return null;
-      const enc = Buffer.from(cidEncHex, 'hex');
-      const maskHex = ethers
-        .sha256(
-          ethers.toUtf8Bytes(`aegis_cid_mask_v1:${tk}:${String(vaultOwner).trim().toLowerCase()}`)
-        )
+      const ownerClean = String(vaultOwner).trim().toLowerCase();
+      const keyHex = ethers
+        .sha256(ethers.toUtf8Bytes(`aegis_cid_mask_v1:${tk}:${ownerClean}`))
         .slice(2);
-      const mask = Buffer.from(maskHex, 'hex');
+      const key = Buffer.from(keyHex, 'hex');
+
+      if (cidEncHex.startsWith('gcm:')) {
+        const parts = cidEncHex.split(':');
+        if (parts.length === 4 && typeof process !== 'undefined' && !process.browser && typeof require !== 'undefined') {
+          const nodeCrypto = require('crypto');
+          const iv = Buffer.from(parts[1], 'hex');
+          const tag = Buffer.from(parts[2], 'hex');
+          const enc = Buffer.from(parts[3], 'hex');
+          const decipher = nodeCrypto.createDecipheriv('aes-256-gcm', key, iv);
+          decipher.setAuthTag(tag);
+          const dec = Buffer.concat([decipher.update(enc), decipher.final()]);
+          const str = dec.toString('utf8').trim();
+          return /^-?\d+$/.test(str) ? str : null;
+        }
+        return null;
+      }
+
+      const enc = Buffer.from(cidEncHex, 'hex');
       const out = Buffer.alloc(enc.length);
       for (let i = 0; i < enc.length; i++) {
-        out[i] = enc[i] ^ mask[i % mask.length];
+        out[i] = enc[i] ^ key[i % key.length];
       }
       const str = out.toString('utf8').trim();
       return /^-?\d+$/.test(str) ? str : null;
