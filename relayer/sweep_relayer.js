@@ -38,7 +38,15 @@ class LastKeySweepRelayer {
     this.chainSigContract = new chainsig.contracts.ChainSignatureContract({
       networkId: this.networkId,
       contractId: this.mpcContractId,
-      fallbackRpcUrls: [this.nearRpcUrl]
+      fallbackRpcUrls:
+        this.networkId === 'mainnet'
+          ? [this.nearRpcUrl, 'https://free.rpc.fastnear.com', 'https://rpc.mainnet.near.org']
+          : [
+              this.nearRpcUrl,
+              'https://test.rpc.fastnear.com',
+              'https://rpc.testnet.fastnear.com',
+              'https://archival-rpc.testnet.near.org'
+            ]
     });
 
     this.evmAdapter = new chainsig.chainAdapters.evm.EVM({

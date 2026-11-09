@@ -186,6 +186,32 @@ export async function connectOkxNearWallet(contractId = "aegis.okgoogleok.testne
   return { accountId };
 }
 
+async function nearTestnetRpcJson(payload) {
+  const urls = [
+    "https://test.rpc.fastnear.com",
+    "https://rpc.testnet.fastnear.com",
+    "https://archival-rpc.testnet.near.org"
+  ];
+  let lastErr = null;
+  for (const url of urls) {
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) {
+        lastErr = new Error(`NEAR RPC HTTP ${res.status} (${url})`);
+        continue;
+      }
+      return await res.json();
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  throw lastErr || new Error("All NEAR RPC endpoints failed");
+}
+
 export async function verifyAndConnectKeyPair(accountId, privateKeyStr, contractId = "aegis.okgoogleok.testnet") {
   const cleanAccount = String(accountId || "").trim().toLowerCase();
   if (!/^[a-z0-9_-]+(\.[a-z0-9_-]+)*$/.test(cleanAccount) || cleanAccount.length < 2 || cleanAccount.length > 64) {
@@ -200,22 +226,17 @@ export async function verifyAndConnectKeyPair(accountId, privateKeyStr, contract
     throw new Error("Invalid Ed25519 private key format (expected ed25519:...)");
   }
   const pubKeyStr = keyPair.getPublicKey().toString();
-  const res = await fetch("https://test.rpc.fastnear.com", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      jsonrpc: "2.0",
-      id: 1,
-      method: "query",
-      params: {
-        request_type: "view_access_key",
-        finality: "optimistic",
-        account_id: cleanAccount,
-        public_key: pubKeyStr
-      }
-    })
+  const body = await nearTestnetRpcJson({
+    jsonrpc: "2.0",
+    id: 1,
+    method: "query",
+    params: {
+      request_type: "view_access_key",
+      finality: "optimistic",
+      account_id: cleanAccount,
+      public_key: pubKeyStr
+    }
   });
-  const body = await res.json();
   if (body?.error || body?.result?.error) {
     throw new Error(`Key ${pubKeyStr.slice(0, 18)}... is not authorized on account ${cleanAccount}`);
   }
@@ -271,23 +292,18 @@ async function signAndSendWithLocalKeyPair(signerAccountId, privateKeyStr, contr
   const keyPair = nearAPI.utils.KeyPair.fromString(privateKeyStr.trim());
   const pubKey = keyPair.getPublicKey();
   const pubKeyStr = pubKey.toString();
-  const rpcUrl = "https://test.rpc.fastnear.com";
 
-  const keyRes = await fetch(rpcUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      jsonrpc: "2.0",
-      id: 1,
-      method: "query",
-      params: {
-        request_type: "view_access_key",
-        finality: "optimistic",
-        account_id: signerAccountId,
-        public_key: pubKeyStr
-      }
-    })
-  }).then((r) => r.json());
+  const keyRes = await nearTestnetRpcJson({
+    jsonrpc: "2.0",
+    id: 1,
+    method: "query",
+    params: {
+      request_type: "view_access_key",
+      finality: "optimistic",
+      account_id: signerAccountId,
+      public_key: pubKeyStr
+    }
+  });
 
   if (keyRes?.error || keyRes?.result?.error) {
     throw new Error(keyRes?.result?.error || keyRes?.error?.message || "Access key lookup failed");
@@ -333,19 +349,15 @@ async function signAndSendWithLocalKeyPair(signerAccountId, privateKeyStr, contr
   });
   const signedTxBase64 = Buffer.from(signedTx.encode()).toString("base64");
 
-  const sendRes = await fetch(rpcUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      jsonrpc: "2.0",
-      id: 1,
-      method: "send_tx",
-      params: {
-        signed_tx_base64: signedTxBase64,
-        wait_until: "EXECUTED_OPTIMISTIC"
-      }
-    })
-  }).then((r) => r.json());
+  const sendRes = await nearTestnetRpcJson({
+    jsonrpc: "2.0",
+    id: 1,
+    method: "send_tx",
+    params: {
+      signed_tx_base64: signedTxBase64,
+      wait_until: "EXECUTED_OPTIMISTIC"
+    }
+  });
 
   if (sendRes?.error) {
     throw new Error(sendRes.error.data ? JSON.stringify(sendRes.error.data) : sendRes.error.message);
@@ -424,7 +436,14 @@ export async function signAndSendNearTx(contractId, methodName, args = {}, depos
 }
 
 export async function deriveVaultAddresses(accountId, path = "aegis/0", networkId = "testnet") {
-  const contract = new contracts.ChainSignatureContract({ networkId });
+  const contract = new contracts.ChainSignatureContract({
+    networkId,
+    contractId: networkId === "mainnet" ? "v1.signer" : "v1.signer-prod.testnet",
+    fallbackRpcUrls:
+      networkId === "mainnet"
+        ? ["https://free.rpc.fastnear.com", "https://rpc.mainnet.near.org"]
+        : ["https://test.rpc.fastnear.com", "https://rpc.testnet.fastnear.com", "https://archival-rpc.testnet.near.org"]
+  });
 
   // 1. EVM
   const evmAdapter = new chainAdapters.evm.EVM({ contract });

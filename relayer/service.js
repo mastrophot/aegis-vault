@@ -129,7 +129,8 @@ class AegisRelayerService {
     const candidates = [
       this.nearRpcUrl,
       this.networkId === 'testnet' ? 'https://test.rpc.fastnear.com' : 'https://free.rpc.fastnear.com',
-      this.networkId === 'testnet' ? 'https://rpc.testnet.fastnear.com' : 'https://rpc.mainnet.fastnear.com'
+      this.networkId === 'testnet' ? 'https://rpc.testnet.fastnear.com' : 'https://rpc.mainnet.fastnear.com',
+      this.networkId === 'testnet' ? 'https://archival-rpc.testnet.near.org' : 'https://rpc.mainnet.near.org'
     ].filter((u, idx, arr) => u && arr.indexOf(u) === idx);
 
     let lastErr = null;
