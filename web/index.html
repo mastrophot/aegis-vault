@@ -7,10 +7,10 @@
   <link rel="icon" type="image/svg+xml" href="./favicon.svg">
   <link rel="shortcut icon" href="./favicon.svg">
   
-  <!-- Open-Source Typography (SIL Open Font License 1.1): Plus Jakarta Sans, Inter & JetBrains Mono -->
+  <!-- Open-Source Typography (SIL Open Font License 1.1): Inter Variable (opsz), Space Grotesk & JetBrains Mono -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300..800&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -35,8 +35,8 @@
       theme: {
         extend: {
           fontFamily: {
-            sans: ['"Plus Jakarta Sans"', '"Inter"', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
-            display: ['"Plus Jakarta Sans"', '"Inter"', 'sans-serif'],
+            sans: ['"Inter"', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+            display: ['"Space Grotesk"', '"Inter"', 'sans-serif'],
             mono: ['"JetBrains Mono"', 'ui-monospace', 'monospace'],
           },
           colors: {
@@ -77,6 +77,10 @@
     body {
       background-color: #06080D;
       color: #FFFFFF;
+      font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-optical-sizing: auto;
+      font-weight: 450;
+      letter-spacing: -0.006em;
       -webkit-font-smoothing: antialiased;
       -moz-osx-font-smoothing: grayscale;
       text-rendering: optimizeLegibility;
@@ -89,8 +93,8 @@
     }
     
     h1, h2, h3, h4, #countdownBox {
-      font-family: "Plus Jakarta Sans", "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
-      letter-spacing: -0.01em;
+      font-family: "Space Grotesk", "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+      letter-spacing: -0.02em;
     }
 
     ::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -100,7 +104,7 @@
 
     .near-card {
       background: #0B0E15;
-      border: 1px solid rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.09);
       border-radius: 24px;
       transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
     }
@@ -139,20 +143,27 @@
       scroll-behavior: smooth;
     }
 
-    /* Clean dark-mode microfont sizing & hierarchy (without forced bolding) */
-    .text-\[10px\] { font-size: 0.75rem !important; line-height: 1.15rem !important; }
-    .text-\[11px\] { font-size: 0.8125rem !important; line-height: 1.25rem !important; }
+    /* Comfortable dark-mode typography scale */
+    .text-\[10px\] { font-size: 0.76rem !important; line-height: 1.2rem !important; }
+    .text-\[11px\] { font-size: 0.8125rem !important; line-height: 1.3rem !important; }
+    .text-xs { font-size: 0.84rem !important; line-height: 1.38rem !important; }
+    .text-sm { font-size: 0.915rem !important; line-height: 1.45rem !important; }
 
     /* Balanced contrast for secondary labels and placeholders */
     .text-\[\#585E6A\], .text-\[\#586274\], .text-white\/40 {
-      color: #8490A5 !important;
+      color: #8A96AA !important;
     }
-    .text-\[\#8C929D\], .text-\[\#8C95A6\] {
-      color: #9FAAB9 !important;
+    .text-\[\#8C929D\], .text-\[\#8C95A6\], .text-\[\#8E99AD\] {
+      color: #A8B4C6 !important;
+    }
+    .text-\[\#A6B0C3\], .text-\[\#B0B9C9\] {
+      color: #B8C4D6 !important;
     }
     input::placeholder, textarea::placeholder {
-      color: #5E6A7E !important;
-      font-weight: 400 !important;
+      font-family: "Inter", -apple-system, BlinkMacSystemFont, sans-serif !important;
+      color: #647185 !important;
+      font-weight: 430 !important;
+      letter-spacing: 0 !important;
     }
   </style>
 </head>
@@ -250,11 +261,11 @@
     <div class="space-y-1.5 px-0.5">
       <div class="flex flex-wrap items-center gap-2.5">
         <span class="w-2.5 h-2.5 rounded-full bg-nearGreen radar-pulse"></span>
-        <h1 class="text-base sm:text-lg font-extrabold text-white tracking-tight">Zero-Signature Crypto Bunker &amp; Automatic Inheritance</h1>
-        <span class="text-[11px] font-mono px-2.5 py-0.5 rounded-md bg-nearGreen/10 text-nearGreen border border-nearGreen/25 font-bold">Public Keys Hidden</span>
+        <h1 class="text-lg sm:text-xl font-bold text-white tracking-tight">Zero-Signature Crypto Bunker &amp; Automatic Inheritance</h1>
+        <span class="text-xs font-mono px-2.5 py-0.5 rounded-md bg-nearGreen/10 text-nearGreen border border-nearGreen/25 font-semibold">Public Keys Hidden</span>
       </div>
-      <p class="text-xs sm:text-[13px] text-[#A6B0C3] leading-relaxed max-w-5xl">
-        Regular wallets permanently expose their cryptographic public key on-chain every time they sign a transaction. Your <strong class="text-white font-semibold">Aegis Bunker</strong> addresses only receive deposits and never sign a single outgoing transaction — until <strong class="text-white font-semibold">Emergency Panic</strong> sweeps 100% of funds to your backup wallet or <strong class="text-white font-semibold">Automatic Inheritance</strong> transfers them to your designated inheritance wallets if your timer expires.
+      <p class="text-sm text-[#B8C4D6] leading-relaxed max-w-4xl">
+        Regular wallets permanently expose their cryptographic public key on-chain every time they sign a transaction. Your Aegis Bunker addresses only receive deposits and never sign a single outgoing transaction — until Emergency Panic sweeps 100% of funds to your backup wallet or Automatic Inheritance transfers them if your timer expires.
       </p>
     </div>
 
@@ -340,7 +351,7 @@
                   </select>
                   <svg class="w-3.5 h-3.5 text-[#8C929D] absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" /></svg>
                 </div>
-                <p class="text-[11px] text-[#8C929D] leading-snug pl-1 pt-0.5">How long you can stay inactive. Resets on check-in or any wallet activity.</p>
+                <p class="text-[11px] text-[#8C929D] leading-snug pl-1 pt-0.5">Max inactivity before Grace Buffer starts. Resets on check-in.</p>
               </div>
               <div class="space-y-1">
                 <label class="block text-xs font-semibold text-[#8C929D] pl-1">Grace Buffer</label>
@@ -354,7 +365,7 @@
                   </select>
                   <svg class="w-3.5 h-3.5 text-[#8C929D] absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" /></svg>
                 </div>
-                <p class="text-[11px] text-[#8C929D] leading-snug pl-1 pt-0.5">Extra safety window after timer hits 0 before funds are transferred to your Inheritance wallets.</p>
+                <p class="text-[11px] text-[#8C929D] leading-snug pl-1 pt-0.5">Extra safety window after timer hits 0 before Inheritance transfer.</p>
               </div>
             </div>
           </div>
@@ -372,9 +383,9 @@
           <div>
             <div class="flex items-center gap-2.5">
               <span class="w-2.5 h-2.5 rounded-full bg-nearGreen radar-pulse"></span>
-              <h3 class="text-base sm:text-lg font-bold text-white tracking-tight">Where Your Funds Go</h3>
+              <h3 class="text-lg sm:text-xl font-bold text-white tracking-tight">Where Your Funds Go</h3>
             </div>
-            <p class="text-xs sm:text-sm text-[#8C929D] mt-1">
+            <p class="text-sm text-[#A8B4C6] mt-1">
               Set your Emergency Panic wallets (for instant self-rescue) and your Inheritance wallets (for automatic transfer if your timer expires).
             </p>
           </div>
@@ -404,10 +415,10 @@
                 <div class="space-y-1">
                   <div class="flex items-center gap-2">
                     <span class="w-2 h-2 rounded-full bg-red-400"></span>
-                    <h4 class="text-sm sm:text-base font-bold text-white tracking-tight">Emergency Panic Wallets (Backup)</h4>
+                    <h4 class="text-base sm:text-[17px] font-bold text-white tracking-tight">Emergency Panic Wallets (Backup)</h4>
                   </div>
-                  <p class="text-xs sm:text-sm text-[#B0B9C9]">
-                    Clicking Emergency Panic immediately evacuates 100% of your Bunker assets to these personal backup wallets.
+                  <p class="text-sm text-[#B8C4D6]">
+                    Instant 100% evacuation to your personal backup wallets when you trigger Panic.
                   </p>
                 </div>
                 <span class="text-xs font-sans font-semibold text-red-400 bg-red-950/40 border border-red-500/30 px-2.5 py-0.5 rounded-lg whitespace-nowrap shrink-0">
@@ -471,10 +482,10 @@
                   <div class="space-y-1">
                     <div class="flex items-center gap-2">
                       <span class="w-2 h-2 rounded-full bg-nearGreen"></span>
-                      <h4 class="text-sm sm:text-base font-bold text-white tracking-tight">Inheritance Wallets (Beneficiary)</h4>
+                      <h4 class="text-base sm:text-[17px] font-bold text-white tracking-tight">Inheritance Wallets (Beneficiary)</h4>
                     </div>
-                    <p class="text-xs sm:text-sm text-[#B0B9C9]">
-                      If your check-in timer and grace buffer expire, 100% of your Bunker assets are transferred here automatically.
+                    <p class="text-sm text-[#B8C4D6]">
+                      Automatic 100% transfer to your beneficiary if your check-in timer and grace buffer expire.
                     </p>
                   </div>
                   <span class="text-xs font-sans font-semibold text-nearGreen bg-nearGreenMuted border border-nearGreen/30 px-2.5 py-0.5 rounded-lg whitespace-nowrap shrink-0">
