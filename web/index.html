@@ -670,7 +670,7 @@
             <span class="w-2.5 h-2.5 rounded-full bg-nearGreen radar-pulse"></span>
             <h3 class="text-base sm:text-lg font-extrabold text-white">Your Bunker Deposit Addresses</h3>
           </div>
-          <p class="text-xs text-[#8C929D] mt-0.5">Send funds to these addresses to store them inside your Bunker.</p>
+          <p class="text-xs text-[#A6B0C3] mt-0.5">Connect your wallet and save both Backup (Emergency) &amp; Family (Inheritance) addresses above to unlock each network's deposit address.</p>
         </div>
         <div class="flex items-center gap-2 self-start sm:self-auto">
           <button onclick="fetchLiveBalances(true)" class="px-3.5 py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-xs font-sans font-semibold text-textSilver hover:text-white transition flex items-center gap-2 cursor-pointer">
@@ -712,8 +712,8 @@
                 <span class="text-xs font-sans font-medium text-[#A6B0C3]">Deposit address</span>
               </div>
               <div class="p-3.5 rounded-xl bg-white/[0.03] border border-white/[0.08] hover:border-white/[0.2] transition min-h-[68px] flex items-center cursor-pointer group" onclick="copyAddr('btcAddress')">
-                <span id="btcAddress" data-full="" class="font-sans text-xs sm:text-[13px] leading-relaxed text-[#8C929D] break-all select-all font-medium group-hover:text-nearGreen transition-colors">
-                  Connect wallet to reveal address
+                <span id="btcAddress" data-full="" class="font-sans text-xs sm:text-[13px] leading-relaxed text-[#A6B0C3] break-words select-none font-medium group-hover:text-nearGreen transition-colors">
+                  Connect wallet &amp; save Backup + Family addresses above
                 </span>
               </div>
             </div>
@@ -760,8 +760,8 @@
                 <span class="text-xs font-sans font-medium text-[#A6B0C3]">Deposit address</span>
               </div>
               <div class="p-3.5 rounded-xl bg-white/[0.03] border border-white/[0.08] hover:border-white/[0.2] transition min-h-[68px] flex items-center cursor-pointer group" onclick="copyAddr('evmAddress')">
-                <span id="evmAddress" data-full="" class="font-sans text-xs sm:text-[13px] leading-relaxed text-[#8C929D] break-all select-all font-medium group-hover:text-nearGreen transition-colors">
-                  Connect wallet to reveal address
+                <span id="evmAddress" data-full="" class="font-sans text-xs sm:text-[13px] leading-relaxed text-[#A6B0C3] break-words select-none font-medium group-hover:text-nearGreen transition-colors">
+                  Connect wallet &amp; save Backup + Family addresses above
                 </span>
               </div>
             </div>
@@ -808,8 +808,8 @@
                 <span class="text-xs font-sans font-medium text-[#A6B0C3]">Deposit address</span>
               </div>
               <div class="p-3.5 rounded-xl bg-white/[0.03] border border-white/[0.08] hover:border-white/[0.2] transition min-h-[68px] flex items-center cursor-pointer group" onclick="copyAddr('solAddress')">
-                <span id="solAddress" data-full="" class="font-sans text-xs sm:text-[13px] leading-relaxed text-[#8C929D] break-all select-all font-medium group-hover:text-nearGreen transition-colors">
-                  Connect wallet to reveal address
+                <span id="solAddress" data-full="" class="font-sans text-xs sm:text-[13px] leading-relaxed text-[#A6B0C3] break-words select-none font-medium group-hover:text-nearGreen transition-colors">
+                  Connect wallet &amp; save Backup + Family addresses above
                 </span>
               </div>
             </div>
@@ -856,8 +856,8 @@
                 <span class="text-xs font-sans font-medium text-[#A6B0C3]">Deposit address</span>
               </div>
               <div class="p-3.5 rounded-xl bg-white/[0.03] border border-white/[0.08] hover:border-white/[0.2] transition min-h-[68px] flex items-center cursor-pointer group" onclick="copyAddr('nearAddress')">
-                <span id="nearAddress" data-full="" title="Connect wallet to reveal address" class="font-sans text-xs sm:text-[13px] leading-relaxed text-[#8C929D] break-all select-all font-medium group-hover:text-nearGreen transition-colors">
-                  Connect wallet to reveal address
+                <span id="nearAddress" data-full="" title="Connect wallet &amp; save Backup + Family addresses above" class="font-sans text-xs sm:text-[13px] leading-relaxed text-[#A6B0C3] break-words select-none font-medium group-hover:text-nearGreen transition-colors">
+                  Connect wallet &amp; save Backup + Family addresses above
                 </span>
               </div>
             </div>
@@ -3039,12 +3039,12 @@
       if (!currentSigner) {
         chains.forEach(c => {
           if (c.addrEl) {
-            c.addrEl.innerText = 'Connect wallet to reveal address';
-            c.addrEl.className = 'font-mono text-xs sm:text-[13px] leading-relaxed text-[#8C929D] break-words select-none font-medium';
+            c.addrEl.innerText = 'Connect wallet & save Backup + Family addresses above';
+            c.addrEl.className = 'font-sans text-xs sm:text-[13px] leading-relaxed text-[#A6B0C3] break-words select-none font-medium';
             c.addrEl.dataset.full = '';
           }
           if (c.actionsEl) {
-            c.actionsEl.innerHTML = `<div class="col-span-2 py-2 px-3 rounded-xl bg-white/[0.03] border border-white/[0.08] text-center text-xs font-mono text-[#8C929D] flex items-center justify-center gap-1.5 select-none">Connect Wallet to Unlock</div>`;
+            c.actionsEl.innerHTML = `<button type="button" onclick="openMultichainWalletModal()" class="col-span-2 py-2.5 px-3 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] hover:border-nearGreen/40 text-center text-xs font-sans font-semibold text-[#A6B0C3] hover:text-white flex items-center justify-center gap-1.5 transition cursor-pointer">Connect &amp; Set Wallets to Unlock</button>`;
           }
         });
         if (pill) {
@@ -3159,15 +3159,15 @@
 
         chains.forEach(c => {
           if (c.addrEl) {
-            c.addrEl.innerText = 'Bunker Doors Open — Save wallets above to seal & reveal';
-            c.addrEl.className = 'font-mono text-xs leading-relaxed text-amber-400/80 break-words select-none font-semibold';
+            c.addrEl.innerText = 'Bunker Doors Open — Save Backup & Family addresses above to reveal';
+            c.addrEl.className = 'font-sans text-xs sm:text-[13px] leading-relaxed text-amber-400/90 break-words select-none font-semibold';
             c.addrEl.dataset.full = '';
           }
           if (c.actionsEl) {
             c.actionsEl.innerHTML = `
-              <button type="button" onclick="switchTab('rescue')" class="col-span-2 py-2 px-3 rounded-xl bg-amber-950/25 hover:bg-amber-950/40 border border-amber-500/25 hover:border-amber-500/40 text-center text-xs font-mono text-amber-400 flex items-center justify-center gap-1.5 transition active:scale-98 cursor-pointer">
+              <button type="button" onclick="switchTab('rescue')" class="col-span-2 py-2.5 px-3 rounded-xl bg-amber-950/25 hover:bg-amber-950/40 border border-amber-500/25 hover:border-amber-500/40 text-center text-xs font-sans font-bold text-amber-400 flex items-center justify-center gap-1.5 transition active:scale-98 cursor-pointer">
                 <svg class="w-3.5 h-3.5 text-amber-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
-                <span>Bunker Open · Seal Above ↑</span>
+                <span>Save Backup &amp; Family Wallets ↑</span>
               </button>
             `;
           }
@@ -3219,15 +3219,15 @@
       chains.forEach(c => {
         if (!c.hasEgress) {
           if (c.addrEl) {
-            c.addrEl.innerText = 'Save backup & family wallets above to unlock';
-            c.addrEl.className = 'font-mono text-xs leading-relaxed text-amber-400/80 break-words select-none font-semibold';
+            c.addrEl.innerText = `Save Backup & Family addresses for ${c.name} above to reveal`;
+            c.addrEl.className = 'font-sans text-xs sm:text-[13px] leading-relaxed text-amber-400/90 break-words select-none font-semibold';
             c.addrEl.dataset.full = '';
           }
           if (c.actionsEl) {
             c.actionsEl.innerHTML = `
-              <button type="button" onclick="switchTab('rescue')" class="col-span-2 py-2 px-3 rounded-xl bg-amber-950/25 hover:bg-amber-950/40 border border-amber-500/25 hover:border-amber-500/40 text-center text-xs font-mono text-amber-400 flex items-center justify-center gap-1.5 transition active:scale-98 cursor-pointer">
+              <button type="button" onclick="switchTab('rescue')" class="col-span-2 py-2.5 px-3 rounded-xl bg-amber-950/25 hover:bg-amber-950/40 border border-amber-500/25 hover:border-amber-500/40 text-center text-xs font-sans font-bold text-amber-400 flex items-center justify-center gap-1.5 transition active:scale-98 cursor-pointer">
                 <svg class="w-3.5 h-3.5 text-amber-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
-                <span>Locked · Save Wallets Above ↑</span>
+                <span>Set ${c.name} Backup &amp; Family ↑</span>
               </button>
             `;
           }
@@ -4442,7 +4442,8 @@
 
     function copyAddr(elemId) {
       if (!localStorage.getItem('aegis_signer_account')) {
-        showToast('Connect wallet first', true);
+        showToast('Connect your wallet and save Backup + Family addresses above to unlock deposit addresses.', true);
+        openMultichainWalletModal();
         return;
       }
       if (isAddressDisplayLocked()) {
@@ -4453,13 +4454,13 @@
       const b = lastFetchedVaultInfo?.backup?.[chainId]?.trim();
       const h = lastFetchedVaultInfo?.heirs?.[chainId]?.trim();
       if (!b || !h) {
-        showToast(`⚠️ ${chainId.toUpperCase()} locked: Set both Panic & Heir destinations in Tab 1 first.`, true);
+        showToast(`⚠️ ${chainId.toUpperCase()} locked: Save both Backup (Emergency) & Family (Inheritance) addresses above first.`, true);
         switchTab('rescue');
         return;
       }
       const el = document.getElementById(elemId);
       const text = el ? (el.dataset.full || el.innerText) : '';
-      if (!text || text.includes('Bunker Unarmed') || text.includes('Epoch ') || text.includes('Heartbeat Expired') || text.includes('Connect wallet') || text.includes('Deriving') || text.includes('Egress Incomplete')) {
+      if (!text || text.includes('Bunker Unarmed') || text.includes('Bunker Doors Open') || text.includes('Save Backup') || text.includes('Epoch ') || text.includes('Heartbeat Expired') || text.includes('Connect wallet') || text.includes('Deriving') || text.includes('Egress Incomplete')) {
         showToast('No active deposit address available', true);
         return;
       }
@@ -4519,15 +4520,16 @@
     // QR Code
     function openQr(title, address) {
       if (!localStorage.getItem('aegis_signer_account')) {
-        showToast('Connect wallet first', true);
+        showToast('Connect your wallet and save Backup + Family addresses above to unlock QR codes.', true);
+        openMultichainWalletModal();
         return;
       }
       if (isAddressDisplayLocked()) {
         showToast('🛑 QR Code disabled: Bunker epoch is expired or closed.', true);
         return;
       }
-      if (!address || address.includes('Bunker Unarmed') || address.includes('Epoch ') || address.includes('Heartbeat Expired') || address.includes('Connect wallet') || address.includes('Deriving') || address.includes('Egress Incomplete')) {
-        showToast('⚠️ QR Code locked: Configure Panic and Heir destinations in Tab 1 first.', true);
+      if (!address || address.includes('Bunker Unarmed') || address.includes('Bunker Doors Open') || address.includes('Save Backup') || address.includes('Epoch ') || address.includes('Heartbeat Expired') || address.includes('Connect wallet') || address.includes('Deriving') || address.includes('Egress Incomplete')) {
+        showToast('⚠️ QR Code locked: Save both Backup (Emergency) and Family (Inheritance) addresses above first.', true);
         switchTab('rescue');
         return;
       }
