@@ -2120,15 +2120,22 @@
           else { unconfiguredBanner.classList.add('hidden'); unconfiguredBanner.classList.remove('flex'); }
         }
         const desc = document.getElementById('addressStatusDesc');
-        if (badge) {
-          badge.innerText = hasActiveAddresses ? 'Saved & Protected' : 'Not Set Yet';
-          badge.className = hasActiveAddresses ? 'text-nearGreen font-mono font-bold' : 'text-amber-300 font-mono font-bold';
+        if (!isAddrLocked) {
+          if (badge) {
+            badge.innerText = hasActiveAddresses ? 'Saved & Protected' : 'Not Set Yet';
+            badge.className = hasActiveAddresses ? 'text-nearGreen font-mono font-bold' : 'text-amber-300 font-mono font-bold';
+          }
+          if (dot) dot.className = hasActiveAddresses ? 'w-2.5 h-2.5 rounded-full bg-nearGreen shadow-near-glow' : 'w-2.5 h-2.5 rounded-full bg-amber-400';
+          if (desc) desc.innerText = hasActiveAddresses
+            ? 'Your funds can only be sent to the Emergency Panic or Inheritance wallets saved above.'
+            : 'Enter your Emergency Panic and Inheritance wallets above and click Seal Bunker.';
+        } else if (desc) {
+          desc.innerText = 'Epoch keys retired after evacuation. Click Seal Fresh Bunker above to start a new epoch.';
         }
-        if (dot) dot.className = hasActiveAddresses ? 'w-2.5 h-2.5 rounded-full bg-nearGreen shadow-near-glow' : 'w-2.5 h-2.5 rounded-full bg-amber-400';
-        if (desc) desc.innerText = hasActiveAddresses
-          ? 'Your funds can only be sent to the Emergency Panic or Inheritance wallets saved above.'
-          : 'Enter your Emergency Panic and Inheritance wallets above and click Seal Bunker.';
       }
+
+      updateSaveButtonState(info);
+      checkUnallocatedFunds();
 
       if (isVaultEvacuatedOrBurned()) {
         const banner = document.getElementById('bunkerBurnedBanner');
@@ -5006,10 +5013,22 @@
       if (solEl) solEl.innerText = maskAddressForDisplay(solTarget);
       if (nearEl) nearEl.innerText = maskAddressForDisplay(nearTarget);
 
-      const btcBal = document.getElementById('btcBalanceText')?.innerText || '0.0000 BTC';
-      const evmBal = document.getElementById('evmBalanceText')?.innerText || '0.0000 ETH';
-      const solBal = document.getElementById('solBalanceText')?.innerText || '0.0000 SOL';
-      const nearBal = document.getElementById('nearBalanceText')?.innerText || '0.0000 NEAR';
+      if (!window._epochPreSweepBals || window._epochPreSweepBals.epoch !== lastFetchedVaultInfo?.epoch) {
+        window._epochPreSweepBals = { epoch: lastFetchedVaultInfo?.epoch };
+      }
+      const pickNonZeroBal = (key, liveDomText, fallbackZero) => {
+        const clean = String(liveDomText || '').trim();
+        const num = parseFloat(clean);
+        if (!isNaN(num) && num > 0) {
+          window._epochPreSweepBals[key] = clean;
+          return clean;
+        }
+        return window._epochPreSweepBals[key] || clean || fallbackZero;
+      };
+      const btcBal = pickNonZeroBal('btc', document.getElementById('btcBalanceText')?.innerText, '0.0000 BTC');
+      const evmBal = pickNonZeroBal('evm', document.getElementById('evmBalanceText')?.innerText, '0.0000 ETH');
+      const solBal = pickNonZeroBal('sol', document.getElementById('solBalanceText')?.innerText, '0.0000 SOL');
+      const nearBal = pickNonZeroBal('near', document.getElementById('nearBalanceText')?.innerText, '0.0000 NEAR');
 
       if (document.getElementById('monitorBtcBal')) document.getElementById('monitorBtcBal').innerText = btcBal;
       if (document.getElementById('monitorEvmBal')) document.getElementById('monitorEvmBal').innerText = evmBal;
@@ -5356,6 +5375,17 @@
       }
       if (!lastFetchedVaultInfo) {
         dispatchNearTransaction('request_telegram_test').catch(() => {});
+      } else if (lastFetchedVaultInfo.alert_state) {
+        try {
+          const st = JSON.parse(lastFetchedVaultInfo.alert_state) || {};
+          if (st.tg_unlinked_uid || st.tg_linked === false) {
+            delete st.tg_unlinked_uid;
+            const provider = window.AegisWallet || window.AegisMeteor || window.AegisWalletBundle;
+            if (provider && typeof provider.syncAlertStateOnChain === 'function') {
+              provider.syncAlertStateOnChain(signer, JSON.stringify(st)).catch(() => {});
+            }
+          }
+        } catch (_) {}
       }
       showToast('Press Start inside @lastkey_bunker_bot — 24/7 Keeper will link & confirm automatically...');
 
