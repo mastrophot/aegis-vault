@@ -590,28 +590,6 @@ impl LastKeyVault {
         env::log_str(&format!("VAULT_RESET: Vault for {} reset to Unconfigured", caller));
     }
 
-    /// Strictly self-only administrative reset (relayers are NEVER allowed to reset vaults).
-    #[private]
-    pub fn admin_reset_vault(&mut self, target_account: AccountId) {
-        require!(
-            env::predecessor_account_id() == env::current_account_id(),
-            "Strictly restricted to contract self-call"
-        );
-        let vault = self
-            .vaults
-            .get_mut(&target_account)
-            .expect("No vault found for target account");
-        vault.backup = ChainAddresses::empty();
-        vault.heirs = ChainAddresses::empty();
-        vault.state = VaultState::Unconfigured;
-        vault.pending_policy = None;
-        Self::internal_clear_pending_intervals(&target_account);
-        env::log_str(&format!(
-            "ADMIN_VAULT_RESET: Vault for {} reset to Unconfigured by contract self",
-            target_account
-        ));
-    }
-
     /// Sweeps strictly the isolated per-user native NEAR deposit (`near_dep:{vault_owner}`)
     /// to the policy-locked backup or heir destination account (no caller destination override allowed).
     /// Includes an automatic rollback callback (`on_sweep_near_complete`) so funds are never lost if transfer fails.
@@ -3012,7 +2990,7 @@ mod tests {
     }
 
     #[test]
-    fn test_relayer_cannot_call_admin_reset_and_unauthenticated_ping_blocked() {
+    fn test_armed_vault_cannot_bypass_timelock_via_reset_and_unauthenticated_ping_blocked() {
         let alice: AccountId = "alice.testnet".parse().unwrap();
         let keeper: AccountId = "keeper.testnet".parse().unwrap();
         let contract_id: AccountId = "aegis.okgoogleok.testnet".parse().unwrap();
@@ -3035,17 +3013,17 @@ mod tests {
             "8119c2811b758728b341f9279c25064df770ef13d63e583acdebe9590f31c43a".to_string(),
         );
 
-        // Keeper attempting `admin_reset_vault` MUST panic (`#[private]` + explicit self-check)
-        testing_env!(context
-            .predecessor_account_id(keeper.clone())
-            .block_timestamp(10_000_000_000)
-            .build());
+        // Armed vault attempting `reset_my_vault` MUST panic to prevent 72h timelock bypass
         assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            contract.admin_reset_vault(alice.clone());
+            contract.reset_my_vault();
         }))
         .is_err());
 
         // Keeper attempting `ping_by_relayer` with a forged signature MUST panic
+        testing_env!(context
+            .predecessor_account_id(keeper.clone())
+            .block_timestamp(10_000_000_000)
+            .build());
         assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             contract.ping_by_relayer(
                 alice.clone(),

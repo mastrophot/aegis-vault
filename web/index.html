@@ -1180,7 +1180,7 @@
         <div id="monitorTestamentCard" class="hidden p-4 rounded-2xl bg-nearElevated border border-nearGreen/35 space-y-2">
           <div class="flex items-center justify-between gap-2 flex-wrap">
             <div class="text-textWhite font-bold flex items-center gap-2">
-              <span class="text-nearGreen">📜 On-Chain Digital Testament:</span>
+              <span class="text-nearGreen">📜 Recipient Note:</span>
               <span id="monitorTestamentTypeBadge" class="text-[10px] font-mono text-nearGreen bg-nearGreenMuted border border-nearGreen/30 px-2 py-0.5 rounded-full">EVM Calldata + Solana Memo</span>
             </div>
             <button type="button" id="monitorDecryptBtn" onclick="openDecryptModal()" class="hidden px-2.5 py-0.5 rounded-full bg-nearGreen text-nearBlack hover:bg-nearGreenHover text-[11px] font-mono font-bold transition cursor-pointer">
@@ -5042,7 +5042,7 @@
         if (badgeEl) {
           badgeEl.innerText = isEnc
             ? (shownMemo.startsWith('enc:x25519:') ? '🔒 X25519 Sealed (EVM Calldata + Solana Memo)' : '🔒 AES-256 Sealed (EVM Calldata + Solana Memo)')
-            : '📄 Plaintext UTF-8 (EVM Calldata + Solana Memo)';
+            : 'On-Chain Memo (EVM Calldata + Solana Memo)';
         }
         if (decBtn) {
           if (isEnc) decBtn.classList.remove('hidden');
@@ -5814,7 +5814,7 @@
           encryptedOrNullMemo = rawMemoInput;
         } else if (window.testamentMode === 'plaintext') {
           if (new TextEncoder().encode(rawMemoInput).length > 240) {
-            showToast('Public testament exceeds 240 bytes UTF-8 limit', true);
+            showToast('Recipient note exceeds 240 bytes UTF-8 limit', true);
             return;
           }
           encryptedOrNullMemo = rawMemoInput;

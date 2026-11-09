@@ -1,4 +1,4 @@
-name: Deploy Aegis Web App to GitHub Pages
+name: Deploy LastKey Bunker Web App to GitHub Pages
 
 on:
   push:

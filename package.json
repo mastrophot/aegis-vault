@@ -1,8 +1,8 @@
 {
-  "name": "aegis-vault",
+  "name": "lastkey-bunker",
   "version": "1.0.0",
   "private": true,
-  "description": "Autonomous Multichain Dead-Man's Switch & Panic Evacuation Vault powered by NEAR Chain Signatures",
+  "description": "LastKey Bunker — Zero-Signature Multichain Crypto Bunker & Automatic Inheritance powered by NEAR Chain Signatures",
   "scripts": {
     "start": "node relayer/service.js --server",
     "relayer": "node relayer/service.js --server",
