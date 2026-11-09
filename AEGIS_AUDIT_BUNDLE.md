@@ -6978,10 +6978,10 @@ if (typeof window !== "undefined") {
   <link rel="icon" type="image/svg+xml" href="./favicon.svg">
   <link rel="shortcut icon" href="./favicon.svg">
   
-  <!-- Open-Source Typography (SIL Open Font License 1.1): Inter, Plus Jakarta Sans & JetBrains Mono -->
+  <!-- Open-Source Typography (SIL Open Font License 1.1): Plus Jakarta Sans, Inter & JetBrains Mono -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800&family=Plus+Jakarta+Sans:wght@600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -7006,7 +7006,7 @@ if (typeof window !== "undefined") {
       theme: {
         extend: {
           fontFamily: {
-            sans: ['"Inter"', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+            sans: ['"Plus Jakarta Sans"', '"Inter"', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
             display: ['"Plus Jakarta Sans"', '"Inter"', 'sans-serif'],
             mono: ['"JetBrains Mono"', 'ui-monospace', 'monospace'],
           },
@@ -7016,12 +7016,12 @@ if (typeof window !== "undefined") {
             nearSurface: '#0B0E15',
             nearElevated: '#121622',
             nearHover: '#181D2C',
-            nearBorder: 'rgba(255, 255, 255, 0.10)',
-            nearBorderBright: 'rgba(255, 255, 255, 0.18)',
-            nearBorderGreen: 'rgba(0, 245, 212, 0.35)',
+            nearBorder: 'rgba(255, 255, 255, 0.08)',
+            nearBorderBright: 'rgba(255, 255, 255, 0.16)',
+            nearBorderGreen: 'rgba(0, 245, 212, 0.3)',
             nearGreen: '#00F5D4',
             nearGreenHover: '#00D8BC',
-            nearGreenMuted: 'rgba(0, 245, 212, 0.12)',
+            nearGreenMuted: 'rgba(0, 245, 212, 0.10)',
             nearGreenGlow: 'rgba(0, 245, 212, 0.28)',
             nearCyan: '#00C9FF',
             nearPurple: '#9747FF',
@@ -7029,9 +7029,9 @@ if (typeof window !== "undefined") {
             dangerRed: '#FF4D4D',
             dangerRedMuted: 'rgba(255, 77, 77, 0.12)',
             textWhite: '#FFFFFF',
-            textSilver: '#F1F5F9',
-            textGray: '#C5CEE0',
-            textMuted: '#A3B1C6',
+            textSilver: '#EDF2F7',
+            textGray: '#A6B0C3',
+            textMuted: '#8490A5',
           },
           boxShadow: {
             'near-glow': '0 0 35px -5px rgba(0, 245, 212, 0.35)',
@@ -7048,8 +7048,8 @@ if (typeof window !== "undefined") {
     body {
       background-color: #06080D;
       color: #FFFFFF;
-      font-weight: 500;
-      font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
       text-rendering: optimizeLegibility;
       background-image: 
         radial-gradient(ellipse at 50% -5%, rgba(0, 245, 212, 0.09) 0%, transparent 60%),
@@ -7061,7 +7061,7 @@ if (typeof window !== "undefined") {
     
     h1, h2, h3, h4, #countdownBox {
       font-family: "Plus Jakarta Sans", "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
-      letter-spacing: -0.015em;
+      letter-spacing: -0.01em;
     }
 
     ::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -7071,7 +7071,7 @@ if (typeof window !== "undefined") {
 
     .near-card {
       background: #0B0E15;
-      border: 1px solid rgba(255, 255, 255, 0.10);
+      border: 1px solid rgba(255, 255, 255, 0.08);
       border-radius: 24px;
       transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
     }
@@ -7110,28 +7110,20 @@ if (typeof window !== "undefined") {
       scroll-behavior: smooth;
     }
 
-    /* High-legibility dark-mode typography scale & stroke weights */
-    .text-\[10px\] { font-size: 0.78rem !important; line-height: 1.2rem !important; font-weight: 600 !important; }
-    .text-\[11px\] { font-size: 0.825rem !important; line-height: 1.3rem !important; font-weight: 500 !important; }
-    .text-xs { font-size: 0.84rem !important; line-height: 1.35rem !important; font-weight: 500; }
-    .text-sm { font-size: 0.92rem !important; line-height: 1.4rem !important; }
+    /* Clean dark-mode microfont sizing & hierarchy (without forced bolding) */
+    .text-\[10px\] { font-size: 0.75rem !important; line-height: 1.15rem !important; }
+    .text-\[11px\] { font-size: 0.8125rem !important; line-height: 1.25rem !important; }
 
-    /* High-contrast secondary labels, descriptions, and placeholders */
+    /* Balanced contrast for secondary labels and placeholders */
     .text-\[\#585E6A\], .text-\[\#586274\], .text-white\/40 {
-      color: #A3B1C6 !important;
+      color: #8490A5 !important;
     }
-    .text-\[\#8C929D\], .text-\[\#8C95A6\], .text-\[\#8E99AD\] {
-      color: #C5CEE0 !important;
-    }
-    .text-\[\#A6B0C3\], .text-\[\#B0B9C9\] {
-      color: #D5DCEA !important;
-    }
-    input, select, textarea {
-      font-weight: 500 !important;
+    .text-\[\#8C929D\], .text-\[\#8C95A6\] {
+      color: #9FAAB9 !important;
     }
     input::placeholder, textarea::placeholder {
-      color: #8A97AD !important;
-      font-weight: 500 !important;
+      color: #5E6A7E !important;
+      font-weight: 400 !important;
     }
   </style>
 </head>
