@@ -1135,115 +1135,101 @@
 
   <!-- Multichain Evacuation Live Telemetry Modal -->
   <div id="evacMonitorModal" class="fixed inset-0 bg-black/90 backdrop-blur-md z-50 flex items-center justify-center p-4 hidden overflow-y-auto">
-    <div class="near-card border-nearGreen/40 rounded-3xl max-w-xl w-full p-6 sm:p-7 space-y-5 shadow-near-glow max-h-[92vh] overflow-y-auto">
-      <div class="flex items-center justify-between gap-3 border-b border-nearBorder pb-4">
+    <div class="near-card border-nearGreen/40 rounded-3xl max-w-md w-full p-6 space-y-4 shadow-near-glow max-h-[92vh] overflow-y-auto">
+      <div class="flex items-center justify-between gap-3 border-b border-nearBorder pb-3.5">
         <div class="flex items-center gap-2.5 min-w-0">
-          <span class="w-3 h-3 rounded-full bg-nearGreen radar-pulse shrink-0"></span>
-          <h3 class="text-base sm:text-lg font-mono font-extrabold text-textWhite truncate">Multichain Evacuation Monitor</h3>
+          <span class="w-2.5 h-2.5 rounded-full bg-nearGreen radar-pulse shrink-0"></span>
+          <h3 class="text-base font-sans font-extrabold text-textWhite truncate">Transfer Status</h3>
         </div>
-        <button onclick="closeEvacMonitor()" class="w-8 h-8 rounded-full bg-nearElevated text-textGray hover:text-textWhite flex items-center justify-center shrink-0 cursor-pointer">✕</button>
+        <button onclick="closeEvacMonitor()" class="w-7 h-7 rounded-full bg-nearElevated text-textGray hover:text-textWhite flex items-center justify-center shrink-0 cursor-pointer">✕</button>
       </div>
 
-      <div class="space-y-3 font-mono text-xs">
+      <div class="space-y-2.5 font-mono text-xs">
         <!-- 1. Bitcoin -->
-        <div class="p-4 rounded-2xl bg-nearElevated border border-nearBorder flex items-start sm:items-center justify-between gap-3">
-          <div class="space-y-1 min-w-0 flex-1">
-            <div class="text-textWhite font-bold flex items-center gap-2 flex-wrap">
-              <span class="text-amber-400">₿ Bitcoin SegWit:</span> <span id="monitorBtcBal">0.0000 BTC</span>
+        <div class="p-3.5 rounded-2xl bg-nearElevated border border-nearBorder flex items-center justify-between gap-3">
+          <div class="space-y-0.5 min-w-0 flex-1">
+            <div class="text-textWhite font-bold flex items-center gap-1.5">
+              <span class="text-amber-400">₿ Bitcoin</span>
+              <span class="text-white/30">·</span>
+              <span id="monitorBtcBal">0.0000 BTC</span>
             </div>
-            <div class="text-textGray text-xs break-all">Target: <span id="monitorBtcTarget" class="text-textSilver font-mono break-all">Not configured</span></div>
-            <div id="monitorBtcLink" class="text-[11px] pt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1"></div>
+            <div class="text-textGray text-[11px] truncate">→ <span id="monitorBtcTarget" class="text-textSilver font-mono">Not set</span></div>
           </div>
-          <span id="monitorBtcStatus" class="text-[#8C929D] font-bold bg-white/[0.04] border border-white/10 px-3 py-1 rounded-full text-[11px] shrink-0 whitespace-nowrap text-center">Not configured</span>
+          <div class="flex flex-col items-end gap-1 shrink-0">
+            <span id="monitorBtcStatus" class="text-[#8C929D] font-bold bg-white/[0.04] border border-white/10 px-2.5 py-0.5 rounded-full text-[11px] whitespace-nowrap">Sweeping...</span>
+            <div id="monitorBtcLink" class="text-[11px]"></div>
+          </div>
         </div>
 
         <!-- 2. EVM -->
-        <div class="p-4 rounded-2xl bg-nearElevated border border-nearBorder flex items-start sm:items-center justify-between gap-3">
-          <div class="space-y-1 min-w-0 flex-1">
-            <div class="text-textWhite font-bold flex items-center gap-2 flex-wrap">
-              <span class="text-blue-400">Ξ Ethereum / Base:</span> <span id="monitorEvmBal">0.0000 ETH</span>
+        <div class="p-3.5 rounded-2xl bg-nearElevated border border-nearBorder flex items-center justify-between gap-3">
+          <div class="space-y-0.5 min-w-0 flex-1">
+            <div class="text-textWhite font-bold flex items-center gap-1.5">
+              <span class="text-blue-400">Ξ Ethereum</span>
+              <span class="text-white/30">·</span>
+              <span id="monitorEvmBal">0.0000 ETH</span>
             </div>
-            <div class="text-textGray text-xs break-all">Target: <span id="monitorEvmTarget" class="text-textSilver font-mono break-all">Not configured</span></div>
-            <div id="monitorEvmLink" class="text-[11px] pt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1"></div>
+            <div class="text-textGray text-[11px] truncate">→ <span id="monitorEvmTarget" class="text-textSilver font-mono">Not set</span></div>
           </div>
-          <span id="evmTxStatusBadge" class="text-[#8C929D] font-bold bg-white/[0.04] border border-white/10 px-3 py-1 rounded-full text-[11px] shrink-0 whitespace-nowrap text-center">
-            Not configured
-          </span>
+          <div class="flex flex-col items-end gap-1 shrink-0">
+            <span id="evmTxStatusBadge" class="text-[#8C929D] font-bold bg-white/[0.04] border border-white/10 px-2.5 py-0.5 rounded-full text-[11px] whitespace-nowrap">Sweeping...</span>
+            <div id="monitorEvmLink" class="text-[11px]"></div>
+          </div>
         </div>
 
         <!-- 3. Solana -->
-        <div class="p-4 rounded-2xl bg-nearElevated border border-nearBorder flex items-start sm:items-center justify-between gap-3">
-          <div class="space-y-1 min-w-0 flex-1">
-            <div class="text-textWhite font-bold flex items-center gap-2 flex-wrap">
-              <span class="text-purple-400">◎ Solana Devnet:</span> <span id="monitorSolBal">0.0000 SOL</span>
+        <div class="p-3.5 rounded-2xl bg-nearElevated border border-nearBorder flex items-center justify-between gap-3">
+          <div class="space-y-0.5 min-w-0 flex-1">
+            <div class="text-textWhite font-bold flex items-center gap-1.5">
+              <span class="text-purple-400">◎ Solana</span>
+              <span class="text-white/30">·</span>
+              <span id="monitorSolBal">0.0000 SOL</span>
             </div>
-            <div class="text-textGray text-xs break-all">Target: <span id="monitorSolTarget" class="text-textSilver font-mono break-all">Not configured</span></div>
-            <div id="monitorSolLink" class="text-[11px] pt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1"></div>
+            <div class="text-textGray text-[11px] truncate">→ <span id="monitorSolTarget" class="text-textSilver font-mono">Not set</span></div>
           </div>
-          <span id="monitorSolStatus" class="text-[#8C929D] font-bold bg-white/[0.04] border border-white/10 px-3 py-1 rounded-full text-[11px] shrink-0 whitespace-nowrap text-center">Not configured</span>
+          <div class="flex flex-col items-end gap-1 shrink-0">
+            <span id="monitorSolStatus" class="text-[#8C929D] font-bold bg-white/[0.04] border border-white/10 px-2.5 py-0.5 rounded-full text-[11px] whitespace-nowrap">Sweeping...</span>
+            <div id="monitorSolLink" class="text-[11px]"></div>
+          </div>
         </div>
 
         <!-- 4. NEAR Protocol -->
-        <div class="p-4 rounded-2xl bg-nearElevated border border-nearBorder flex items-start sm:items-center justify-between gap-3">
-          <div class="space-y-1 min-w-0 flex-1">
-            <div class="text-textWhite font-bold flex items-center gap-2 flex-wrap">
-              <span class="text-nearGreen">Ⓝ NEAR Protocol:</span> <span id="monitorNearBal">0.0000 NEAR</span>
+        <div class="p-3.5 rounded-2xl bg-nearElevated border border-nearBorder flex items-center justify-between gap-3">
+          <div class="space-y-0.5 min-w-0 flex-1">
+            <div class="text-textWhite font-bold flex items-center gap-1.5">
+              <span class="text-nearGreen">Ⓝ NEAR</span>
+              <span class="text-white/30">·</span>
+              <span id="monitorNearBal">0.0000 NEAR</span>
             </div>
-            <div class="text-textGray text-xs break-all">Target: <span id="monitorNearTarget" class="text-textSilver font-mono break-all">Not configured</span></div>
-            <div id="monitorNearLink" class="text-[11px] pt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1"></div>
+            <div class="text-textGray text-[11px] truncate">→ <span id="monitorNearTarget" class="text-textSilver font-mono">Not set</span></div>
           </div>
-          <span id="monitorNearStatus" class="text-[#8C929D] font-bold bg-white/[0.04] border border-white/10 px-3 py-1 rounded-full text-[11px] shrink-0 whitespace-nowrap text-center">Not configured</span>
+          <div class="flex flex-col items-end gap-1 shrink-0">
+            <span id="monitorNearStatus" class="text-[#8C929D] font-bold bg-white/[0.04] border border-white/10 px-2.5 py-0.5 rounded-full text-[11px] whitespace-nowrap">Sweeping...</span>
+            <div id="monitorNearLink" class="text-[11px]"></div>
+          </div>
         </div>
 
-        <!-- On-Chain Digital Testament Delivered Box -->
-        <div id="monitorTestamentCard" class="hidden p-4 rounded-2xl bg-nearElevated border border-nearGreen/35 space-y-2">
-          <div class="flex items-center justify-between gap-2 flex-wrap">
-            <div class="text-textWhite font-bold flex items-center gap-2">
-              <span class="text-nearGreen">📜 Recipient Note:</span>
-              <span id="monitorTestamentTypeBadge" class="text-[10px] font-mono text-nearGreen bg-nearGreenMuted border border-nearGreen/30 px-2 py-0.5 rounded-full">EVM Calldata + Solana Memo</span>
+        <!-- Recipient Note (Testament) -->
+        <div id="monitorTestamentCard" class="hidden p-3.5 rounded-2xl bg-nearElevated border border-nearGreen/35 space-y-2">
+          <div class="flex items-center justify-between gap-2">
+            <div class="text-textWhite font-bold flex items-center gap-1.5 text-xs">
+              <span class="text-nearGreen">📜 Note</span>
+              <span id="monitorTestamentTypeBadge" class="text-[10px] font-mono text-nearGreen bg-nearGreenMuted border border-nearGreen/30 px-2 py-0.5 rounded-full">On-Chain</span>
             </div>
-            <button type="button" id="monitorDecryptBtn" onclick="openDecryptModal()" class="hidden px-2.5 py-0.5 rounded-full bg-nearGreen text-nearBlack hover:bg-nearGreenHover text-[11px] font-mono font-bold transition cursor-pointer">
-              🔓 Decrypt Testament
+            <button type="button" id="monitorDecryptBtn" onclick="openDecryptModal()" class="hidden px-2.5 py-1 rounded-full bg-nearGreen text-nearBlack hover:bg-nearGreenHover text-[11px] font-mono font-bold transition cursor-pointer">
+              🔓 Decrypt
             </button>
           </div>
-          <div id="monitorTestamentPayload" class="p-2.5 rounded-xl bg-nearBlack/80 border border-white/10 text-[11px] font-mono text-white break-all select-all"></div>
-          <div class="text-[11px] font-sans text-[#A6B0C3] leading-snug space-y-0.5">
-            <div><strong class="text-blue-400">Sepolia Etherscan:</strong> open TX → <code>More Details</code> → <code>Input Data</code> → <code>View Input As: UTF-8</code></div>
-            <div><strong class="text-purple-400">Solscan Devnet:</strong> open TX → <code>Instruction Details</code> → <code>#2 - Memo Program v2</code></div>
-          </div>
+          <div id="monitorTestamentPayload" class="p-2 rounded-xl bg-nearBlack/80 border border-white/10 text-[11px] font-mono text-white break-all select-all max-h-16 overflow-y-auto"></div>
         </div>
 
-        <!-- Stateless Cloud Keeper Control Bar -->
-        <div class="p-3.5 rounded-2xl bg-nearElevated/70 border border-nearBorder flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs font-sans">
-          <div class="min-w-0 flex-1">
-            <div class="text-textSilver font-semibold flex items-center gap-2">
-              <span class="w-2 h-2 rounded-full bg-nearGreen radar-pulse shrink-0"></span>
-              <span class="truncate">24/7 Stateless Keeper (<span class="font-mono text-nearGreen">keeper.aegis.okgoogleok.testnet</span>)</span>
-            </div>
-          </div>
-          <button id="syncKeeperBtn" onclick="triggerCloudKeeperSweep(true)" class="px-4 py-1.5 near-pill-btn bg-nearGreen/20 hover:bg-nearGreen/30 text-nearGreen font-bold border border-nearGreen/40 transition active:scale-98 flex items-center justify-center gap-1.5 cursor-pointer shrink-0 whitespace-nowrap">
-            <span>⚡ Sync Cloud Keeper</span>
-          </button>
-        </div>
-
-        <!-- 5. Fault Isolation -->
-        <div class="p-3.5 rounded-2xl bg-nearBlack border border-nearBorder text-xs font-sans text-textSilver flex items-center gap-2.5">
-          <svg class="w-4 h-4 text-nearGreen shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
-          <span><strong>Fault Isolation active:</strong> Honeypots and reverting scam tokens are simulated via free <code>eth_call</code> and safely skipped without halting valid asset delivery.</span>
-        </div>
-
-        <!-- 6. Burned Address Whitelist Warning -->
-        <div class="p-3.5 rounded-2xl bg-red-950/40 border border-red-500/40 text-xs font-sans text-red-200 flex items-start gap-2.5">
-          <svg class="w-4 h-4 text-red-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-          <div>
-            <strong class="text-red-300 font-bold block mb-0.5">⚠️ CRITICAL: Remove Old Bunker Addresses from Exchanges!</strong>
-            Keys for this epoch are permanently deactivated. If you saved these addresses in exchange whitelists (Binance, Bybit, OKX) or wallet address books, delete them immediately. New deposits to burned addresses cannot be recovered.
-          </div>
+        <div class="px-3 py-2 rounded-xl bg-red-950/30 border border-red-500/30 text-[11px] font-sans text-red-200/90 text-center">
+          ⚠️ Old bunker addresses are now retired — do not deposit to them again.
         </div>
       </div>
 
-      <button onclick="closeEvacMonitor()" class="w-full bg-nearElevated hover:bg-nearHover text-textWhite font-bold py-3.5 near-pill-btn text-xs sm:text-sm transition border border-nearBorder cursor-pointer">
-        Close Monitor
+      <button onclick="closeEvacMonitor()" class="w-full bg-nearElevated hover:bg-nearHover text-textWhite font-bold py-3 near-pill-btn text-xs sm:text-sm transition border border-nearBorder cursor-pointer">
+        Close
       </button>
     </div>
   </div>
@@ -4918,14 +4904,13 @@
         renderBunkerAddresses();
         updateCountdownDisplay();
 
-        showToast('PANIC CONFIRMED ON-CHAIN: Dispatching Cloud Keeper sweep...', true);
+        showToast('PANIC CONFIRMED: 24/7 Keeper is sweeping assets...', true);
         openEvacMonitor('evacuation');
-        triggerCloudKeeperSweep(false);
 
         fetchLiveBalances(true);
-        setTimeout(() => fetchLiveBalances(true), 2500);
-        setTimeout(() => fetchLiveBalances(true), 6000);
-        setTimeout(() => fetchLiveBalances(true), 12000);
+        setTimeout(() => fetchLiveBalances(true), 3000);
+        setTimeout(() => fetchLiveBalances(true), 7000);
+        setTimeout(() => fetchLiveBalances(true), 14000);
       }).catch(err => {
         console.error('Panic execution aborted or failed:', err);
       });
@@ -4933,18 +4918,26 @@
 
     function setMonitorBadgeStyle(badgeEl, rawStatus) {
       if (!badgeEl) return;
-      let label = String(rawStatus || 'Not configured').trim();
-      if (label.includes('Dynamic EIP-1559')) label = 'Queued (EIP-1559)';
-      else if (label === 'Queued for relayer sweep') label = 'Queued for sweep';
+      const raw = String(rawStatus || 'Not configured').trim();
+      const lower = raw.toLowerCase();
+      let label = raw;
+      if (lower.includes('confirmed') || lower.includes('broadcasted')) {
+        label = 'Sent ✓';
+      } else if (lower.includes('queued') || lower.includes('dynamic') || lower.includes('sweeping')) {
+        label = 'Sweeping...';
+      } else if (lower.startsWith('skipped') || lower.startsWith('no deposit') || lower.startsWith('0 balance')) {
+        label = '0 Balance';
+      } else if (lower === 'not configured') {
+        label = 'Not set';
+      }
 
       badgeEl.innerText = label;
-      const lower = label.toLowerCase();
-      if (lower === 'not configured' || lower.startsWith('skipped') || lower.startsWith('no deposit') || lower.startsWith('0 balance')) {
-        badgeEl.className = 'text-[#8C929D] font-bold bg-white/[0.04] border border-white/10 px-3 py-1 rounded-full text-[11px] shrink-0 whitespace-nowrap text-center';
-      } else if (lower.includes('confirmed') || lower.includes('broadcasted')) {
-        badgeEl.className = 'text-nearGreen font-bold bg-nearGreenMuted border border-nearGreen/30 px-3 py-1 rounded-full text-[11px] shrink-0 whitespace-nowrap text-center';
+      if (label === 'Not set' || label === '0 Balance') {
+        badgeEl.className = 'text-[#8C929D] font-bold bg-white/[0.04] border border-white/10 px-2.5 py-0.5 rounded-full text-[11px] shrink-0 whitespace-nowrap text-center';
+      } else if (label === 'Sent ✓') {
+        badgeEl.className = 'text-nearGreen font-bold bg-nearGreenMuted border border-nearGreen/30 px-2.5 py-0.5 rounded-full text-[11px] shrink-0 whitespace-nowrap text-center';
       } else {
-        badgeEl.className = 'text-amber-300 font-bold bg-amber-500/15 border border-amber-500/30 px-3 py-1 rounded-full text-[11px] shrink-0 whitespace-nowrap text-center';
+        badgeEl.className = 'text-amber-300 font-bold bg-amber-500/15 border border-amber-500/30 px-2.5 py-0.5 rounded-full text-[11px] shrink-0 whitespace-nowrap text-center';
       }
     }
 
@@ -4958,7 +4951,7 @@
         ));
       const titleEl = document.querySelector('#evacMonitorModal h3');
       if (titleEl) {
-        titleEl.innerText = isInheritance ? 'Multichain Inheritance Transfer Monitor' : 'Multichain Evacuation Monitor';
+        titleEl.innerText = isInheritance ? 'Inheritance Transfer Status' : 'Emergency Evacuation Status';
       }
 
       const currentSigner = localStorage.getItem('aegis_signer_account') || '';
@@ -5028,10 +5021,10 @@
         const el = document.getElementById(id);
         if (el) el.innerHTML = '';
       });
-      setMonitorBadgeStyle(document.getElementById('monitorBtcStatus'), btcTarget === 'Not configured' ? 'Not configured' : 'Queued for sweep');
-      setMonitorBadgeStyle(document.getElementById('evmTxStatusBadge'), evmTarget === 'Not configured' ? 'Not configured' : 'Queued (EIP-1559)');
-      setMonitorBadgeStyle(document.getElementById('monitorSolStatus'), solTarget === 'Not configured' ? 'Not configured' : 'Queued for sweep');
-      setMonitorBadgeStyle(document.getElementById('monitorNearStatus'), nearTarget === 'Not configured' ? 'Not configured' : 'Queued for sweep');
+      setMonitorBadgeStyle(document.getElementById('monitorBtcStatus'), btcTarget === 'Not configured' ? 'Not configured' : 'Sweeping...');
+      setMonitorBadgeStyle(document.getElementById('evmTxStatusBadge'), evmTarget === 'Not configured' ? 'Not configured' : 'Sweeping...');
+      setMonitorBadgeStyle(document.getElementById('monitorSolStatus'), solTarget === 'Not configured' ? 'Not configured' : 'Sweeping...');
+      setMonitorBadgeStyle(document.getElementById('monitorNearStatus'), nearTarget === 'Not configured' ? 'Not configured' : 'Sweeping...');
 
       const modal = document.getElementById('evacMonitorModal');
       if (modal) modal.classList.remove('hidden');
@@ -5042,11 +5035,6 @@
         const badgeEl = document.getElementById('monitorTestamentTypeBadge');
         const decBtn = document.getElementById('monitorDecryptBtn');
         if (!card || !payloadEl) return;
-
-        if (!isInheritanceMode) {
-          card.classList.add('hidden');
-          return;
-        }
 
         const rawMemo = (
           lastFetchedVaultInfo?.heir_memo ||
@@ -5060,14 +5048,13 @@
           return;
         }
         card.classList.remove('hidden');
-        const shownMemo = rawMemo;
-        payloadEl.innerText = shownMemo;
+        payloadEl.innerText = rawMemo;
 
-        const isEnc = shownMemo.startsWith('enc:x25519:') || shownMemo.startsWith('enc:aes256:');
+        const isEnc = rawMemo.startsWith('enc:x25519:') || rawMemo.startsWith('enc:aes256:');
         if (badgeEl) {
           badgeEl.innerText = isEnc
-            ? (shownMemo.startsWith('enc:x25519:') ? '🔒 X25519 Sealed (EVM Calldata + Solana Memo)' : '🔒 AES-256 Sealed (EVM Calldata + Solana Memo)')
-            : 'On-Chain Memo (EVM Calldata + Solana Memo)';
+            ? (rawMemo.startsWith('enc:x25519:') ? '🔒 X25519' : '🔒 AES-256')
+            : 'Plaintext';
         }
         if (decBtn) {
           if (isEnc) decBtn.classList.remove('hidden');
@@ -5093,13 +5080,10 @@
           if (s.amount && document.getElementById('monitorBtcBal')) document.getElementById('monitorBtcBal').innerText = s.amount;
           if (linkEl && s.explorer) {
             const safeExp = sanitizeExplorerUrl(s.explorer);
-            const mpcLink = s.near_mpc_tx
-              ? ` <span class="text-white/20">|</span> <a href="${sanitizeExplorerUrl(s.near_mpc_tx)}" target="_blank" rel="noopener noreferrer" class="text-nearGreen hover:underline whitespace-nowrap">MPC Proof (v1.signer) ↗</a>`
-              : '';
-            linkEl.innerHTML = `<a href="${safeExp}" target="_blank" rel="noopener noreferrer" class="text-amber-400 hover:underline font-mono whitespace-nowrap">View on Mempool.space ↗</a>${mpcLink}`;
+            linkEl.innerHTML = `<a href="${safeExp}" target="_blank" rel="noopener noreferrer" class="text-amber-400 hover:underline font-mono whitespace-nowrap">Mempool ↗</a>`;
           }
         } else if (t.is_complete) {
-          setMonitorBadgeStyle(document.getElementById('monitorBtcStatus'), btcTarget === 'Not configured' ? 'Not configured' : 'No deposit (0 BTC)');
+          setMonitorBadgeStyle(document.getElementById('monitorBtcStatus'), btcTarget === 'Not configured' ? 'Not configured' : '0 Balance');
         }
         if (t.sweeps.evm) {
           const s = t.sweeps.evm;
@@ -5110,13 +5094,10 @@
           if (s.amount && document.getElementById('monitorEvmBal')) document.getElementById('monitorEvmBal').innerText = s.amount;
           if (linkEl && s.explorer) {
             const safeExp = sanitizeExplorerUrl(s.explorer);
-            const mpcLink = s.near_mpc_tx
-              ? ` <span class="text-white/20">|</span> <a href="${sanitizeExplorerUrl(s.near_mpc_tx)}" target="_blank" rel="noopener noreferrer" class="text-nearGreen hover:underline whitespace-nowrap">MPC Proof (v1.signer) ↗</a>`
-              : '';
-            linkEl.innerHTML = `<a href="${safeExp}" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:underline font-mono whitespace-nowrap">View on Etherscan ↗</a>${mpcLink}`;
+            linkEl.innerHTML = `<a href="${safeExp}" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:underline font-mono whitespace-nowrap">Etherscan ↗</a>`;
           }
         } else if (t.is_complete) {
-          setMonitorBadgeStyle(document.getElementById('evmTxStatusBadge'), evmTarget === 'Not configured' ? 'Not configured' : 'No deposit (0 ETH)');
+          setMonitorBadgeStyle(document.getElementById('evmTxStatusBadge'), evmTarget === 'Not configured' ? 'Not configured' : '0 Balance');
         }
         if (t.sweeps.sol) {
           const s = t.sweeps.sol;
@@ -5127,13 +5108,10 @@
           if (s.amount && document.getElementById('monitorSolBal')) document.getElementById('monitorSolBal').innerText = s.amount;
           if (linkEl && s.explorer) {
             const safeExp = sanitizeExplorerUrl(s.explorer);
-            const mpcLink = s.near_mpc_tx
-              ? ` <span class="text-white/20">|</span> <a href="${sanitizeExplorerUrl(s.near_mpc_tx)}" target="_blank" rel="noopener noreferrer" class="text-nearGreen hover:underline whitespace-nowrap">MPC Proof (v1.signer) ↗</a>`
-              : '';
-            linkEl.innerHTML = `<a href="${safeExp}" target="_blank" rel="noopener noreferrer" class="text-purple-400 hover:underline font-mono whitespace-nowrap">View on Solscan ↗</a>${mpcLink}`;
+            linkEl.innerHTML = `<a href="${safeExp}" target="_blank" rel="noopener noreferrer" class="text-purple-400 hover:underline font-mono whitespace-nowrap">Solscan ↗</a>`;
           }
         } else if (t.is_complete) {
-          setMonitorBadgeStyle(document.getElementById('monitorSolStatus'), solTarget === 'Not configured' ? 'Not configured' : 'No deposit (0 SOL)');
+          setMonitorBadgeStyle(document.getElementById('monitorSolStatus'), solTarget === 'Not configured' ? 'Not configured' : '0 Balance');
         }
         if (t.sweeps.near) {
           const s = t.sweeps.near;
@@ -5144,10 +5122,10 @@
           if (s.amount && document.getElementById('monitorNearBal')) document.getElementById('monitorNearBal').innerText = s.amount;
           if (linkEl && s.explorer) {
             const safeExp = sanitizeExplorerUrl(s.explorer);
-            linkEl.innerHTML = `<a href="${safeExp}" target="_blank" rel="noopener noreferrer" class="text-nearGreen hover:underline font-mono whitespace-nowrap">View on NearBlocks ↗</a>`;
+            linkEl.innerHTML = `<a href="${safeExp}" target="_blank" rel="noopener noreferrer" class="text-nearGreen hover:underline font-mono whitespace-nowrap">NearBlocks ↗</a>`;
           }
         } else if (t.is_complete) {
-          setMonitorBadgeStyle(document.getElementById('monitorNearStatus'), nearTarget === 'Not configured' ? 'Not configured' : 'No deposit (0 NEAR)');
+          setMonitorBadgeStyle(document.getElementById('monitorNearStatus'), nearTarget === 'Not configured' ? 'Not configured' : '0 Balance');
         }
         return true;
       };
