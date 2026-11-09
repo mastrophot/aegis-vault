@@ -898,7 +898,7 @@
                 </span>
               </div>
               <p class="text-xs text-[#A6B0C3] leading-relaxed max-w-3xl">
-                24/7 early-warning radar via <strong class="text-white font-mono">@aegis_vault_bot</strong>. Connect one Telegram account to monitor as many Bunker wallets as you want — without ever exposing your addresses or balances in chat.
+                24/7 early-warning radar via <strong class="text-white font-mono">@lastkey_bunker_bot</strong>. Connect one Telegram account to monitor as many Bunker wallets as you want — without ever exposing your addresses or balances in chat.
               </p>
             </div>
           </div>
@@ -908,7 +908,7 @@
               <span>Send Test Ping</span>
             </button>
             <button id="connectTgBotBtn" onclick="openTelegramBotDeepLink()" class="bg-nearGreen hover:bg-nearGreenHover text-nearBlack font-extrabold py-2.5 px-5 rounded-xl text-xs sm:text-sm transition shadow-near-glow active:scale-98 whitespace-nowrap cursor-pointer">
-              Connect @aegis_vault_bot ↗
+              Connect @lastkey_bunker_bot ↗
             </button>
           </div>
         </div>
@@ -5256,10 +5256,10 @@
       }
     }
 
-    // Alert Settings & Real Zero-Metadata Telegram Push (@aegis_vault_bot)
+    // Alert Settings & Real Zero-Metadata Telegram Push (@lastkey_bunker_bot)
     // Security Guarantee: Zero Bot Token in client-side code. All Telegram polling and push
     // dispatches are executed server-side 24/7 by the Autonomous Keeper (GitHub Actions Secrets).
-    const AEGIS_TG_BOT_USERNAME = 'aegis_vault_bot';
+    const AEGIS_TG_BOT_USERNAME = 'lastkey_bunker_bot';
 
     function isTelegramLinkedOnChain(info = lastFetchedVaultInfo) {
       const signer = localStorage.getItem('aegis_signer_account');
@@ -5317,7 +5317,7 @@
       if (!lastFetchedVaultInfo) {
         dispatchNearTransaction('request_telegram_test').catch(() => {});
       }
-      showToast('Press Start inside @aegis_vault_bot — 24/7 Keeper will link & confirm automatically...');
+      showToast('Press Start inside @lastkey_bunker_bot — 24/7 Keeper will link & confirm automatically...');
 
       const btn = document.getElementById('connectTgBotBtn');
       if (btn) btn.innerText = 'Waiting for Start...';
@@ -5333,7 +5333,7 @@
           clearInterval(_tgConnectPollInterval);
           _tgConnectPollInterval = null;
           syncAlertSettingsUI();
-          showToast('Telegram @aegis_vault_bot connected! Confirmation push delivered by 24/7 Keeper.');
+          showToast('Telegram @lastkey_bunker_bot connected! Confirmation push delivered by 24/7 Keeper.');
         } else if (attempts >= 24) {
           clearInterval(_tgConnectPollInterval);
           _tgConnectPollInterval = null;
@@ -5378,7 +5378,7 @@
           connBadge.className = 'text-xs font-sans font-medium text-[#8C929D] bg-white/[0.04] border border-white/[0.08] px-2.5 py-0.5 rounded-lg whitespace-nowrap';
         }
         if (connectBtn) {
-          connectBtn.innerText = 'Connect @aegis_vault_bot ↗';
+          connectBtn.innerText = 'Connect @lastkey_bunker_bot ↗';
         }
         setHeaderTgState(false);
         return;
@@ -5393,7 +5393,7 @@
           connBadge.className = 'text-xs font-sans font-semibold text-nearGreen bg-nearGreenMuted border border-nearGreen/40 px-2.5 py-0.5 rounded-lg whitespace-nowrap';
         }
         if (connectBtn) {
-          connectBtn.innerText = 'Reconnect @aegis_vault_bot ↗';
+          connectBtn.innerText = 'Reconnect @lastkey_bunker_bot ↗';
         }
         setHeaderTgState(true);
       } else {
@@ -5402,7 +5402,7 @@
           connBadge.className = 'text-xs font-sans font-medium text-[#8C929D] bg-white/[0.04] border border-white/[0.08] px-2.5 py-0.5 rounded-lg whitespace-nowrap';
         }
         if (connectBtn) {
-          connectBtn.innerText = 'Connect @aegis_vault_bot ↗';
+          connectBtn.innerText = 'Connect @lastkey_bunker_bot ↗';
         }
         setHeaderTgState(false);
       }
@@ -5420,7 +5420,7 @@
         return;
       }
       if (!isTelegramLinkedOnChain(lastFetchedVaultInfo)) {
-        showToast('Click "Connect @aegis_vault_bot ↗" and press Start in Telegram first!', true);
+        showToast('Click "Connect @lastkey_bunker_bot ↗" and press Start in Telegram first!', true);
         return;
       }
       const btn = document.getElementById('sendTestAlertBtn');
@@ -5429,7 +5429,7 @@
       const res = await dispatchNearTransaction('request_telegram_test').catch(() => null);
       if (btn) btn.innerHTML = '<span>Send Test Ping</span>';
       if (res !== null) {
-        showToast('Test alert queued on-chain — 24/7 Keeper delivering via @aegis_vault_bot!');
+        showToast('Test alert queued on-chain — 24/7 Keeper delivering via @lastkey_bunker_bot!');
       } else {
         showToast('Could not queue test alert on-chain', true);
       }

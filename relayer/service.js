@@ -1480,16 +1480,16 @@ class AegisRelayerService {
 
   _getTelegramAlertMessages() {
     return {
-      test: '🛡 Aegis Bunker: Notification channel connected and active.',
+      test: '🛡 LastKey Bunker: Notification channel connected and active.',
       reminder:
-        '⏳ Aegis Bunker: Check-in window is nearing expiration (≤25% left). Perform a check-in to keep the bunker armed.',
+        '⏳ LastKey Bunker: Check-in window is nearing expiration (≤25% left). Perform a check-in to keep the bunker sealed.',
       grace:
-        '⚠️ Aegis Bunker: Primary timer expired. Grace buffer is now active — check in immediately to cancel automatic inheritance.',
+        '⚠️ LastKey Bunker: Primary timer expired. Grace buffer is now active — check in immediately to cancel automatic inheritance.',
       timelock:
-        '🔐 Aegis Bunker: 72-hour security cooldown started for a policy or timer change. If you did not authorize this, open your bunker and cancel immediately.',
-      timelock_cancelled: '✅ Aegis Bunker: Pending 72-hour policy or timer change was cancelled.',
-      panic: '🚨 Aegis Bunker: Emergency evacuation completed.',
-      inheritance: '🔒 Aegis Bunker: Inheritance protocol completed.'
+        '🔐 LastKey Bunker: 72-hour security cooldown started for a policy or timer change. If you did not authorize this, open your bunker and cancel immediately.',
+      timelock_cancelled: '✅ LastKey Bunker: Pending 72-hour policy or timer change was cancelled.',
+      panic: '🚨 LastKey Bunker: Emergency evacuation completed.',
+      inheritance: '🔒 LastKey Bunker: Inheritance protocol completed.'
     };
   }
 

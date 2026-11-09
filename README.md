@@ -7,7 +7,7 @@
 > **24/7 Autonomous Cloud Keeper:** [`.github/workflows/relayer-keeper.yml`](https://github.com/mastrophot/aegis-vault/actions/workflows/relayer-keeper.yml)  
 > **NEAR Testnet Contract (`Aegis Engine`):** [`aegis.okgoogleok.testnet`](https://testnet.nearblocks.io/address/aegis.okgoogleok.testnet)  
 > **Least-Privilege Keeper Account:** [`keeper.aegis.okgoogleok.testnet`](https://testnet.nearblocks.io/address/keeper.aegis.okgoogleok.testnet)  
-> **Zero-Metadata Telegram Alerts Bot:** [`@aegis_vault_bot`](https://t.me/aegis_vault_bot)
+> **Zero-Metadata Telegram Alerts Bot:** [`@lastkey_bunker_bot`](https://t.me/lastkey_bunker_bot)
 
 ---
 
@@ -174,7 +174,7 @@ Every component of Aegis Vault can be deterministically verified in under 60 sec
   3. It cannot infinitely reset a deceased owner's timer: `ping_by_relayer` requires an on-chain verified `Ed25519` signature from the owner's public key (`env::ed25519_verify`) with a strict 10-minute freshness window and monotonic anti-replay (`ping_ts:{owner}`).
 * **An Owner Who Is Alive But Offline / Traveling**:
   1. **Passive Wallet Activity Sync (`sync_owner_activity`)**: The owner does not even need to open Aegis Vault — any outgoing transaction signed by any access key on the owner's NEAR wallet increments the on-chain key nonce, which the 24/7 Keeper detects via NEAR RPC (`view_access_key_list`) and uses to automatically reset the check-in clock.
-  2. **Two-Stage Grace Period + Multi-Stage Zero-Metadata Telegram Alerts**: When the primary check-in timer reaches `<= 25%` remaining, `@aegis_vault_bot` dispatches an early warning; if `0s` is reached, the vault enters the **Grace Buffer** (`challenge_period_ns`, e.g., 3–30 days in production or `1m` in Judge Demo) and dispatches a critical alert.
+  2. **Two-Stage Grace Period + Multi-Stage Zero-Metadata Telegram Alerts**: When the primary check-in timer reaches `<= 25%` remaining, `@lastkey_bunker_bot` dispatches an early warning; if `0s` is reached, the vault enters the **Grace Buffer** (`challenge_period_ns`, e.g., 3–30 days in production or `1m` in Judge Demo) and dispatches a critical alert.
   3. **Instant 1-Click Cancellation**: At any moment before `heartbeat_interval_ns + challenge_period_ns` expires, the owner can cancel a pending release via `ping()`, `cancel_grace()`, or simply by making any normal NEAR wallet transaction.
 * **Hostile Heir / Compromised Owner Session Attempting Timer or Policy Hijack**:
   * Once a bunker is armed, any attempt to change destination addresses (`backup` / `heir`) OR shorten `heartbeat_interval_ns` / `challenge_period_ns` is locked behind a mandatory **72-hour on-chain Timelock (`pending_policy`)** and immediately triggers a Telegram security alert to the owner, who can abort the hijack in 1 click via `cancel_policy()`.
