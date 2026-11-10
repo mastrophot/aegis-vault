@@ -32,8 +32,8 @@
   * Optional note for recipients configured alongside Inheritance Wallets (`Public | 🔒 E2EE` toggle with `AES-256-GCM` passphrase or `X25519` public-key encryption).
   * Automatically embedded on-chain during Automatic Inheritance sweeps (Solana Memo v2 instruction, EVM UTF-8 calldata, and 80-byte SHA-256 commitment anchor in Bitcoin `OP_RETURN`), while strictly suppressed during Emergency Panic sweeps.
 * **Zero-Metadata Telegram Early-Warning Radar (`@lastkey_bunker_bot`)**:
-  * One Telegram account can monitor unlimited Bunker wallets via anonymous SHA-256 pairing tags (`/start v1_<tag>`), with 1-click on-chain `Disconnect`.
-  * Chat IDs are stored on-chain encrypted with `AES-256-GCM` (`cid_enc`), and push notifications never contain wallet addresses, balances, or transaction links.
+  * One Telegram account can monitor unlimited Bunker wallets via anonymous SHA-256 pairing tags (`/start v1_<tag>`), with 1-click on-chain `Disconnect` signed by the Bunker owner.
+  * Chat IDs are encrypted with `AES-256-GCM` by the stateless keeper (keyed from `TELEGRAM_BOT_TOKEN` + `vault_owner`) prior to on-chain storage (`cid_enc`) so public chain observers never see plaintext Chat IDs, and push notifications never contain wallet addresses, balances, or transaction links.
 * **Self-Sustaining Keeper Economics (Per-Vault Gas Escrow & Refund)**:
   * Sealing a Bunker (`propose_policy`) attaches a `0.25 NEAR` deposit into the owner's personal `gas_escrow` (with a capped `8`-call/epoch contract Sponsor Pool fallback for zero-deposit session calls).
   * Stateless keepers invoke `request_sweep_signature` with **`0` attached NEAR deposit**; the contract pays the `v1.signer` MPC fee (`0.05 NEAR`) and automatically refunds **`0.005 NEAR`** execution gas to the keeper inside `on_signature_ready`.
@@ -70,8 +70,8 @@
    keeper.aegis.okgoogleok.testnet│                       ▼
 ┌─────────────────────────────────┴──┐     ┌──────────────────────────────────┐
 │  24/7 Stateless Cloud Keepers      │     │  NEAR MPC (v1.signer-prod)       │
-│  - Cloudflare Worker (Edge HTTP)   │     │  - Threshold Secp256k1 (BTC/EVM) │
-│  - GitHub Actions (*/5m Cron)      │     │  - Threshold Ed25519 (SOL/NEAR)  │
+│  - GitHub Actions (3s Primary Loop)│     │  - Threshold Secp256k1 (BTC/EVM) │
+│  - Cloudflare Worker (Edge Standby)│     │  - Threshold Ed25519 (SOL/NEAR)  │
 └─────────────────┬──────────────────┘     └─────────────────┬────────────────┘
                   │  Assemble & Broadcast Signed Raw Tx      │
                   └───────────────────┬──────────────────────┘
@@ -91,9 +91,9 @@
 
 * [`contracts/vault/src/lib.rs`](contracts/vault/src/lib.rs): Hardened Rust smart contract (`near-sdk 5.5.0`) — state machine, 72h policy timelock, Bitcoin BIP-143 preimage + outputs verifier, EVM EIP-1559 RLP verifier, Solana compiled-instruction verifier, NEAR Borsh transaction verifier, `ed25519_verify` NEP-413 sponsored ping, Per-Vault Gas Escrow + keeper refund, isolated NEAR vault deposits, epoch archiving, and on-chain sweep telemetry.
 * [`relayer/service.js`](relayer/service.js) & [`relayer/sweep_relayer.js`](relayer/sweep_relayer.js): Stateless multichain sweep engine — automated native sweeps across Bitcoin (multi-UTXO SegWit PSBT + `OP_RETURN` anchor), EVM (dynamic gas estimation + EIP-1559 fee clamp), Solana (Base58 Ed25519 signature), and NEAR (isolated + implicit bunker), plus verifiable builders for ERC-20, ERC-721, and Solana SPL/Token-2022 sweeps with honeypot fault isolation.
-* [`workers/keeper/`](workers/keeper/): Serverless Cloudflare Worker (`nodejs_compat`) running at the edge for instant `<1s` `POST /trigger` sweeps and scheduled autonomous checks.
-* [`.github/workflows/relayer-keeper.yml`](.github/workflows/relayer-keeper.yml): Autonomous 24/7 GitHub Actions cloud keeper (`*/5 * * * *` chained 55m windows, 3s polling) powered by the restricted `FunctionCall` key on `keeper.aegis.okgoogleok.testnet` and `TELEGRAM_BOT_TOKEN` secret.
-* [`src/wallet-selector.js`](src/wallet-selector.js) & [`web/index.html`](web/index.html): Static zero-backend Web3 interface with NEAR Wallet Selector (`@near-wallet-selector/core v10.1.4`), live MPC address derivation, client-side E2EE Heir Testament encryption (`AES-256-GCM` / `X25519`), Judge Demo Mode (`3m + 1m`), and real-time on-chain evacuation telemetry.
+* [`workers/keeper/`](workers/keeper/): Stateless Cloudflare Worker (`nodejs_compat`) edge standby for `<1s` `POST /trigger` sweeps and optional cron failover (kept on standby by default so a single active leader holds the `TELEGRAM_BOT_TOKEN` `getUpdates` cursor and `keeper.aegis.okgoogleok.testnet` key nonce without race conditions).
+* [`.github/workflows/relayer-keeper.yml`](.github/workflows/relayer-keeper.yml): Primary autonomous 24/7 GitHub Actions cloud keeper (`*/5 * * * *` chained 55m windows, 3s polling, single-leader `concurrency` lock) powered by the restricted `FunctionCall` key in GitHub Secrets.
+* [`src/wallet-selector.js`](src/wallet-selector.js) & [`web/index.html`](web/index.html): Static zero-backend, zero-embedded-key Web3 interface with NEAR Wallet Selector (`@near-wallet-selector/core v10.1.4`), live MPC address derivation, client-side E2EE Heir Testament encryption (`AES-256-GCM` / `X25519`), Judge Demo Mode (`3m + 1m`), and real-time on-chain evacuation telemetry.
 * [`scripts/test_sweep_flow.js`](scripts/test_sweep_flow.js) & [`scripts/decrypt_testament.js`](scripts/decrypt_testament.js): End-to-end cryptographic test suite validating all multichain sweep pipelines and offline zero-server E2EE testament decryption CLI.
 
 ---
@@ -139,8 +139,10 @@ Every component of **LastKey Bunker** can be deterministically verified in under
 | **Keeper Gas Depletion & Drain** | `0`-deposit `request_sweep_signature` funded via Per-Vault `gas_escrow` / Sponsor Pool (capped at 8 calls/epoch) + `0.005 NEAR` keeper refund | [`contracts/vault/src/lib.rs`](contracts/vault/src/lib.rs) |
 | **Unauthorized Policy / Timer Takeover** | 72-hour timelock on any destination address or timer modification once sealed, with instant owner `cancel_policy()` and non-blocking inheritance expiry | [`contracts/vault/src/lib.rs`](contracts/vault/src/lib.rs) |
 | **On-Chain Note Privacy Leak** | Optional client-side `AES-256-GCM` (`PBKDF2-SHA256`) & `X25519` (`enc:aes256:` / `enc:x25519:`) testament sealing in browser memory + offline CLI decryption | [`src/wallet-selector.js`](src/wallet-selector.js), [`scripts/decrypt_testament.js`](scripts/decrypt_testament.js) |
-| **Telegram Metadata & Token Exposure** | Server-side `TELEGRAM_BOT_TOKEN` in GitHub Secrets, anonymous SHA-256 `/start v1_<tag>` linking, `AES-256-GCM` encrypted `cid_enc`, and zero-metadata alert strings | [`relayer/service.js`](relayer/service.js) |
+| **Telegram Metadata & Token Exposure** | Server-side `TELEGRAM_BOT_TOKEN` in GitHub Secrets, anonymous SHA-256 `/start v1_<tag>` linking, keeper-side `AES-256-GCM` encrypted `cid_enc` before on-chain write, and zero-metadata alert strings | [`relayer/service.js`](relayer/service.js) |
 | **Delayed Sweep After Rotation** | `rotate_bunker()` snapshots `{state, destination}` in `archive:{owner}:{epoch}` so late sweeps remain cryptographically verifiable | [`contracts/vault/src/lib.rs`](contracts/vault/src/lib.rs) |
+| **Contract Upgrade / Rug Risk** | All `FullAccess` keys permanently deleted (`0` access keys on `aegis.okgoogleok.testnet`) — 100% immutable WASM bytecode | On-Chain Access Key (`DeleteKey`) |
+| **Registry View-Gas DoS** | Hard `MAX_REGISTERED_ACCOUNTS = 500` ceiling + paginated `get_registered_accounts` bounds preventing `O(N)` RPC view-gas exhaustion | [`contracts/vault/src/lib.rs`](contracts/vault/src/lib.rs) |
 
 ---
 

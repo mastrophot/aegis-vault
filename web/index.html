@@ -967,7 +967,7 @@
               <span>Zero-Metadata Privacy</span>
             </div>
             <p class="text-[11px] text-[#8C929D] leading-snug">
-              Your chat ID is AES-256-GCM encrypted on-chain, and messages never contain wallet addresses, balances, or networks.
+              Your chat ID is AES-256-GCM encrypted by the stateless keeper before on-chain storage (cid_enc), and messages never contain wallet addresses, balances, or networks.
             </p>
           </div>
         </div>
@@ -4339,7 +4339,7 @@
             if (txDetected && lastFetchedVaultInfo && lastFetchedVaultInfo.state === 'Active') {
               const nowAlignedNs = BigInt(Math.floor(getNearAlignedNowMs())) * 1000000n;
               window._optimisticActivityPingNs = nowAlignedNs;
-              window._optimisticActivityUntilMs = Date.now() + 15000;
+              window._optimisticActivityUntilMs = Date.now() + 20000;
 
               lastFetchedVaultInfo.last_ping_ns = String(nowAlignedNs);
               remainingSeconds = MAX_SECONDS;
@@ -5222,8 +5222,8 @@
         showToast('⚡ Syncing live multichain sweep status from 24/7 Cloud Keeper...');
       }
       try {
-        // First poll on-chain telemetry so we never collide with the 24/7 GitHub Actions Cloud Keeper while it is actively sweeping
-        for (let pollIdx = 0; pollIdx < 3; pollIdx++) {
+        // Poll on-chain telemetry while the 24/7 GitHub Actions Cloud Keeper executes multichain MPC sweeps
+        for (let pollIdx = 0; pollIdx < 8; pollIdx++) {
           await fetchLiveContractState();
           const modalEl = document.getElementById('evacMonitorModal');
           if (modalEl && !modalEl.classList.contains('hidden')) {
@@ -5375,17 +5375,6 @@
       }
       if (!lastFetchedVaultInfo) {
         dispatchNearTransaction('request_telegram_test').catch(() => {});
-      } else if (lastFetchedVaultInfo.alert_state) {
-        try {
-          const st = JSON.parse(lastFetchedVaultInfo.alert_state) || {};
-          if (st.tg_unlinked_uid || st.tg_linked === false) {
-            delete st.tg_unlinked_uid;
-            const provider = window.AegisWallet || window.AegisMeteor || window.AegisWalletBundle;
-            if (provider && typeof provider.syncAlertStateOnChain === 'function') {
-              provider.syncAlertStateOnChain(signer, JSON.stringify(st)).catch(() => {});
-            }
-          }
-        } catch (_) {}
       }
       showToast('Press Start inside @lastkey_bunker_bot — 24/7 Keeper will link & confirm automatically...');
 
